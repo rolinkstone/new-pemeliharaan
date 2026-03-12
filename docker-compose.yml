@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: talawang-backend
+    restart: unless-stopped
+    network_mode: "host"
+    environment:
+      - DB_HOST=127.0.0.1
+      - DB_PORT=3306
+      - DB_USER=accounting
+      - DB_PASSWORD=cXnBtsX7mmpSD5zK
+      - DB_NAME=accounting
+      - KEYCLOAK_SERVER_URL=https://auth.bbpompky.id
+      - KEYCLOAK_REALM=master
+      - KEYCLOAK_ADMIN_USERNAME=admin
+      - KEYCLOAK_ADMIN_PASSWORD=ontageniT1!
+      - NODE_ENV=production
+      - PORT=5000
+      # Tambahkan environment variable untuk path data
+      - DATA_PATH=/data
+      - LOGS_PATH=/data/logs
+      - UPLOADS_PATH=/data/uploads
+    volumes:
+      # Mount folder data untuk backend
+      - ./data/backend:/data
+      # Untuk development - kode sumber
+      - ./backend:/usr/src/app
+      - /usr/src/app/node_modules
+
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: talawang-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"  # ⭐ Host:3001 → Container:3001
+    environment:
+      - NODE_ENV=production
+      # ⭐ Gunakan domain tunnel untuk NextAuth
+      - NEXT_PUBLIC_API_URL=http://api-talawang.bbpompky.id/api
+      - KEYCLOAK_ISSUER=https://auth.bbpompky.id/realms/master
+      - KEYCLOAK_CLIENT_ID=talawang
+      - KEYCLOAK_CLIENT_SECRET=iPHkDbSBwaxo04kFro4GLHmFE6wLtjlj
+      - NEXTAUTH_URL=https://talawang.bbpompky.id
+      - NEXTAUTH_SECRET=dnpp//pRJuxPWuZsWUBX4YB0BAxORPt7dRR/MX91KEA=
+      - KEYCLOAK_ADMIN_USERNAME=admin
+      - KEYCLOAK_ADMIN_PASSWORD=ontageniT1!
+      # Tambahkan environment variable untuk path data frontend
+      - DATA_PATH=/data
+      - CACHE_PATH=/data/.next/cache
+      - PUBLIC_UPLOADS_PATH=/data/public/uploads
+    volumes:
+      # Mount folder data untuk frontend
+      - ./data/frontend:/data
+      # Untuk development - kode sumber
+      - ./frontend:/usr/src/app
+      - /usr/src/app/node_modules
+      - /usr/src/app/.next
+    depends_on:
+      - backend
