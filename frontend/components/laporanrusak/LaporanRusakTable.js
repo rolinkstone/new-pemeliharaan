@@ -1,4 +1,4 @@
-// components/laporanrusak/LaporanRusakTable.js
+// components/laporanrusak/LaporanRakTable.js
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -34,6 +34,8 @@ import {
   ImageListItemBar,
   Badge,
   Stack,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
@@ -54,14 +56,18 @@ import {
   Photo as PhotoIcon,
   BrokenImage as BrokenImageIcon,
   PersonOutline as PersonOutlineIcon,
-  Badge as BadgeIcon,
   VerifiedUser as VerifiedUserIcon,
   SupervisorAccount as SupervisorAccountIcon,
   ArrowForward as ArrowForwardIcon,
   AttachMoney as AttachMoneyIcon,
+  CheckCircleOutline as CheckCircleOutlineIcon,
+  AdminPanelSettings as AdminIcon,
+  ThumbUp as ThumbUpIcon,
+  ThumbDown as ThumbDownIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
+import { useSession } from 'next-auth/react';
 
 // ============================================
 // KONSTANTA STATUS - SESUAI DENGAN DATABASE
@@ -78,6 +84,18 @@ const STATUS = {
   DALAM_PERBAIKAN: 'dalam_perbaikan',
   SELESAI: 'selesai',
   DITOLAK: 'ditolak'
+};
+
+// ============================================
+// ROLE CONSTANTS
+// ============================================
+const ROLES = {
+  ADMIN: 'admin',
+  PIC_RUANGAN: 'pic_ruangan',
+  PIC: 'pic',
+  KABAG_TU: 'kabag_tu',
+  PPK: 'ppk',
+  USER: 'user'
 };
 
 // Base URL tanpa /api
@@ -488,7 +506,8 @@ const LaporanRusakTable = ({
   onDelete,
   onVerifikasi,
   onDisposisi,
-  onVerifikasiPPK, // Tambahkan prop baru untuk verifikasi PPK
+  onVerifikasiPPK,
+  onSelesaiPerbaikan,
   pagination = { currentPage: 1, perPage: 10, total: 0 },
   onPageChange,
   sortConfig = { field: 'tgl_laporan', direction: 'desc' },
@@ -496,11 +515,20 @@ const LaporanRusakTable = ({
   picData = {},
 }) => {
   const theme = useTheme();
+  const { data: session } = useSession();
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedRow, setSelectedRow] = useState(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewPhotos, setPreviewPhotos] = useState([]);
   const [picDetails, setPicDetails] = useState({});
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+
+  // Dapatkan role user dari session
+  const userRole = session?.user?.role || session?.user?.roles?.[0] || 'user';
+  const isAdmin = userRole === ROLES.ADMIN;
+  const isPICRuangan = [ROLES.PIC_RUANGAN, ROLES.PIC].includes(userRole);
+  const isKabagTU = userRole === ROLES.KABAG_TU;
+  const isPPK = userRole === ROLES.PPK;
 
   useEffect(() => {
     const newPicDetails = {};
@@ -532,22 +560,34 @@ const LaporanRusakTable = ({
     if (selectedRow) {
       switch (action) {
         case 'view':
-          onView(selectedRow);
+          if (onView) onView(selectedRow);
           break;
         case 'edit':
-          onEdit(selectedRow);
+          if (onEdit) onEdit(selectedRow);
           break;
         case 'delete':
-          onDelete(selectedRow);
+          if (onDelete) onDelete(selectedRow);
           break;
         case 'verifikasi':
-          onVerifikasi(selectedRow);
+          if (onVerifikasi) onVerifikasi(selectedRow);
           break;
         case 'disposisi':
-          onDisposisi(selectedRow);
+          if (onDisposisi) onDisposisi(selectedRow);
           break;
-        case 'verifikasi-ppk': // Tambahkan case baru
-          onVerifikasiPPK(selectedRow);
+        case 'verifikasi-ppk':
+          if (onVerifikasiPPK) onVerifikasiPPK(selectedRow);
+          break;
+        case 'selesai-perbaikan':
+          if (onSelesaiPerbaikan) {
+            onSelesaiPerbaikan(selectedRow);
+          } else {
+            console.warn('⚠️ Fungsi onSelesaiPerbaikan tidak tersedia');
+            setSnackbar({
+              open: true,
+              message: 'Fitur selesaikan perbaikan belum tersedia',
+              severity: 'warning'
+            });
+          }
           break;
         default:
           break;
@@ -578,7 +618,17 @@ const LaporanRusakTable = ({
     onSort(field);
   };
 
-  // Konfigurasi status
+  // Cek apakah user adalah PIC dari ruangan tertentu
+  const isPICOfThisRoom = (ruanganId) => {
+    if (!ruanganId || !session?.user?.id) return false;
+    const pic = picDetails[ruanganId];
+    if (!pic) return false;
+    
+    const picUserId = pic.user_id || pic.id || pic.pic_id;
+    return picUserId === session.user.id || picUserId === session.user.sub;
+  };
+
+  // Konfigurasi status - PERBAIKAN: Pastikan 'diteruskan' muncul dengan label yang benar
   const getStatusConfig = (status) => {
     const configs = {
       'draft': { label: 'Draft', color: 'default', icon: <ScheduleIcon /> },
@@ -587,8 +637,8 @@ const LaporanRusakTable = ({
       'diverifikasi_pic': { label: 'Diverifikasi PIC', color: 'info', icon: <CheckCircleIcon /> },
       'diverifikasi_ppk': { label: 'Diverifikasi PPK', color: 'info', icon: <CheckCircleIcon /> },
       'menunggu_disposisi': { label: 'Menunggu Disposisi', color: 'secondary', icon: <AssignmentIcon /> },
-      'diteruskan': { label: 'Diteruskan', color: 'warning', icon: <ArrowForwardIcon /> },
-      'didisposisi': { label: 'Didisposisi', color: 'primary', icon: <PersonIcon /> },
+      'diteruskan': { label: 'Diteruskan ke Kabag TU', color: 'warning', icon: <ArrowForwardIcon /> }, // PERBAIKAN: Label yang jelas
+      'didisposisi': { label: 'Didisposisi ke PPK', color: 'primary', icon: <PersonIcon /> },
       'dalam_perbaikan': { label: 'Dalam Perbaikan', color: 'warning', icon: <BuildIcon /> },
       'selesai': { label: 'Selesai', color: 'success', icon: <DoneAllIcon /> },
       'ditolak': { label: 'Ditolak', color: 'error', icon: <ErrorIcon /> },
@@ -609,22 +659,37 @@ const LaporanRusakTable = ({
 
   // Cek apakah bisa diedit
   const canEdit = (status) => {
+    if (isAdmin) return true;
     return [STATUS.DRAFT, STATUS.MENUNGGU_VERIFIKASI_PIC].includes(status);
+  };
+
+  // Cek apakah bisa dihapus
+  const canDelete = () => {
+    return isAdmin;
   };
 
   // Cek apakah bisa diverifikasi (PIC)
   const canVerifikasi = (status) => {
-    return [STATUS.MENUNGGU_VERIFIKASI_PIC].includes(status);
+    if (isAdmin) return true;
+    return isPICRuangan && status === STATUS.MENUNGGU_VERIFIKASI_PIC;
   };
 
   // Cek apakah bisa disposisi (Kabag TU)
   const canDisposisi = (status) => {
-    return status === STATUS.DITERUSKAN;
+    if (isAdmin) return true;
+    return isKabagTU && status === STATUS.DITERUSKAN; // PERBAIKAN: Kabag TU melihat status 'diteruskan'
   };
 
   // Cek apakah bisa verifikasi PPK
   const canVerifikasiPPK = (status) => {
-    return status === STATUS.MENUNGGU_VERIFIKASI_PPK;
+    if (isAdmin) return true;
+    return isPPK && status === STATUS.MENUNGGU_VERIFIKASI_PPK;
+  };
+
+  // Cek apakah bisa selesaikan perbaikan (setelah verifikasi PPK)
+  const canSelesaikanPerbaikan = (status, ruanganId) => {
+    if (isAdmin) return status === STATUS.DALAM_PERBAIKAN;
+    return status === STATUS.DALAM_PERBAIKAN && isPICOfThisRoom(ruanganId);
   };
 
   // Format tanggal
@@ -878,57 +943,104 @@ const LaporanRusakTable = ({
             <ListItemText>Detail</ListItemText>
           </MenuItem>
 
-          {/* Verifikasi untuk PIC */}
+          {/* Verifikasi untuk PIC - Muncul untuk Admin atau PIC yang berwenang */}
           {selectedRow && canVerifikasi(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('verifikasi')}>
               <ListItemIcon>
                 <CheckCircleIcon fontSize="small" color="primary" />
               </ListItemIcon>
-              <ListItemText>Verifikasi</ListItemText>
+              <ListItemText>
+                {isAdmin ? 'Verifikasi (Admin)' : 'Verifikasi'}
+              </ListItemText>
             </MenuItem>
           )}
 
-          {/* Disposisi untuk Kabag TU */}
+          {/* Disposisi untuk Kabag TU - Muncul untuk Admin atau Kabag TU */}
           {selectedRow && canDisposisi(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('disposisi')}>
               <ListItemIcon>
                 <SupervisorAccountIcon fontSize="small" color="warning" />
               </ListItemIcon>
-              <ListItemText>Disposisi</ListItemText>
+              <ListItemText>
+                {isAdmin ? 'Disposisi (Admin)' : 'Disposisi ke PPK'}
+              </ListItemText>
             </MenuItem>
           )}
 
-          {/* Verifikasi PPK */}
+          {/* Verifikasi PPK - Muncul untuk Admin atau PPK */}
           {selectedRow && canVerifikasiPPK(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('verifikasi-ppk')}>
               <ListItemIcon>
                 <AttachMoneyIcon fontSize="small" color="success" />
               </ListItemIcon>
-              <ListItemText>Verifikasi PPK</ListItemText>
+              <ListItemText>
+                {isAdmin ? 'Verifikasi PPK (Admin)' : 'Verifikasi PPK'}
+              </ListItemText>
             </MenuItem>
           )}
 
-          {/* Edit */}
+          {/* Selesaikan Perbaikan untuk PIC Ruangan - Setelah verifikasi PPK */}
+          {selectedRow && canSelesaikanPerbaikan(selectedRow.status, selectedRow.ruangan_id) && (
+            <MenuItem 
+              onClick={() => handleAction('selesai-perbaikan')}
+              disabled={!onSelesaiPerbaikan}
+            >
+              <ListItemIcon>
+                <CheckCircleOutlineIcon 
+                  fontSize="small" 
+                  color={onSelesaiPerbaikan ? 'success' : 'disabled'} 
+                />
+              </ListItemIcon>
+              <ListItemText>
+                {isAdmin ? 'Selesaikan Perbaikan (Admin)' : 'Selesaikan Perbaikan'}
+                {!onSelesaiPerbaikan && (
+                  <Typography variant="caption" display="block" color="text.disabled">
+                    (Fitur tidak tersedia)
+                  </Typography>
+                )}
+              </ListItemText>
+            </MenuItem>
+          )}
+
+          {/* Edit - Admin bisa edit semua, user biasa hanya bisa edit status tertentu */}
           {selectedRow && canEdit(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('edit')}>
               <ListItemIcon>
                 <EditIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText>Edit</ListItemText>
+              <ListItemText>
+                {isAdmin ? 'Edit (Admin)' : 'Edit'}
+              </ListItemText>
             </MenuItem>
           )}
 
           <Divider />
 
-          {/* Delete */}
-          <MenuItem onClick={() => handleAction('delete')} sx={{ color: theme.palette.error.main }}>
-            <ListItemIcon>
-              <DeleteIcon fontSize="small" color="error" />
-            </ListItemIcon>
-            <ListItemText>Hapus</ListItemText>
-          </MenuItem>
+          {/* Delete - Hanya Admin yang bisa hapus */}
+          {selectedRow && canDelete() && (
+            <MenuItem onClick={() => handleAction('delete')} sx={{ color: theme.palette.error.main }}>
+              <ListItemIcon>
+                <DeleteIcon fontSize="small" color="error" />
+              </ListItemIcon>
+              <ListItemText>
+                {isAdmin ? 'Hapus (Admin)' : 'Hapus'}
+              </ListItemText>
+            </MenuItem>
+          )}
         </Menu>
       </Paper>
+
+      {/* Snackbar untuk notifikasi */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snackbar.severity} variant="filled">
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
 
       <FotoPreviewDialog
         open={previewOpen}

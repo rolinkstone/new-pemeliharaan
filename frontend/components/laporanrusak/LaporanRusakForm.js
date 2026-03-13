@@ -38,6 +38,7 @@ import {
   Grow,
   Slide,
   Container,
+  LinearProgress,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -70,6 +71,8 @@ import {
   PhotoCamera as PhotoCameraIcon,
   Clear as ClearIcon,
   Check as CheckIcon,
+  Close as CloseIcon,
+  WarningAmber as WarningAmberIcon,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -110,13 +113,17 @@ const VALID_STATUS_OPTIONS = [
 ];
 
 // ============================================
-// STATUS BADGE COMPONENT - TIDAK PERNAH "UNKNOWN"
+// CONSTANTS FOR PLACEHOLDER IMAGE
+// ============================================
+const PLACEHOLDER_IMAGE = 'data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20fill%3D%22%23e0e0e0%22%2F%3E%3Ctext%20x%3D%2220%22%20y%3D%2255%22%20font-family%3D%22Arial%22%20font-size%3D%2214%22%20fill%3D%22%23999%22%3ENo%20Image%3C%2Ftext%3E%3C%2Fsvg%3E';
+
+// ============================================
+// STATUS BADGE COMPONENT
 // ============================================
 const StatusBadge = React.memo(({ status, size = 'small' }) => {
   const theme = useTheme();
   
   // Pastikan status tidak undefined/null dan selalu string
-  // Jika status tidak valid, default ke MENUNGGU_VERIFIKASI_PIC
   const safeStatus = status && Object.values(STATUS).includes(status) 
     ? status 
     : STATUS.MENUNGGU_VERIFIKASI_PIC;
@@ -204,9 +211,6 @@ const StatusBadge = React.memo(({ status, size = 'small' }) => {
           label: 'Didisposisi',
         };
       default:
-        // TIDAK PERNAH MENAMPILKAN "UNKNOWN"
-        // Selalu default ke Menunggu Verifikasi PIC
-        console.log('⚠️ Status tidak dikenal:', status, 'menggunakan default');
         return {
           color: theme.palette.warning.main,
           bgColor: alpha(theme.palette.warning.main, 0.15),
@@ -251,7 +255,7 @@ const StatusBadge = React.memo(({ status, size = 'small' }) => {
 
 StatusBadge.displayName = 'StatusBadge';
 
-// Section header component yang lebih elegan dengan efek glassmorphism
+// Section header component
 const SectionHeader = React.memo(({ title, icon, subtitle, action }) => {
   const theme = useTheme();
   
@@ -305,7 +309,7 @@ const SectionHeader = React.memo(({ title, icon, subtitle, action }) => {
 
 SectionHeader.displayName = 'SectionHeader';
 
-// Info Card component yang lebih menarik dengan efek hover
+// Info Card component
 const InfoCard = ({ title, value, icon, color = 'primary', subtitle }) => {
   const theme = useTheme();
   
@@ -357,7 +361,7 @@ const InfoCard = ({ title, value, icon, color = 'primary', subtitle }) => {
   );
 };
 
-// Priority Chip component dengan efek yang lebih menarik
+// Priority Chip component
 const PriorityChip = ({ priority }) => {
   const theme = useTheme();
   
@@ -428,40 +432,142 @@ const PriorityChip = ({ priority }) => {
   );
 };
 
-// Komponen untuk upload foto yang lebih baik dengan preview grid yang menarik
+// ============================================
+// KOMPONEN FOTO UPLOADER YANG SUDAH DIPERBAIKI
+// ============================================
 const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
   const fileInputRef = useRef(null);
   const theme = useTheme();
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({});
+  const [uploadErrors, setUploadErrors] = useState([]);
 
-  const handleFileSelect = (event) => {
-    const files = Array.from(event.target.files);
+  // Validasi file sebelum upload
+  const validateFile = (file) => {
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     
-    // Validasi tipe file
-    const validFiles = files.filter(file => 
-      file.type.startsWith('image/') && file.size <= 5 * 1024 * 1024 // max 5MB
-    );
-
-    if (validFiles.length !== files.length) {
-      alert('Hanya file gambar (max 5MB) yang diperbolehkan');
-    }
-
-    // Konversi ke base64 untuk preview
-    validFiles.forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        onPhotosChange([
-          ...photos,
-          {
-            file: file,
-            preview: e.target.result,
-            name: file.name,
-            size: file.size,
-            type: file.type
-          }
-        ]);
+    if (!allowedTypes.includes(file.type)) {
+      return {
+        valid: false,
+        error: `Tipe file ${file.type} tidak diizinkan. Gunakan JPG, PNG, GIF, atau WEBP`
       };
+    }
+    
+    if (file.size > maxSize) {
+      return {
+        valid: false,
+        error: `Ukuran file terlalu besar (${(file.size / (1024 * 1024)).toFixed(2)}MB). Maksimal 5MB`
+      };
+    }
+    
+    return { valid: true };
+  };
+
+  // Konversi file ke base64 dengan progress tracking
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      
+      reader.onloadstart = () => {
+        setUploadProgress(prev => ({
+          ...prev,
+          [file.name]: 0
+        }));
+      };
+      
+      reader.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const progress = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(prev => ({
+            ...prev,
+            [file.name]: progress
+          }));
+        }
+      };
+      
+      reader.onload = () => {
+        setUploadProgress(prev => ({
+          ...prev,
+          [file.name]: 100
+        }));
+        
+        // Hapus progress setelah 1 detik
+        setTimeout(() => {
+          setUploadProgress(prev => {
+            const newProgress = { ...prev };
+            delete newProgress[file.name];
+            return newProgress;
+          });
+        }, 1000);
+        
+        resolve(reader.result);
+      };
+      
+      reader.onerror = (error) => {
+        reject(error);
+      };
+      
       reader.readAsDataURL(file);
     });
+  };
+
+  const handleFileSelect = async (event) => {
+    const files = Array.from(event.target.files);
+    const errors = [];
+    const validFiles = [];
+    
+    setUploadErrors([]);
+    setUploading(true);
+    
+    // Validasi setiap file
+    for (const file of files) {
+      const validation = validateFile(file);
+      if (validation.valid) {
+        validFiles.push(file);
+      } else {
+        errors.push(validation.error);
+      }
+    }
+    
+    if (errors.length > 0) {
+      setUploadErrors(errors);
+    }
+    
+    // Konversi file valid ke base64
+    if (validFiles.length > 0) {
+      try {
+        const base64Files = await Promise.all(
+          validFiles.map(async (file) => {
+            const base64 = await fileToBase64(file);
+            return {
+              file: file,
+              preview: base64,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              lastModified: file.lastModified,
+              base64Data: base64.split(',')[1], // Data base64 tanpa prefix
+              mimeType: file.type
+            };
+          })
+        );
+        
+        // Tambahkan ke photos yang sudah ada
+        onPhotosChange([...photos, ...base64Files]);
+        
+      } catch (error) {
+        console.error('Error converting files:', error);
+        setUploadErrors(prev => [...prev, 'Gagal memproses file']);
+      }
+    }
+    
+    setUploading(false);
+    
+    // Reset input file
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleRemovePhoto = (index) => {
@@ -475,6 +581,20 @@ const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
     } else if (photo.url) {
       window.open(photo.url, '_blank');
     }
+  };
+
+  const handleImageError = (e) => {
+    e.target.onerror = null;
+    e.target.src = PLACEHOLDER_IMAGE;
+  };
+
+  // Format ukuran file
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
   if (readOnly && photos.length === 0) {
@@ -502,56 +622,121 @@ const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
 
   return (
     <Box sx={{ mt: 2 }}>
-      {/* Tombol Upload dengan desain yang lebih menarik */}
+      {/* Tombol Upload */}
       {!readOnly && (
         <Zoom in={true} timeout={500}>
           <Box sx={{ mb: 3 }}>
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
               multiple
               style={{ display: 'none' }}
               onChange={handleFileSelect}
+              disabled={uploading}
             />
+            
+            {/* Error Messages */}
+            {uploadErrors.length > 0 && (
+              <Fade in={true}>
+                <Alert 
+                  severity="error" 
+                  sx={{ 
+                    mb: 2, 
+                    borderRadius: 2,
+                    '& .MuiAlert-icon': {
+                      alignItems: 'center'
+                    }
+                  }}
+                  onClose={() => setUploadErrors([])}
+                >
+                  <Typography variant="subtitle2" fontWeight="600" gutterBottom>
+                    Gagal mengupload beberapa file:
+                  </Typography>
+                  <ul style={{ margin: 0, paddingLeft: 20 }}>
+                    {uploadErrors.map((error, index) => (
+                      <li key={index}>
+                        <Typography variant="body2">{error}</Typography>
+                      </li>
+                    ))}
+                  </ul>
+                </Alert>
+              </Fade>
+            )}
+            
             <Button
               variant="outlined"
-              startIcon={<CloudUploadIcon />}
+              startIcon={uploading ? <CircularProgress size={20} /> : <CloudUploadIcon />}
               onClick={() => fileInputRef.current?.click()}
-              disabled={readOnly}
+              disabled={readOnly || uploading}
               fullWidth
               sx={{
                 py: 3,
-                background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.02)} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
-                border: `2px dashed ${theme.palette.primary.main}`,
+                background: uploading 
+                  ? alpha(theme.palette.primary.main, 0.05)
+                  : `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.02)} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+                border: `2px dashed ${uploading ? alpha(theme.palette.grey[400], 0.5) : theme.palette.primary.main}`,
                 borderRadius: 3,
                 transition: 'all 0.3s ease-in-out',
+                position: 'relative',
+                overflow: 'hidden',
                 '&:hover': {
                   background: alpha(theme.palette.primary.main, 0.1),
                   border: `2px dashed ${theme.palette.primary.dark}`,
                   transform: 'translateY(-2px)',
                   boxShadow: `0 8px 24px ${alpha(theme.palette.primary.main, 0.2)}`,
                 },
-                '& .MuiButton-startIcon': {
-                  transition: 'transform 0.3s ease-in-out',
-                },
-                '&:hover .MuiButton-startIcon': {
-                  transform: 'scale(1.1)',
+                '&.Mui-disabled': {
+                  borderColor: alpha(theme.palette.grey[400], 0.3),
+                  background: alpha(theme.palette.grey[100], 0.5),
                 }
               }}
             >
-              <Typography variant="subtitle1" fontWeight="600">
-                Upload Foto Kerusakan
-              </Typography>
+              <Box sx={{ textAlign: 'center' }}>
+                <Typography variant="subtitle1" fontWeight="600" color={uploading ? 'text.secondary' : 'primary'}>
+                  {uploading ? 'Memproses file...' : 'Upload Foto Kerusakan'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Format: JPG, PNG, GIF, WEBP (max 5MB per file)
+                </Typography>
+              </Box>
             </Button>
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 1.5, display: 'block', textAlign: 'center' }}>
-              Format: JPG, PNG, GIF (max 5MB per file)
-            </Typography>
           </Box>
         </Zoom>
       )}
 
-      {/* Grid Foto dengan efek masonry yang menarik */}
+      {/* Progress Indicators */}
+      {Object.keys(uploadProgress).length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          {Object.entries(uploadProgress).map(([fileName, progress]) => (
+            <Box key={fileName} sx={{ mb: 1 }}>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
+                <Typography variant="caption" noWrap sx={{ maxWidth: '70%' }}>
+                  {fileName}
+                </Typography>
+                <Typography variant="caption" fontWeight="600" color="primary">
+                  {progress}%
+                </Typography>
+              </Box>
+              <LinearProgress 
+                variant="determinate" 
+                value={progress} 
+                sx={{
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                  '& .MuiLinearProgress-bar': {
+                    borderRadius: 3,
+                    background: `linear-gradient(90deg, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
+                  }
+                }}
+              />
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Grid Foto */}
       {photos.length > 0 && (
         <Fade in={true}>
           <Box>
@@ -559,17 +744,30 @@ const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
               <Typography variant="subtitle1" fontWeight="600" color="text.primary">
                 Dokumentasi Kerusakan
               </Typography>
-              <Badge badgeContent={photos.length} color="primary" sx={{ '& .MuiBadge-badge': { fontWeight: 600 } }}>
+              <Badge 
+                badgeContent={photos.length} 
+                color="primary" 
+                sx={{ 
+                  '& .MuiBadge-badge': { 
+                    fontWeight: 600,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.dark})`,
+                  } 
+                }}
+              >
                 <PhotoCameraIcon color="action" />
               </Badge>
             </Box>
+            
             <ImageList 
-              cols={{ xs: 2, sm: 3, md: 4 }} 
-              gap={16} 
               sx={{ 
                 mt: 0,
                 mb: 0,
-                overflow: 'visible',
+                gridTemplateColumns: {
+                  xs: 'repeat(2, 1fr) !important',
+                  sm: 'repeat(3, 1fr) !important',
+                  md: 'repeat(4, 1fr) !important',
+                },
+                gap: '16px !important',
               }}
             >
               {photos.map((photo, index) => (
@@ -580,28 +778,59 @@ const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
                     overflow: 'hidden',
                     boxShadow: theme.shadows[4],
                     transition: 'all 0.3s ease-in-out',
+                    position: 'relative',
+                    aspectRatio: '1/1',
                     '&:hover': {
                       transform: 'translateY(-4px) scale(1.02)',
                       boxShadow: theme.shadows[12],
                       '& .image-overlay': {
                         opacity: 1,
+                      },
+                      '& .image-info': {
+                        opacity: 1,
+                        transform: 'translateY(0)',
                       }
                     }
                   }}
                 >
                   <img
-                    src={photo.preview || photo.url || '/placeholder-image.jpg'}
+                    src={photo.preview || photo.url || PLACEHOLDER_IMAGE}
                     alt={`Foto kerusakan ${index + 1}`}
                     loading="lazy"
                     style={{
                       width: '100%',
-                      height: 140,
+                      height: '100%',
                       objectFit: 'cover',
                       cursor: 'pointer',
                       transition: 'transform 0.3s ease-in-out',
                     }}
                     onClick={() => handleViewPhoto(photo)}
+                    onError={handleImageError}
                   />
+                  
+                  {/* Info overlay - ukuran file */}
+                  <Box
+                    className="image-info"
+                    sx={{
+                      position: 'absolute',
+                      top: 8,
+                      left: 8,
+                      background: alpha(theme.palette.common.black, 0.6),
+                      backdropFilter: 'blur(4px)',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: 4,
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      opacity: 0,
+                      transform: 'translateY(-10px)',
+                      transition: 'all 0.3s ease-in-out',
+                    }}
+                  >
+                    {photo.size ? formatFileSize(photo.size) : (photo.file?.size ? formatFileSize(photo.file.size) : '')}
+                  </Box>
+                  
+                  {/* Action overlay */}
                   <Box
                     className="image-overlay"
                     sx={{
@@ -620,25 +849,46 @@ const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
                     }}
                   >
                     {!readOnly ? (
-                      <IconButton
-                        sx={{ 
-                          color: 'white',
-                          backgroundColor: alpha(theme.palette.error.main, 0.8),
-                          backdropFilter: 'blur(4px)',
-                          '&:hover': {
-                            backgroundColor: theme.palette.error.main,
-                            transform: 'scale(1.1)',
-                          },
-                          transition: 'all 0.2s ease-in-out',
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleRemovePhoto(index);
-                        }}
-                        size="small"
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                      <Box sx={{ display: 'flex', gap: 1 }}>
+                        <IconButton
+                          sx={{ 
+                            color: 'white',
+                            backgroundColor: alpha(theme.palette.primary.main, 0.8),
+                            backdropFilter: 'blur(4px)',
+                            '&:hover': {
+                              backgroundColor: theme.palette.primary.main,
+                              transform: 'scale(1.1)',
+                            },
+                            transition: 'all 0.2s ease-in-out',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleViewPhoto(photo);
+                          }}
+                          size="small"
+                        >
+                          <VisibilityIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          sx={{ 
+                            color: 'white',
+                            backgroundColor: alpha(theme.palette.error.main, 0.8),
+                            backdropFilter: 'blur(4px)',
+                            '&:hover': {
+                              backgroundColor: theme.palette.error.main,
+                              transform: 'scale(1.1)',
+                            },
+                            transition: 'all 0.2s ease-in-out',
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRemovePhoto(index);
+                          }}
+                          size="small"
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
                     ) : (
                       <IconButton
                         sx={{ 
@@ -664,6 +914,28 @@ const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
                 </ImageListItem>
               ))}
             </ImageList>
+            
+            {/* Info jumlah dan ukuran total */}
+            {photos.length > 0 && (
+              <Box 
+                sx={{ 
+                  mt: 2, 
+                  p: 2, 
+                  background: alpha(theme.palette.primary.main, 0.05),
+                  borderRadius: 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}
+              >
+                <Typography variant="body2" color="text.secondary">
+                  Total {photos.length} file foto
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Total ukuran: {formatFileSize(photos.reduce((acc, photo) => acc + (photo.size || photo.file?.size || 0), 0))}
+                </Typography>
+              </Box>
+            )}
           </Box>
         </Fade>
       )}
@@ -671,7 +943,7 @@ const FotoUploader = ({ photos = [], onPhotosChange, readOnly = false }) => {
   );
 };
 
-// Komponen Form Field dengan desain yang konsisten
+// Komponen Form Field Wrapper
 const FormFieldWrapper = ({ children, label, icon, required = false, error, helperText }) => {
   const theme = useTheme();
   
@@ -707,8 +979,10 @@ const LaporanRusakForm = ({
   const { data: session } = useSession();
   const theme = useTheme();
   
-  // Gunakan useRef untuk melacak apakah sudah fetch
+  // Gunakan useRef untuk melacak apakah sudah fetch dan mencegah infinite loop
   const hasFetchedRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const previousFormDataRef = useRef(null);
   
   const [loading, setLoading] = useState({
     ruangan: false,
@@ -732,35 +1006,28 @@ const LaporanRusakForm = ({
   // FUNGSI UNTUK MEMASTIKAN STATUS VALID
   // ============================================
   const getValidStatus = useCallback((inputStatus, isEditMode = isEdit) => {
-    console.log('🔍 getValidStatus - Input:', { inputStatus, isEditMode });
-    
     // JIKA MODE CREATE, SELALU GUNAKAN MENUNGGU_VERIFIKASI_PIC
     if (!isEditMode) {
-      console.log('📝 Mode Create: Memaksa status menjadi menunggu_verifikasi_pic');
       return STATUS.MENUNGGU_VERIFIKASI_PIC;
     }
     
     // JIKA MODE EDIT, validasi status
     if (!inputStatus) {
-      console.log('⚠️ Status kosong, menggunakan default');
       return STATUS.MENUNGGU_VERIFIKASI_PIC;
     }
     
     // KONVERSI: Jika status adalah 'draft', ubah ke 'menunggu_verifikasi_pic'
     if (inputStatus === STATUS.DRAFT) {
-      console.log('🔄 Mengkonversi status draft -> menunggu_verifikasi_pic');
       return STATUS.MENUNGGU_VERIFIKASI_PIC;
     }
     
     // Validasi apakah status termasuk dalam daftar yang diizinkan
     const validStatusValues = Object.values(STATUS);
     if (validStatusValues.includes(inputStatus)) {
-      console.log('✅ Status valid:', inputStatus);
       return inputStatus;
     }
     
     // Jika status tidak dikenal, return default
-    console.warn(`⚠️ Status tidak dikenal: ${inputStatus}, menggunakan default`);
     return STATUS.MENUNGGU_VERIFIKASI_PIC;
   }, [isEdit]);
   
@@ -772,12 +1039,8 @@ const LaporanRusakForm = ({
     let initialStatus;
     
     if (isEdit && initialFormData.status) {
-      // Mode edit: validasi status dari initialFormData
-      console.log('📋 Mode Edit - Status dari DB:', initialFormData.status);
       initialStatus = getValidStatus(initialFormData.status, true);
     } else {
-      // Mode create: SELALU gunakan menunggu_verifikasi_pic, TIDAK PERNAH draft
-      console.log('🆕 Mode Create - Menggunakan default status');
       initialStatus = STATUS.MENUNGGU_VERIFIKASI_PIC;
     }
     
@@ -812,16 +1075,12 @@ const LaporanRusakForm = ({
     let validStatus;
     
     if (isEdit && initialFormData.status) {
-      // Mode edit: validasi status dari initialFormData
-      console.log('📋 Mode Edit - Initial status:', initialFormData.status);
       validStatus = getValidStatus(initialFormData.status, true);
     } else {
-      // Mode create: SELALU menunggu_verifikasi_pic
-      console.log('🆕 Mode Create - Setting default status');
       validStatus = STATUS.MENUNGGU_VERIFIKASI_PIC;
     }
     
-    const newFormData = {
+    return {
       ...defaultFormData,
       ...initialFormData,
       tgl_laporan: initialFormData.tgl_laporan 
@@ -830,11 +1089,8 @@ const LaporanRusakForm = ({
       pelapor_id: initialFormData.pelapor_id || session?.user?.id || session?.user?.sub || '',
       pelapor_nama: initialFormData.pelapor_nama || session?.user?.name || '',
       foto_kerusakan: initialFormData.foto_kerusakan || [],
-      status: validStatus, // PASTIKAN TIDAK PERNAH 'draft'
+      status: validStatus,
     };
-    
-    console.log('📦 Form Data setelah inisialisasi:', newFormData);
-    return newFormData;
   });
 
   // ============================================
@@ -848,62 +1104,70 @@ const LaporanRusakForm = ({
       
       // VALIDASI KHUSUS UNTUK STATUS
       if (field === 'status') {
-        // Jika mencoba mengubah status ke 'draft', cegah dan beri peringatan
+        // Jika mencoba mengubah status ke 'draft', cegah
         if (value === STATUS.DRAFT) {
-          console.warn('⚠️ Tidak diizinkan mengubah status ke draft');
           newValue = getValidStatus(prev.status, isEdit);
         } else {
           newValue = getValidStatus(value, isEdit);
         }
       }
       
-      const newState = {
+      return {
         ...prev,
         [field]: newValue
       };
-      
-      console.log(`📝 handleChange - ${field}:`, newValue);
-      return newState;
     });
   }, [getValidStatus, isEdit]);
 
   // ============================================
-  // UPDATE PARENT STATE - DENGAN VALIDASI AKHIR
+  // UPDATE PARENT STATE - DENGAN CEK PERUBAHAN
   // ============================================
   useEffect(() => {
-    if (setFormData) {
-      const timeoutId = setTimeout(() => {
-        // PASTIKAN TIDAK ADA 'draft' KETIKA DIKIRIM KE PARENT
-        const dataToSend = {
-          ...formData,
-          status: getValidStatus(formData.status, isEdit)
-        };
-        console.log('📤 Mengirim ke parent dengan status:', dataToSend.status);
-        setFormData(dataToSend);
-      }, 100);
-      return () => clearTimeout(timeoutId);
+    if (!setFormData) return;
+
+    // Buat data yang akan dikirim
+    const dataToSend = {
+      ...formData,
+      status: getValidStatus(formData.status, isEdit)
+    };
+    
+    // Cek apakah data benar-benar berubah
+    const stringifiedData = JSON.stringify(dataToSend);
+    const previousData = previousFormDataRef.current;
+    
+    if (previousData === stringifiedData) {
+      return; // Tidak ada perubahan, skip update
     }
+    
+    // Update ref dengan data baru
+    previousFormDataRef.current = stringifiedData;
+    
+    // Gunakan requestAnimationFrame untuk menghindari render berlebihan
+    const timeoutId = setTimeout(() => {
+      if (isMountedRef.current) {
+        setFormData(dataToSend);
+      }
+    }, 50);
+    
+    return () => clearTimeout(timeoutId);
   }, [formData, setFormData, getValidStatus, isEdit]);
 
   // ============================================
   // UPDATE LOCAL STATE KETIKA INITIAL DATA BERUBAH
   // ============================================
   useEffect(() => {
-    if (initialFormData && Object.keys(initialFormData).length > 0) {
-      console.log('🔄 InitialFormData berubah:', initialFormData);
-      
-      // Validasi status dengan fungsi getValidStatus
-      let validStatus;
-      
-      if (isEdit && initialFormData.status) {
-        console.log('📋 Mode Edit - Status baru:', initialFormData.status);
-        validStatus = getValidStatus(initialFormData.status, true);
-      } else {
-        console.log('🆕 Mode Create - Status default');
-        validStatus = STATUS.MENUNGGU_VERIFIKASI_PIC;
-      }
-      
-      setLocalFormData(prev => ({
+    if (!initialFormData || Object.keys(initialFormData).length === 0) return;
+    
+    // Validasi status
+    let validStatus;
+    if (isEdit && initialFormData.status) {
+      validStatus = getValidStatus(initialFormData.status, true);
+    } else {
+      validStatus = STATUS.MENUNGGU_VERIFIKASI_PIC;
+    }
+    
+    setLocalFormData(prev => {
+      const newData = {
         ...defaultFormData,
         ...initialFormData,
         tgl_laporan: initialFormData.tgl_laporan 
@@ -913,9 +1177,23 @@ const LaporanRusakForm = ({
         pelapor_nama: initialFormData.pelapor_nama || session?.user?.name || '',
         foto_kerusakan: initialFormData.foto_kerusakan || [],
         status: validStatus,
-      }));
-    }
+      };
+      
+      // Cek apakah data benar-benar berubah
+      if (JSON.stringify(prev) === JSON.stringify(newData)) {
+        return prev;
+      }
+      
+      return newData;
+    });
   }, [initialFormData, session, defaultFormData, getValidStatus, isEdit]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Selected objects untuk Autocomplete
   const selectedRuangan = useMemo(() => {
@@ -948,9 +1226,7 @@ const LaporanRusakForm = ({
 
   // Filter aset berdasarkan search text
   const filteredAsetOptions = useMemo(() => {
-    if (!asetOptions.length) {
-      return [];
-    }
+    if (!asetOptions.length) return [];
     
     let filtered = asetOptions;
     
@@ -969,34 +1245,22 @@ const LaporanRusakForm = ({
   // ===== FETCH ASET FUNCTION =====
   const fetchAsetByRuangan = useCallback(async (ruanganId) => {
     if (!session || !ruanganId) {
-      console.log('❌ Session atau ruanganId tidak ada');
       setAsetOptions([]);
       return;
     }
 
-    console.log('🔍 Fetching aset untuk ruangan ID:', ruanganId);
     setLoading(prev => ({ ...prev, aset: true }));
     setFetchErrors(prev => ({ ...prev, aset: null }));
 
     try {
       const asetResult = await laporanApi.fetchAsetByRuangan(session, ruanganId);
       
-      console.log('📥 Response dari fetchAsetByRuangan:', asetResult);
-      
       if (asetResult?.success) {
         const asetData = Array.isArray(asetResult.data) ? asetResult.data : [];
-        
-        console.log(`✅ Mendapatkan ${asetData.length} aset untuk ruangan ${ruanganId}`);
-        
-        if (asetData.length === 0) {
-          console.log('⚠️ Tidak ada aset ditemukan di ruangan ini');
-        }
-        
         setAsetOptions(asetData);
         
         // Auto-select jika hanya 1 aset
         if (asetData.length === 1 && !readOnly) {
-          console.log('🎯 Otomatis memilih aset:', asetData[0].nama_barang);
           const singleAset = asetData[0];
           handleChange('aset_id', singleAset.id);
           handleChange('aset_nama', singleAset.nama_barang);
@@ -1004,7 +1268,6 @@ const LaporanRusakForm = ({
           handleChange('aset_merk', singleAset.merk || '');
         }
       } else {
-        console.error('❌ Gagal fetch aset:', asetResult?.message);
         setFetchErrors(prev => ({ 
           ...prev, 
           aset: asetResult?.message || 'Gagal memuat data aset' 
@@ -1022,12 +1285,8 @@ const LaporanRusakForm = ({
 
   // ===== FETCH RUANGAN FUNCTION =====
   const fetchRuanganOptions = useCallback(async () => {
-    if (!session) {
-      console.log('⏳ Menunggu session...');
-      return;
-    }
+    if (!session) return;
 
-    console.log('🔍 Fetching ruangan options for PIC...');
     setLoading(prev => ({ ...prev, ruangan: true }));
     setFetchErrors(prev => ({ ...prev, ruangan: null }));
 
@@ -1035,7 +1294,6 @@ const LaporanRusakForm = ({
       const ruanganResult = await laporanApi.fetchRuanganOptions(session, {
         user_id: session?.user?.id || session?.user?.sub
       });
-      console.log('📥 Ruangan response:', ruanganResult);
       
       if (ruanganResult?.success) {
         const ruanganData = Array.isArray(ruanganResult.data) ? ruanganResult.data : [];
@@ -1045,7 +1303,6 @@ const LaporanRusakForm = ({
         );
         
         setRuanganOptions(aktifRuanganData);
-        console.log('✅ Ruangan options loaded:', aktifRuanganData.length, 'dari total', ruanganData.length);
       } else {
         setFetchErrors(prev => ({ 
           ...prev, 
@@ -1063,8 +1320,6 @@ const LaporanRusakForm = ({
   // Reset aset ketika ruangan berubah
   useEffect(() => {
     if (formData.ruangan_id) {
-      console.log('🏠 Ruangan dipilih ID:', formData.ruangan_id, '- Mereset dan fetch aset...');
-      
       handleChange('aset_id', '');
       handleChange('aset_nama', '');
       handleChange('aset_kode', '');
@@ -1072,7 +1327,6 @@ const LaporanRusakForm = ({
       
       fetchAsetByRuangan(formData.ruangan_id);
     } else {
-      console.log('🏠 Tidak ada ruangan dipilih, kosongkan opsi aset');
       setAsetOptions([]);
       handleChange('aset_id', '');
       handleChange('aset_nama', '');
@@ -1115,7 +1369,7 @@ const LaporanRusakForm = ({
     { value: 'darurat', label: 'Darurat' },
   ], []);
 
-  // Tampilkan skeleton loading dengan desain yang menarik
+  // Tampilkan skeleton loading
   if (loading.ruangan) {
     return (
       <Paper 
@@ -1606,11 +1860,18 @@ const LaporanRusakForm = ({
 
           {/* Upload Foto */}
           <Grid item xs={12}>
-            <FotoUploader
-              photos={formData.foto_kerusakan || []}
-              onPhotosChange={handlePhotosChange}
-              readOnly={readOnly}
-            />
+            <FormFieldWrapper
+              label="Foto Kerusakan"
+              icon={<PhotoCameraIcon />}
+              error={!!errors.foto_kerusakan}
+              helperText={errors.foto_kerusakan || 'Upload foto dokumentasi kerusakan (maksimal 5MB per file)'}
+            >
+              <FotoUploader
+                photos={formData.foto_kerusakan || []}
+                onPhotosChange={handlePhotosChange}
+                readOnly={readOnly}
+              />
+            </FormFieldWrapper>
           </Grid>
 
           {/* Prioritas */}
@@ -1671,7 +1932,7 @@ const LaporanRusakForm = ({
             </FormFieldWrapper>
           </Grid>
 
-          {/* Status (Hanya untuk mode edit/readOnly) - TANPA OPSI DRAFT */}
+          {/* Status (Hanya untuk mode edit/readOnly) */}
           {(readOnly || isEdit) && (
             <Grid item xs={12} md={6}>
               <FormFieldWrapper

@@ -55,9 +55,6 @@ const formatDateForMySQL = (dateValue) => {
 };
 
 // ========== GET ALL LAPORAN RUSAK ==========
-// backend/routes/laporansRusak.js
-
-// ========== GET ALL LAPORAN RUSAK ==========
 router.get('/', keycloakAuth, async (req, res) => {
     try {
         const { 
@@ -66,7 +63,7 @@ router.get('/', keycloakAuth, async (req, res) => {
         } = req.query;
         const offset = (page - 1) * limit;
         
-        // Query dengan JOIN ke tabel pic_ruangan
+        // Query dengan JOIN ke tabel pic_ruangan dan detail perbaikan
         let query = `
             SELECT 
                 lr.*, 
@@ -80,11 +77,22 @@ router.get('/', keycloakAuth, async (req, res) => {
                 pr.id as pic_id,
                 pr.user_id as pic_user_id,
                 pr.tgl_penugasan as pic_tgl_penugasan,
-                pr.status as pic_status
+                pr.status as pic_status,
+                -- Data detail perbaikan
+                dp.id as detail_perbaikan_id,
+                dp.hasil_perbaikan,
+                dp.tanggal_selesai,
+                dp.rating,
+                dp.biaya_aktual,
+                dp.dokumentasi,
+                dp.rekomendasi,
+                dp.nama_vendor,
+                dp.no_kontrak
             FROM laporan_rusak lr
             LEFT JOIN master_aset a ON lr.aset_id = a.id
             LEFT JOIN ruangan r ON lr.ruangan_id = r.id
             LEFT JOIN pic_ruangan pr ON lr.ruangan_id = pr.ruangan_id AND pr.status = 'aktif'
+            LEFT JOIN detail_perbaikan dp ON lr.id = dp.laporan_id
             WHERE 1=1
         `;
         const params = [];
@@ -176,6 +184,7 @@ router.get('/', keycloakAuth, async (req, res) => {
                     is_active: row.is_active,
                     created_at: row.created_at,
                     updated_at: row.updated_at,
+                    estimasi_biaya: row.estimasi_biaya,
                     
                     aset_nama: row.aset_nama || `Aset ID: ${row.aset_id}`,
                     aset_kode: row.aset_kode || '',
@@ -185,21 +194,38 @@ router.get('/', keycloakAuth, async (req, res) => {
                     ruangan_lokasi: row.lokasi || '',
                     
                     // Data PIC akan dikumpulkan
-                    pic_ruangan: []
+                    pic_ruangan: [],
+                    
+                    // Data detail perbaikan
+                    detail_perbaikan: row.detail_perbaikan_id ? {
+                        id: row.detail_perbaikan_id,
+                        hasil_perbaikan: row.hasil_perbaikan,
+                        tanggal_selesai: row.tanggal_selesai,
+                        rating: row.rating,
+                        biaya_aktual: row.biaya_aktual,
+                        dokumentasi: row.dokumentasi,
+                        rekomendasi: row.rekomendasi,
+                        nama_vendor: row.nama_vendor,
+                        no_kontrak: row.no_kontrak
+                    } : null
                 });
             }
             
             // Tambahkan PIC jika ada
             if (row.pic_user_id) {
                 const laporan = laporanMap.get(row.id);
-                laporan.pic_ruangan.push({
-                    id: row.pic_id,
-                    user_id: row.pic_user_id,
-                    nama: userMap[row.pic_user_id]?.nama || row.pic_user_id,
-                    email: userMap[row.pic_user_id]?.email || '-',
-                    tgl_penugasan: row.pic_tgl_penugasan,
-                    status: row.pic_status
-                });
+                // Cek apakah PIC sudah ada
+                const picExists = laporan.pic_ruangan.some(p => p.user_id === row.pic_user_id);
+                if (!picExists) {
+                    laporan.pic_ruangan.push({
+                        id: row.pic_id,
+                        user_id: row.pic_user_id,
+                        nama: userMap[row.pic_user_id]?.nama || row.pic_user_id,
+                        email: userMap[row.pic_user_id]?.email || '-',
+                        tgl_penugasan: row.pic_tgl_penugasan,
+                        status: row.pic_status
+                    });
+                }
             }
         });
         
@@ -260,10 +286,20 @@ router.get('/:id', keycloakAuth, async (req, res) => {
         const [rows] = await db.query(`
             SELECT lr.*, 
                    a.kode_barang as aset_kode, a.nama_barang as aset_nama,
-                   r.kode_ruangan, r.nama_ruangan
+                   r.kode_ruangan, r.nama_ruangan,
+                   dp.id as detail_perbaikan_id,
+                   dp.hasil_perbaikan,
+                   dp.tanggal_selesai,
+                   dp.rating,
+                   dp.biaya_aktual,
+                   dp.dokumentasi,
+                   dp.rekomendasi,
+                   dp.nama_vendor,
+                   dp.no_kontrak
             FROM laporan_rusak lr
             LEFT JOIN master_aset a ON lr.aset_id = a.id
             LEFT JOIN ruangan r ON lr.ruangan_id = r.id
+            LEFT JOIN detail_perbaikan dp ON lr.id = dp.laporan_id
             WHERE lr.id = ?
         `, [id]);
         
@@ -311,13 +347,27 @@ router.get('/:id', keycloakAuth, async (req, res) => {
                 is_active: row.is_active,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
+                estimasi_biaya: row.estimasi_biaya,
                 
                 aset_nama: row.aset_nama,
                 aset_kode: row.aset_kode,
                 ruangan_nama: row.nama_ruangan,
                 ruangan_kode: row.kode_ruangan,
                 pelapor_nama: userDetail?.nama || row.pelapor_id,
-                pelapor_email: userDetail?.email || '-'
+                pelapor_email: userDetail?.email || '-',
+                
+                // Data detail perbaikan
+                detail_perbaikan: row.detail_perbaikan_id ? {
+                    id: row.detail_perbaikan_id,
+                    hasil_perbaikan: row.hasil_perbaikan,
+                    tanggal_selesai: row.tanggal_selesai,
+                    rating: row.rating,
+                    biaya_aktual: row.biaya_aktual,
+                    dokumentasi: row.dokumentasi,
+                    rekomendasi: row.rekomendasi,
+                    nama_vendor: row.nama_vendor,
+                    no_kontrak: row.no_kontrak
+                } : null
             }
         });
     } catch (error) {
@@ -325,55 +375,6 @@ router.get('/:id', keycloakAuth, async (req, res) => {
         res.status(500).json({ 
             success: false, 
             message: 'Internal server error',
-            error: error.message 
-        });
-    }
-});
-
-// ========== GET LAPORAN BY USER ==========
-router.get('/user/:userId', keycloakAuth, async (req, res) => {
-    try {
-        const { userId } = req.params;
-        
-        const [rows] = await db.query(`
-            SELECT lr.*, 
-                   a.kode_barang as aset_kode, a.nama_barang as aset_nama,
-                   r.kode_ruangan, r.nama_ruangan
-            FROM laporan_rusak lr
-            LEFT JOIN master_aset a ON lr.aset_id = a.id
-            LEFT JOIN ruangan r ON lr.ruangan_id = r.id
-            WHERE lr.pelapor_id = ?
-            ORDER BY lr.tgl_laporan DESC
-        `, [userId]);
-        
-        const laporanList = rows.map(row => {
-            let fotoKerusakan = [];
-            try {
-                if (row.foto_kerusakan) {
-                    fotoKerusakan = JSON.parse(row.foto_kerusakan);
-                }
-            } catch (e) {
-                console.warn(`Error parsing foto_kerusakan for laporan ${row.id}:`, e.message);
-                fotoKerusakan = [];
-            }
-            
-            return {
-                ...row,
-                foto_kerusakan: fotoKerusakan,
-                aset_nama: row.aset_nama || `Aset ID: ${row.aset_id}`,
-                ruangan_nama: row.nama_ruangan || `Ruangan ID: ${row.ruangan_id}`
-            };
-        });
-        
-        res.json({
-            success: true,
-            data: laporanList
-        });
-    } catch (error) {
-        console.error('Error fetching user laporan:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Gagal mengambil data laporan user',
             error: error.message 
         });
     }
@@ -420,7 +421,7 @@ router.post('/', keycloakAuth, async (req, res) => {
                 nomor_laporan, aset_id, ruangan_id, pelapor_id,
                 formattedTglLaporan, deskripsi, 
                 fotoKerusakanJson,
-                prioritas || 'sedang', status || 'draft'
+                prioritas || 'sedang', status || 'menunggu_verifikasi_pic'
             ]
         );
 
@@ -537,81 +538,14 @@ router.delete('/:id', keycloakAuth, async (req, res) => {
 });
 
 // ============================================
-// ENDPOINT VERIFIKASI AWAL (PIC/PPK)
-// ============================================
-// ============================================
-// ENDPOINT VERIFIKASI AWAL (PIC/PPK)
-// ============================================
-// ============================================
-// ENDPOINT VERIFIKASI LAPORAN (MULTI FUNGSI)
-// ============================================
-
-
-// ============================================
-// ENDPOINT SELESAI (PERBAIKAN INTERNAL)
-// ============================================
-router.post('/:id/selesai', keycloakAuth, async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { catatan } = req.body;
-
-        console.log('📥 Selesaikan laporan - Request:', { id, catatan });
-
-        // Cek apakah laporan ada
-        const [existing] = await db.query(
-            'SELECT id, status FROM laporan_rusak WHERE id = ?', 
-            [id]
-        );
-        
-        if (existing.length === 0) {
-            return res.status(404).json({ 
-                success: false, 
-                message: 'Laporan tidak ditemukan' 
-            });
-        }
-
-        // Update status menjadi selesai
-        const catatanLengkap = `[Selesai] ${catatan || 'Laporan selesai diperbaiki oleh tim internal'}`.trim();
-        
-        await db.query(
-            `UPDATE laporan_rusak 
-             SET status = 'selesai', 
-                 deskripsi = CONCAT(deskripsi, '\n\n', ?),
-                 updated_at = NOW()
-             WHERE id = ?`,
-            [catatanLengkap, id]
-        );
-
-        console.log('✅ Selesaikan laporan berhasil:', { id, newStatus: 'selesai' });
-
-        res.json({
-            success: true,
-            message: 'Laporan berhasil diselesaikan',
-            data: { newStatus: 'selesai' }
-        });
-
-    } catch (error) {
-        console.error('❌ Error menyelesaikan laporan:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Gagal menyelesaikan laporan',
-            error: error.message 
-        });
-    }
-});
-
-// Di file router laporan rusak (misalnya laporanRusakRouter.js)
-// routes/laporansRusak.js
-
-// ============================================
-// ENDPOINT VERIFIKASI LAPORAN (MULTI FUNGSI)
+// ENDPOINT VERIFIKASI LAPORAN (PIC)
 // ============================================
 router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const { keputusan, catatan, tipe } = req.body;
+        const { keputusan, catatan, alur } = req.body;
 
-        console.log('📥 Verifikasi request:', { id, keputusan, catatan, tipe });
+        console.log('📥 Verifikasi request:', { id, keputusan, catatan, alur });
 
         // Cek apakah laporan ada
         const [existing] = await db.query(
@@ -627,116 +561,62 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
         }
 
         const currentStatus = existing[0].status;
-        let newStatus;
-        let statusMessage = '';
-        let catatanLengkap = '';
 
-        // ============================================
-        // TIPE 1: VERIFIKASI AWAL (SETUJU/TOLAK)
-        // ============================================
-        if (tipe === 'verifikasi_awal') {
-            if (!keputusan || (keputusan !== 'setuju' && keputusan !== 'tolak')) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Keputusan tidak valid. Gunakan "setuju" atau "tolak" untuk verifikasi awal'
-                });
-            }
-
-            statusMessage = keputusan === 'setuju' ? 'Disetujui' : 'Ditolak';
-
-            if (currentStatus === 'menunggu_verifikasi_pic') {
-                newStatus = keputusan === 'setuju' ? 'diverifikasi_pic' : 'ditolak';
-            } 
-            else if (currentStatus === 'menunggu_verifikasi_ppk') {
-                newStatus = keputusan === 'setuju' ? 'diverifikasi_ppk' : 'ditolak';
-            } 
-            else {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Laporan tidak dalam status yang dapat diverifikasi'
-                });
-            }
-
-            catatanLengkap = `[Verifikasi ${statusMessage}] ${catatan || ''}`.trim();
-            
-            // Update status laporan
-            await db.query(
-                `UPDATE laporan_rusak 
-                 SET status = ?, 
-                     deskripsi = CONCAT(deskripsi, '\n\n', ?),
-                     updated_at = NOW()
-                 WHERE id = ?`,
-                [newStatus, catatanLengkap, id]
-            );
-        }
-        
-        // ============================================
-        // TIPE 2: SELESAI (PERBAIKAN INTERNAL)
-        // ============================================
-        else if (tipe === 'selesai') {
-            newStatus = 'selesai';
-            statusMessage = 'Selesai';
-            catatanLengkap = `[Selesai] ${catatan || 'Laporan selesai diperbaiki oleh tim internal'}`.trim();
-            
-            await db.query(
-                `UPDATE laporan_rusak 
-                 SET status = ?, 
-                     deskripsi = CONCAT(deskripsi, '\n\n', ?),
-                     updated_at = NOW()
-                 WHERE id = ?`,
-                [newStatus, catatanLengkap, id]
-            );
-            
-            console.log('✅ Memproses penyelesaian laporan');
-        }
-        
-        // ============================================
-        // TIPE 3: DISPOSISI (DITERUSKAN KE KABAG TU)
-        // ============================================
-        else if (tipe === 'disposisi') {
-            newStatus = 'diteruskan';
-            statusMessage = 'Diteruskan';
-            
-            catatanLengkap = `[Disposisi] ${catatan || 'Diteruskan ke Kabag TU untuk disposisi'}`.trim();
-            
-            // Update status laporan menjadi 'diteruskan'
-            await db.query(
-                `UPDATE laporan_rusak 
-                 SET status = ?, 
-                     deskripsi = CONCAT(deskripsi, '\n\n', ?),
-                     updated_at = NOW()
-                 WHERE id = ?`,
-                [newStatus, catatanLengkap, id]
-            );
-            
-            console.log('✅ Memproses disposisi laporan ke Kabag TU');
-        }
-        
-        // ============================================
-        // TIPE TIDAK DIKENAL
-        // ============================================
-        else {
+        // Validasi status
+        if (currentStatus !== 'menunggu_verifikasi_pic') {
             return res.status(400).json({
                 success: false,
-                message: 'Tipe verifikasi tidak valid. Gunakan "verifikasi_awal", "selesai", atau "disposisi"'
+                message: `Laporan tidak dalam status menunggu verifikasi PIC. Status saat ini: ${currentStatus}`
             });
         }
+
+        let newStatus;
+        let statusMessage;
+
+        if (keputusan === 'setuju') {
+            if (alur === 'langsung') {
+                newStatus = 'selesai';
+                statusMessage = 'Disetujui dan langsung selesai (perbaikan tanpa anggaran)';
+            } else {
+                newStatus = 'menunggu_disposisi';
+                statusMessage = 'Disetujui, menunggu disposisi Kabag TU';
+            }
+        } else if (keputusan === 'tolak') {
+            newStatus = 'ditolak';
+            statusMessage = 'Ditolak';
+        } else {
+            return res.status(400).json({
+                success: false,
+                message: 'Keputusan tidak valid. Gunakan "setuju" atau "tolak"'
+            });
+        }
+
+        const catatanLengkap = `[Verifikasi PIC - ${statusMessage}] ${catatan || ''}`.trim();
+
+        await db.query(
+            `UPDATE laporan_rusak 
+             SET status = ?, 
+                 deskripsi = CONCAT(deskripsi, '\n\n', ?),
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [newStatus, catatanLengkap, id]
+        );
 
         console.log('✅ Verifikasi berhasil:', {
             id,
             oldStatus: currentStatus,
             newStatus,
-            tipe,
+            alur,
             catatan: catatanLengkap
         });
 
         res.json({
             success: true,
-            message: `Laporan berhasil diproses (${tipe})`,
+            message: `Laporan berhasil diverifikasi`,
             data: { 
                 newStatus,
                 oldStatus: currentStatus,
-                tipe,
+                alur,
                 catatan: catatanLengkap
             }
         });
@@ -752,12 +632,7 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
 });
 
 // ============================================
-// ENDPOINT DISPOSISI OLEH KABAG TU
-// ============================================
-// routes/laporansRusak.js
-
-// ============================================
-// ENDPOINT DISPOSISI OLEH KABAG TU (HANYA KE PPK)
+// ENDPOINT DISPOSISI OLEH KABAG TU (KE PPK)
 // ============================================
 router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
     try {
@@ -798,18 +673,26 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
 
         const laporan = existing[0];
 
+        // Validasi status
+        if (laporan.status !== 'menunggu_disposisi') {
+            return res.status(400).json({
+                success: false,
+                message: `Laporan tidak dalam status menunggu disposisi. Status saat ini: ${laporan.status}`
+            });
+        }
+
         // Simpan disposisi ke tabel disposisi
         await db.query(
             `INSERT INTO disposisi 
-             (laporan_id, kabag_id, tgl_disposisi, tujuan, catatan) 
-             VALUES (?, ?, NOW(), ?, ?)`,
-            [id, userId, tujuan, catatan || '']
+             (laporan_id, kabag_id, tgl_disposisi, tujuan, catatan, estimasi_biaya) 
+             VALUES (?, ?, NOW(), ?, ?, ?)`,
+            [id, userId, tujuan, catatan || '', estimasi_biaya]
         );
 
-        // Update status laporan - HANYA update status, TIDAK update estimasi_biaya
+        // Update status laporan menjadi 'menunggu_verifikasi_ppk'
         const newStatus = 'menunggu_verifikasi_ppk';
         const statusMessage = 'Diteruskan ke PPK untuk verifikasi anggaran';
-        const catatanLengkap = `[Disposisi oleh Kabag TU] ${statusMessage}. ${catatan || ''}`.trim();
+        const catatanLengkap = `[Disposisi oleh Kabag TU] ${statusMessage}. Estimasi biaya: Rp ${parseFloat(estimasi_biaya).toLocaleString()}. ${catatan || ''}`.trim();
 
         await db.query(
             `UPDATE laporan_rusak 
@@ -820,14 +703,12 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
             [newStatus, catatanLengkap, id]
         );
 
-        // Estimasi biaya akan disimpan saat PPK melakukan verifikasi
-        // Tidak perlu disimpan di sini karena akan disimpan di tabel verifikasi_ppk
-
         console.log('✅ Disposisi berhasil:', {
             id,
             oldStatus: laporan.status,
             newStatus,
-            tujuan
+            tujuan,
+            estimasi_biaya
         });
 
         res.json({
@@ -836,7 +717,7 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
             data: { 
                 newStatus,
                 tujuan,
-                estimasi_biaya // Kembalikan estimasi biaya ke frontend
+                estimasi_biaya
             }
         });
 
@@ -853,11 +734,6 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
 // ============================================
 // ENDPOINT VERIFIKASI PPK
 // ============================================
-// routes/laporansRusak.js
-
-// ============================================
-// ENDPOINT VERIFIKASI PPK
-// ============================================
 router.post('/:id/verifikasi-ppk', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
@@ -865,6 +741,14 @@ router.post('/:id/verifikasi-ppk', keycloakAuth, async (req, res) => {
         const userId = req.user?.sub || req.user?.id;
 
         console.log('📥 Verifikasi PPK request:', { id, hasil_verifikasi, catatan, estimasi_biaya });
+
+        // Validasi input
+        if (!hasil_verifikasi || (hasil_verifikasi !== 'disetujui' && hasil_verifikasi !== 'ditolak')) {
+            return res.status(400).json({
+                success: false,
+                message: 'Hasil verifikasi harus "disetujui" atau "ditolak"'
+            });
+        }
 
         // Cek apakah laporan ada
         const [existing] = await db.query(
@@ -881,7 +765,15 @@ router.post('/:id/verifikasi-ppk', keycloakAuth, async (req, res) => {
 
         const laporan = existing[0];
 
-        // Simpan verifikasi PPK ke tabel verifikasi_ppk (dengan estimasi_biaya)
+        // Validasi status
+        if (laporan.status !== 'menunggu_verifikasi_ppk') {
+            return res.status(400).json({
+                success: false,
+                message: `Laporan tidak dalam status menunggu verifikasi PPK. Status saat ini: ${laporan.status}`
+            });
+        }
+
+        // Simpan verifikasi PPK ke tabel verifikasi_ppk
         await db.query(
             `INSERT INTO verifikasi_ppk 
              (laporan_id, ppk_id, tgl_verifikasi, hasil_verifikasi, estimasi_biaya, catatan) 
@@ -896,17 +788,14 @@ router.post('/:id/verifikasi-ppk', keycloakAuth, async (req, res) => {
         if (hasil_verifikasi === 'disetujui') {
             newStatus = 'dalam_perbaikan';
             statusMessage = 'Anggaran disetujui, siap untuk perbaikan';
-        } else if (hasil_verifikasi === 'ditolak') {
+        } else {
             newStatus = 'ditolak';
             statusMessage = 'Anggaran ditolak';
-        } else {
-            newStatus = 'menunggu_revisi';
-            statusMessage = 'Perlu revisi anggaran';
         }
 
         const catatanLengkap = `[Verifikasi PPK] ${statusMessage}. ${catatan || ''}`.trim();
 
-        // Update laporan - HANYA update status, TIDAK update estimasi_biaya
+        // Update laporan
         await db.query(
             `UPDATE laporan_rusak 
              SET status = ?, 
@@ -928,7 +817,7 @@ router.post('/:id/verifikasi-ppk', keycloakAuth, async (req, res) => {
             message: 'Verifikasi PPK berhasil',
             data: { 
                 newStatus,
-                estimasi_biaya // Kembalikan estimasi biaya
+                estimasi_biaya
             }
         });
 
@@ -942,19 +831,228 @@ router.post('/:id/verifikasi-ppk', keycloakAuth, async (req, res) => {
     }
 });
 
+// ============================================
+// ENDPOINT SELESAIKAN PERBAIKAN (PIC RUANGAN)
+// ============================================
+router.post('/:id/selesaikan-perbaikan', keycloakAuth, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { 
+            hasil_perbaikan, 
+            catatan, 
+            tanggal_selesai,
+            rating,
+            biaya_aktual,
+            dokumentasi,
+            rekomendasi,
+            nama_vendor,
+            no_kontrak
+        } = req.body;
 
+        const userId = req.user?.sub || req.user?.id;
+
+        console.log('🔧 SELESAIKAN PERBAIKAN - Request:', { 
+            id, 
+            hasil_perbaikan, 
+            tanggal_selesai,
+            rating,
+            biaya_aktual,
+            nama_vendor
+        });
+
+        // Validasi input
+        if (!hasil_perbaikan) {
+            return res.status(400).json({
+                success: false,
+                message: 'Hasil perbaikan harus diisi'
+            });
+        }
+
+        // Validasi hasil_perbaikan
+        const validHasil = ['internal', 'eksternal', 'gagal'];
+        if (!validHasil.includes(hasil_perbaikan)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Hasil perbaikan tidak valid. Gunakan: internal, eksternal, atau gagal'
+            });
+        }
+
+        // Validasi nama vendor jika eksternal
+        if (hasil_perbaikan === 'eksternal' && !nama_vendor) {
+            return res.status(400).json({
+                success: false,
+                message: 'Nama vendor wajib diisi untuk perbaikan eksternal'
+            });
+        }
+
+        // Cek apakah laporan ada
+        const [existing] = await db.query(
+            'SELECT * FROM laporan_rusak WHERE id = ?', 
+            [id]
+        );
+        
+        if (existing.length === 0) {
+            return res.status(404).json({ 
+                success: false, 
+                message: 'Laporan tidak ditemukan' 
+            });
+        }
+
+        const laporan = existing[0];
+
+        // Validasi status
+        if (laporan.status !== 'dalam_perbaikan') {
+            return res.status(400).json({
+                success: false,
+                message: `Laporan tidak dalam status dalam_perbaikan. Status saat ini: ${laporan.status}`
+            });
+        }
+
+        // Cek apakah sudah ada detail perbaikan
+        const [existingDetail] = await db.query(
+            'SELECT id FROM detail_perbaikan WHERE laporan_id = ?',
+            [id]
+        );
+
+        // Simpan detail perbaikan
+        const tanggalSelesaiFormatted = tanggal_selesai || formatDateForMySQL(new Date());
+        const biayaAktualValue = biaya_aktual ? parseFloat(biaya_aktual) : null;
+
+        if (existingDetail.length > 0) {
+            // Update detail perbaikan yang sudah ada
+            await db.query(
+                `UPDATE detail_perbaikan 
+                 SET hasil_perbaikan = ?,
+                     tanggal_selesai = ?,
+                     rating = ?,
+                     biaya_aktual = ?,
+                     dokumentasi = ?,
+                     rekomendasi = ?,
+                     nama_vendor = ?,
+                     no_kontrak = ?,
+                     updated_at = NOW()
+                 WHERE laporan_id = ?`,
+                [
+                    hasil_perbaikan,
+                    tanggalSelesaiFormatted,
+                    rating || null,
+                    biayaAktualValue,
+                    dokumentasi || null,
+                    rekomendasi || null,
+                    nama_vendor || null,
+                    no_kontrak || null,
+                    id
+                ]
+            );
+        } else {
+            // Insert detail perbaikan baru
+            await db.query(
+                `INSERT INTO detail_perbaikan 
+                 (laporan_id, hasil_perbaikan, tanggal_selesai, rating, biaya_aktual, dokumentasi, rekomendasi, nama_vendor, no_kontrak)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    id,
+                    hasil_perbaikan,
+                    tanggalSelesaiFormatted,
+                    rating || null,
+                    biayaAktualValue,
+                    dokumentasi || null,
+                    rekomendasi || null,
+                    nama_vendor || null,
+                    no_kontrak || null
+                ]
+            );
+        }
+
+        // Tentukan status baru
+        let newStatus;
+        let statusMessage;
+
+        if (hasil_perbaikan === 'internal' || hasil_perbaikan === 'eksternal') {
+            newStatus = 'selesai';
+            statusMessage = `Perbaikan berhasil dilakukan oleh ${hasil_perbaikan === 'internal' ? 'tim internal' : 'vendor eksternal'}`;
+        } else {
+            newStatus = 'dalam_perbaikan'; // Tetap dalam_perbaikan jika gagal
+            statusMessage = 'Perbaikan gagal, perlu evaluasi lebih lanjut';
+        }
+
+        // Buat catatan lengkap
+        let catatanLengkap = `[Selesaikan Perbaikan - ${hasil_perbaikan === 'internal' ? 'Tim Internal' : hasil_perbaikan === 'eksternal' ? 'Vendor Eksternal' : 'Gagal'}] ${statusMessage}. `;
+        
+        if (catatan) {
+            catatanLengkap += catatan;
+        }
+
+        if (hasil_perbaikan === 'eksternal' && nama_vendor) {
+            catatanLengkap += `\nVendor: ${nama_vendor}`;
+            if (no_kontrak) {
+                catatanLengkap += ` (Kontrak: ${no_kontrak})`;
+            }
+        }
+
+        if (biayaAktualValue) {
+            catatanLengkap += `\nBiaya Aktual: Rp ${biayaAktualValue.toLocaleString()}`;
+        }
+
+        if (rating) {
+            catatanLengkap += `\nRating: ${rating}/5`;
+        }
+
+        // Update status laporan
+        await db.query(
+            `UPDATE laporan_rusak 
+             SET status = ?, 
+                 deskripsi = CONCAT(deskripsi, '\n\n', ?),
+                 updated_at = NOW()
+             WHERE id = ?`,
+            [newStatus, catatanLengkap, id]
+        );
+
+        console.log('✅ Selesaikan perbaikan berhasil:', {
+            id,
+            oldStatus: laporan.status,
+            newStatus,
+            hasil: hasil_perbaikan,
+            vendor: nama_vendor || '-'
+        });
+
+        res.json({
+            success: true,
+            message: 'Laporan perbaikan berhasil diselesaikan',
+            data: { 
+                newStatus,
+                hasil_perbaikan,
+                detail_perbaikan: {
+                    id: existingDetail.length > 0 ? existingDetail[0].id : 'new',
+                    hasil_perbaikan,
+                    tanggal_selesai: tanggalSelesaiFormatted,
+                    rating,
+                    biaya_aktual: biayaAktualValue,
+                    nama_vendor
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error selesaikan perbaikan:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Gagal menyelesaikan perbaikan',
+            error: error.message 
+        });
+    }
+});
 
 // ========== GET STATISTICS ==========
 router.get('/statistics', keycloakAuth, async (req, res) => {
     try {
         const [total] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak');
         const [draft] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "draft"');
-        const [menungguVerifikasi] = await db.query(
-            'SELECT COUNT(*) as total FROM laporan_rusak WHERE status LIKE "menunggu_verifikasi%"'
-        );
-        const [dalamPerbaikan] = await db.query(
-            'SELECT COUNT(*) as total FROM laporan_rusak WHERE status IN ("dalam_perbaikan", "didisposisi")'
-        );
+        const [menungguVerifikasiPIC] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "menunggu_verifikasi_pic"');
+        const [menungguDisposisi] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "menunggu_disposisi"');
+        const [menungguVerifikasiPPK] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "menunggu_verifikasi_ppk"');
+        const [diverifikasiPPK] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "diverifikasi_ppk"');
+        const [dalamPerbaikan] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "dalam_perbaikan"');
         const [selesai] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "selesai"');
         const [ditolak] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "ditolak"');
         
@@ -963,7 +1061,10 @@ router.get('/statistics', keycloakAuth, async (req, res) => {
             data: {
                 total: total[0]?.total || 0,
                 draft: draft[0]?.total || 0,
-                menunggu_verifikasi: menungguVerifikasi[0]?.total || 0,
+                menunggu_verifikasi_pic: menungguVerifikasiPIC[0]?.total || 0,
+                menunggu_disposisi: menungguDisposisi[0]?.total || 0,
+                menunggu_verifikasi_ppk: menungguVerifikasiPPK[0]?.total || 0,
+                diverifikasi_ppk: diverifikasiPPK[0]?.total || 0,
                 dalam_perbaikan: dalamPerbaikan[0]?.total || 0,
                 selesai: selesai[0]?.total || 0,
                 ditolak: ditolak[0]?.total || 0
@@ -979,16 +1080,7 @@ router.get('/statistics', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== ENDPOINT BARU: GET ASET BY RUANGAN ==========
-/**
- * GET /api/aset-berdasarkan-ruangan/:ruanganId
- * Mendapatkan aset berdasarkan ruangan dari tabel aset_ruangan
- */
-// backend/routes/laporansRusak.js
-
-// ========== GET ASET BY RUANGAN (PERBAIKI) ==========
-// backend/routes/laporansRusak.js
-
+// ========== GET ASET BY RUANGAN ==========
 router.get('/aset-berdasarkan-ruangan/:ruanganId', keycloakAuth, async (req, res) => {
     try {
         const { ruanganId } = req.params;
@@ -1022,11 +1114,7 @@ router.get('/aset-berdasarkan-ruangan/:ruanganId', keycloakAuth, async (req, res
         
         const [rows] = await db.query(query, [ruanganIdInt]);
         
-        // Log detail untuk debugging
-        console.log(`📊 Data aset untuk ruangan ${ruanganIdInt}:`);
-        rows.forEach(row => {
-            console.log(`   - ID: ${row.id}, ${row.kode_barang} - ${row.nama_barang}`);
-        });
+        console.log(`📊 Data aset untuk ruangan ${ruanganIdInt}: ${rows.length} aset ditemukan`);
         
         res.json({
             success: true,
@@ -1045,10 +1133,6 @@ router.get('/aset-berdasarkan-ruangan/:ruanganId', keycloakAuth, async (req, res
 });
 
 // ========== ENDPOINT RUANGAN ==========
-/**
- * GET /api/ruangan?user_id=xxx&has_pic=true
- * Mendapatkan ruangan berdasarkan PIC user
- */
 router.get('/ruangan', keycloakAuth, async (req, res) => {
     try {
         const { user_id, has_pic } = req.query;
@@ -1098,45 +1182,6 @@ router.get('/ruangan', keycloakAuth, async (req, res) => {
             success: false,
             message: error.message,
             data: []
-        });
-    }
-});
-
-// ========== ENDPOINT OPTIONS (untuk kompatibilitas) ==========
-router.get('/options/aset', keycloakAuth, async (req, res) => {
-    try {
-        const [rows] = await db.query(`
-            SELECT id, kode_barang, nama_barang, merk 
-            FROM master_aset 
-            WHERE is_active = 1
-            ORDER BY kode_barang
-        `);
-        res.json({ success: true, data: rows || [] });
-    } catch (error) {
-        console.error('Error fetching aset options:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Gagal mengambil data aset',
-            error: error.message 
-        });
-    }
-});
-
-router.get('/options/ruangan', keycloakAuth, async (req, res) => {
-    try {
-        const [rows] = await db.query(`
-            SELECT id, kode_ruangan, nama_ruangan, lokasi 
-            FROM ruangan 
-            WHERE is_active = 1 
-            ORDER BY kode_ruangan
-        `);
-        res.json({ success: true, data: rows || [] });
-    } catch (error) {
-        console.error('Error fetching ruangan options:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Gagal mengambil data ruangan',
-            error: error.message 
         });
     }
 });

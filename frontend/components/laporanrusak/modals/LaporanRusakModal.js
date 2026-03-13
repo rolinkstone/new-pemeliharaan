@@ -19,6 +19,7 @@ import {
   Paper,
   useTheme,
   alpha,
+  Rating,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -39,6 +40,10 @@ import {
   ArrowForward as ArrowForwardIcon,
   SupervisorAccount as SupervisorAccountIcon,
   AttachMoney as AttachMoneyIcon,
+  Business as BusinessIcon,
+  Star as StarIcon,
+  Description as DescriptionIcon,
+  ThumbUp as ThumbUpIcon,
 } from '@mui/icons-material';
 import LaporanRusakForm from '../LaporanRusakForm';
 import { format } from 'date-fns';
@@ -106,13 +111,13 @@ const StatusBadge = ({ status, size = 'medium' }) => {
         icon: <AssignmentIcon /> 
       },
       [STATUS.DITERUSKAN]: { 
-        label: 'Diteruskan', 
+        label: 'Diteruskan ke Kabag TU', 
         color: theme.palette.warning.main,
         bgColor: alpha(theme.palette.warning.main, 0.1),
         icon: <ArrowForwardIcon /> 
       },
       [STATUS.DIDISPOSISI]: { 
-        label: 'Didisposisi', 
+        label: 'Didisposisi ke PPK', 
         color: theme.palette.primary.main,
         bgColor: alpha(theme.palette.primary.main, 0.1),
         icon: <PersonIcon /> 
@@ -210,6 +215,43 @@ const InfoCard = ({ icon, label, value, color = 'primary' }) => {
   );
 };
 
+// ============================================
+// KOMPONEN SECTION CARD
+// ============================================
+const SectionCard = ({ title, icon, color = 'primary', children }) => {
+  const theme = useTheme();
+  
+  return (
+    <Paper 
+      variant="outlined" 
+      sx={{ 
+        p: 3, 
+        mb: 3, 
+        borderRadius: 2,
+        borderColor: alpha(theme.palette[color].main, 0.2),
+        bgcolor: alpha(theme.palette[color].main, 0.02),
+      }}
+    >
+      <Box display="flex" alignItems="center" gap={1} mb={2}>
+        <Avatar
+          sx={{
+            width: 32,
+            height: 32,
+            bgcolor: alpha(theme.palette[color].main, 0.1),
+            color: theme.palette[color].main,
+          }}
+        >
+          {icon}
+        </Avatar>
+        <Typography variant="subtitle1" fontWeight="600" color={theme.palette[color].main}>
+          {title}
+        </Typography>
+      </Box>
+      {children}
+    </Paper>
+  );
+};
+
 const LaporanRusakModal = ({
   open,
   onClose,
@@ -222,6 +264,7 @@ const LaporanRusakModal = ({
   const theme = useTheme();
   const [formData, setFormData] = useState({});
   const [errors, setErrors] = useState({});
+  const [detailPerbaikan, setDetailPerbaikan] = useState(null);
 
   useEffect(() => {
     if (open && initialData) {
@@ -229,8 +272,13 @@ const LaporanRusakModal = ({
       console.log('📥 INITIAL DATA DARI API:', JSON.stringify(initialData, null, 2));
       console.log('='.repeat(50));
       
-      // Debug: Lihat status yang diterima
-      console.log('🔍 STATUS DARI API:', initialData.status);
+      // Debug: Lihat detail perbaikan
+      console.log('🔍 DETAIL PERBAIKAN:', initialData.detail_perbaikan);
+      
+      // Set detail perbaikan jika ada
+      if (initialData.detail_perbaikan) {
+        setDetailPerbaikan(initialData.detail_perbaikan);
+      }
       
       // ============================================
       // FORMAT DATA ASET
@@ -364,12 +412,9 @@ const LaporanRusakModal = ({
       // ============================================
       // PASTIKAN STATUS YANG BENAR
       // ============================================
-      // Jika status dari API adalah 'menunggu_verifikasi_pic' tapi seharusnya 'menunggu_disposisi',
-      // kita bisa melakukan koreksi di sini berdasarkan logika bisnis
       let correctedStatus = initialData.status;
       
       // Logika koreksi status jika diperlukan
-      // Misalnya: jika ada data disposisi, status seharusnya 'menunggu_disposisi'
       if (initialData.status === STATUS.MENUNGGU_VERIFIKASI_PIC && initialData.disposisi_ke) {
         correctedStatus = STATUS.MENUNGGU_DISPOSISI;
         console.log('🔄 Mengkoreksi status dari menunggu_verifikasi_pic -> menunggu_disposisi');
@@ -386,7 +431,7 @@ const LaporanRusakModal = ({
         tgl_laporan: tglLaporan,
         deskripsi: initialData.deskripsi || '',
         prioritas: initialData.prioritas || 'sedang',
-        status: correctedStatus, // Gunakan status yang sudah dikoreksi
+        status: correctedStatus,
         foto_kerusakan: fotoKerusakan,
         created_at: initialData.created_at,
         updated_at: initialData.updated_at,
@@ -415,6 +460,7 @@ const LaporanRusakModal = ({
       
     } else if (open && !initialData) {
       setFormData({});
+      setDetailPerbaikan(null);
     }
   }, [open, initialData]);
 
@@ -422,6 +468,7 @@ const LaporanRusakModal = ({
     if (!loading) {
       setFormData({});
       setErrors({});
+      setDetailPerbaikan(null);
       onClose();
     }
   };
@@ -540,48 +587,154 @@ const LaporanRusakModal = ({
         </Grid>
 
         {/* Detail Kerusakan */}
-        <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-          <Typography variant="subtitle1" fontWeight="600" gutterBottom>
-            Deskripsi Kerusakan
-          </Typography>
+        <SectionCard title="Deskripsi Kerusakan" icon={<DescriptionIcon />} color="info">
           <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
             {formData.deskripsi || '-'}
           </Typography>
-        </Paper>
+        </SectionCard>
 
         {/* Informasi Disposisi (jika ada) */}
         {formData.disposisi_catatan && (
-          <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2, bgcolor: alpha(theme.palette.info.main, 0.02) }}>
-            <Box display="flex" alignItems="center" gap={1} mb={2}>
-              <SupervisorAccountIcon color="info" />
-              <Typography variant="subtitle1" fontWeight="600" color="info.main">
-                Informasi Disposisi
-              </Typography>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
+          <SectionCard title="Informasi Disposisi" icon={<SupervisorAccountIcon />} color="warning">
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', mb: 1 }}>
               {formData.disposisi_catatan}
             </Typography>
             {formData.disposisi_tgl && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                 Tanggal disposisi: {format(new Date(formData.disposisi_tgl), 'dd MMMM yyyy HH:mm', { locale: id })}
               </Typography>
             )}
-          </Paper>
+          </SectionCard>
         )}
 
         {/* Estimasi Biaya (jika ada) */}
         {formData.estimasi_biaya && (
-          <Paper variant="outlined" sx={{ p: 3, mb: 3, borderRadius: 2, bgcolor: alpha(theme.palette.success.main, 0.02) }}>
-            <Box display="flex" alignItems="center" gap={1} mb={2}>
-              <AttachMoneyIcon color="success" />
-              <Typography variant="subtitle1" fontWeight="600" color="success.main">
-                Estimasi Biaya
-              </Typography>
-            </Box>
+          <SectionCard title="Estimasi Biaya" icon={<AttachMoneyIcon />} color="success">
             <Typography variant="body2" fontWeight="600" color="success.main">
               Rp {formData.estimasi_biaya.toLocaleString()}
             </Typography>
-          </Paper>
+          </SectionCard>
+        )}
+
+        {/* ============================================
+            DETAIL PERBAIKAN - DITAMBAHKAN
+            ============================================ */}
+        {detailPerbaikan && (
+          <SectionCard 
+            title="Detail Perbaikan" 
+            icon={<BuildIcon />} 
+            color={detailPerbaikan.hasil_perbaikan === 'gagal' ? 'error' : 'success'}
+          >
+            {/* Hasil Perbaikan */}
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                Hasil Perbaikan:
+              </Typography>
+              <Chip
+                icon={detailPerbaikan.hasil_perbaikan === 'internal' ? <BuildIcon /> : 
+                      detailPerbaikan.hasil_perbaikan === 'eksternal' ? <BusinessIcon /> : 
+                      <ErrorIcon />}
+                label={detailPerbaikan.hasil_perbaikan === 'internal' ? 'Berhasil (Tim Internal)' :
+                       detailPerbaikan.hasil_perbaikan === 'eksternal' ? 'Berhasil (Vendor Eksternal)' :
+                       'Gagal'}
+                size="small"
+                sx={{
+                  bgcolor: detailPerbaikan.hasil_perbaikan === 'internal' ? alpha(theme.palette.success.main, 0.1) :
+                           detailPerbaikan.hasil_perbaikan === 'eksternal' ? alpha(theme.palette.info.main, 0.1) :
+                           alpha(theme.palette.error.main, 0.1),
+                  color: detailPerbaikan.hasil_perbaikan === 'internal' ? theme.palette.success.main :
+                         detailPerbaikan.hasil_perbaikan === 'eksternal' ? theme.palette.info.main :
+                         theme.palette.error.main,
+                  fontWeight: 600,
+                }}
+              />
+            </Box>
+
+            {/* Tanggal Selesai */}
+            {detailPerbaikan.tanggal_selesai && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                  Tanggal Selesai:
+                </Typography>
+                <Typography variant="body2">
+                  {format(new Date(detailPerbaikan.tanggal_selesai), 'dd MMMM yyyy', { locale: id })}
+                </Typography>
+              </Box>
+            )}
+
+            {/* Rating */}
+            {detailPerbaikan.rating && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                  Rating Kualitas:
+                </Typography>
+                <Box display="flex" alignItems="center" gap={1}>
+                  <Rating value={detailPerbaikan.rating} readOnly size="small" />
+                  <Typography variant="body2" color="text.secondary">
+                    ({detailPerbaikan.rating}/5)
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+
+            {/* Biaya Aktual */}
+            {detailPerbaikan.biaya_aktual && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                  Biaya Aktual:
+                </Typography>
+                <Typography variant="body2" fontWeight="600" color="success.main">
+                  Rp {detailPerbaikan.biaya_aktual.toLocaleString()}
+                </Typography>
+              </Box>
+            )}
+
+            {/* Vendor (jika eksternal) */}
+            {detailPerbaikan.nama_vendor && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                  Vendor:
+                </Typography>
+                <Typography variant="body2">
+                  {detailPerbaikan.nama_vendor}
+                  {detailPerbaikan.no_kontrak && ` (Kontrak: ${detailPerbaikan.no_kontrak})`}
+                </Typography>
+              </Box>
+            )}
+
+            {/* Catatan Perbaikan */}
+            {detailPerbaikan.catatan && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                  Catatan Perbaikan:
+                </Typography>
+                <Paper variant="outlined" sx={{ p: 1.5, bgcolor: alpha(theme.palette.background.default, 0.5) }}>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {detailPerbaikan.catatan}
+                  </Typography>
+                </Paper>
+              </Box>
+            )}
+
+            {/* ===== REKOMENDASI - INI YANG DITAMBAHKAN ===== */}
+            {detailPerbaikan.rekomendasi && (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    <ThumbUpIcon fontSize="inherit" />
+                    Rekomendasi / Catatan Tambahan:
+                  </Box>
+                </Typography>
+                <Paper variant="outlined" sx={{ p: 1.5, bgcolor: alpha(theme.palette.success.main, 0.03) }}>
+                  <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                    {detailPerbaikan.rekomendasi}
+                  </Typography>
+                </Paper>
+              </Box>
+            )}
+
+          
+          </SectionCard>
         )}
       </Box>
     );

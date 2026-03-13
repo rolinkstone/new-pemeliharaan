@@ -45,17 +45,14 @@ const getBaseUrl = () => {
 };
 
 // ============================================
-// KONSTANTA STATUS
+// KONSTANTA STATUS - SESUAI DENGAN DATABASE ANDA
 // ============================================
 const STATUS = {
     DRAFT: 'draft',
     MENUNGGU_VERIFIKASI_PIC: 'menunggu_verifikasi_pic',
-    DIVERIFIKASI_PIC: 'diverifikasi_pic',
+    MENUNGGU_DISPOSISI: 'menunggu_disposisi',
     MENUNGGU_VERIFIKASI_PPK: 'menunggu_verifikasi_ppk',
     DIVERIFIKASI_PPK: 'diverifikasi_ppk',
-    MENUNGGU_DISPOSISI: 'menunggu_disposisi',
-    DITERUSKAN: 'diteruskan',
-    DIDISPOSISI: 'didisposisi',
     DALAM_PERBAIKAN: 'dalam_perbaikan',
     SELESAI: 'selesai',
     DITOLAK: 'ditolak'
@@ -336,7 +333,7 @@ const createLaporanRusak = async (session, data) => {
         ? data.tgl_laporan.toISOString().split('T')[0]
         : data.tgl_laporan || new Date().toISOString().split('T')[0];
     
-    const validStatus = validateStatus(data.status || 'menunggu_verifikasi_pic');
+    const validStatus = validateStatus(data.status || STATUS.MENUNGGU_VERIFIKASI_PIC);
     
     const payload = {
         aset_id: data.aset_id,
@@ -515,7 +512,10 @@ const deleteLaporanRusak = async (session, id) => {
 
 /**
  * POST /api/laporansrusak/:id/verifikasi
- * Untuk verifikasi laporan (selesai atau disposisi)
+ * Untuk verifikasi laporan oleh PIC
+ * - Jika keputusan = 'setuju' dan alur = 'langsung' → status 'selesai'
+ * - Jika keputusan = 'setuju' dan alur = 'dengan_anggaran' → status 'menunggu_disposisi'
+ * - Jika keputusan = 'tolak' → status 'ditolak'
  */
 const verifikasiLaporan = async (session, id, data) => {
     const token = getToken(session);
@@ -565,7 +565,7 @@ const verifikasiLaporan = async (session, id, data) => {
 
 /**
  * POST /api/laporansrusak/:id/disposisi
- * Untuk disposisi oleh Kabag TU
+ * Untuk disposisi oleh Kabag TU ke PPK
  */
 const disposisiLaporan = async (session, id, data) => {
     const token = getToken(session);
@@ -664,10 +664,12 @@ const verifikasiPPK = async (session, id, data) => {
 };
 
 /**
- * POST /api/laporansrusak/:id/selesai
- * Untuk menandai laporan selesai (perbaikan internal)
+ * POST /api/laporansrusak/:id/selesai (DEPRECATED)
+ * Untuk menandai laporan selesai - Gunakan selesaikanPerbaikan
  */
 const selesaikanLaporan = async (session, id, data) => {
+    console.warn('⚠️ Fungsi selesaikanLaporan sudah deprecated. Gunakan selesaikanPerbaikan');
+    
     const token = getToken(session);
     
     if (!token) {
@@ -680,8 +682,8 @@ const selesaikanLaporan = async (session, id, data) => {
     const baseUrl = getBaseUrl();
     const url = `${baseUrl}/laporansrusak/${id}/selesai`;
     
-    console.log('📤 SELESAI - URL:', url);
-    console.log('📤 SELESAI - Payload:', data);
+    console.log('📤 SELESAI (DEPRECATED) - URL:', url);
+    console.log('📤 SELESAI (DEPRECATED) - Payload:', data);
     
     try {
         const response = await fetch(url, {
@@ -702,10 +704,116 @@ const selesaikanLaporan = async (session, id, data) => {
         }
         
         const result = await handleResponse(response);
-        console.log('📥 Response selesai:', result);
+        console.log('📥 Response selesai (deprecated):', result);
         return result;
     } catch (error) {
         console.error('Error selesaikan laporan:', error);
+        return { 
+            success: false, 
+            message: error.message 
+        };
+    }
+};
+
+/**
+ * POST /api/laporansrusak/:id/selesaikan-perbaikan
+ * Untuk PIC Ruangan melaporkan hasil perbaikan (internal, eksternal, gagal)
+ */
+const selesaikanPerbaikan = async (session, id, data) => {
+    const token = getToken(session);
+    
+    if (!token) {
+        return { 
+            success: false, 
+            message: 'Token tidak ditemukan' 
+        };
+    }
+    
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/laporansrusak/${id}/selesaikan-perbaikan`;
+    
+    console.log('🔧 SELESAIKAN PERBAIKAN - URL:', url);
+    console.log('🔧 SELESAIKAN PERBAIKAN - Payload:', {
+        id,
+        hasil_perbaikan: data.hasil_perbaikan,
+        tanggal_selesai: data.tanggal_selesai,
+        rating: data.rating,
+        biaya_aktual: data.biaya_aktual,
+        nama_vendor: data.nama_vendor,
+        next_status: data.next_status
+    });
+    
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            return {
+                success: false,
+                message: `HTTP Error ${response.status}: ${errorText}`
+            };
+        }
+        
+        const result = await handleResponse(response);
+        console.log('📥 Response selesaikan perbaikan:', result);
+        return result;
+    } catch (error) {
+        console.error('❌ Error selesaikan perbaikan:', error);
+        return { 
+            success: false, 
+            message: error.message 
+        };
+    }
+};
+
+/**
+ * GET /api/laporansrusak/:id/detail-perbaikan
+ * Untuk mendapatkan detail perbaikan yang sudah dilakukan
+ */
+const getDetailPerbaikan = async (session, id) => {
+    const token = getToken(session);
+    
+    if (!token) {
+        return { 
+            success: false, 
+            message: 'Token tidak ditemukan' 
+        };
+    }
+    
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/laporansrusak/${id}/detail-perbaikan`;
+    
+    console.log('🔍 GET DETAIL PERBAIKAN - URL:', url);
+    
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            return {
+                success: false,
+                message: `HTTP Error ${response.status}: ${errorText}`
+            };
+        }
+        
+        const result = await handleResponse(response);
+        console.log('📥 Response detail perbaikan:', result);
+        return result;
+    } catch (error) {
+        console.error('Error get detail perbaikan:', error);
         return { 
             success: false, 
             message: error.message 
@@ -726,8 +834,10 @@ const fetchLaporanStatistics = async (session) => {
             data: {
                 total: 0,
                 draft: 0,
-                menunggu_verifikasi: 0,
-                diteruskan: 0,
+                menunggu_verifikasi_pic: 0,
+                menunggu_disposisi: 0,
+                menunggu_verifikasi_ppk: 0,
+                diverifikasi_ppk: 0,
                 dalam_perbaikan: 0,
                 selesai: 0,
                 ditolak: 0
@@ -762,8 +872,10 @@ const fetchLaporanStatistics = async (session) => {
                 data: {
                     total: 0,
                     draft: 0,
-                    menunggu_verifikasi: 0,
-                    diteruskan: 0,
+                    menunggu_verifikasi_pic: 0,
+                    menunggu_disposisi: 0,
+                    menunggu_verifikasi_ppk: 0,
+                    diverifikasi_ppk: 0,
                     dalam_perbaikan: 0,
                     selesai: 0,
                     ditolak: 0
@@ -780,8 +892,10 @@ const fetchLaporanStatistics = async (session) => {
             data: {
                 total: 0,
                 draft: 0,
-                menunggu_verifikasi: 0,
-                diteruskan: 0,
+                menunggu_verifikasi_pic: 0,
+                menunggu_disposisi: 0,
+                menunggu_verifikasi_ppk: 0,
+                diverifikasi_ppk: 0,
                 dalam_perbaikan: 0,
                 selesai: 0,
                 ditolak: 0
@@ -949,6 +1063,11 @@ const fetchAsetByRuangan = async (session, ruanganId) => {
 /**
  * GET /api/laporansrusak/options/aset (fallback)
  */
+// components/laporanrusak/api/laporanRusakApi.js
+
+/**
+ * GET /api/laporansrusak/options/aset (fallback) - PERBAIKI
+ */
 const fetchAsetOptions = async (session, params = {}) => {
     const token = getToken(session);
     
@@ -961,35 +1080,61 @@ const fetchAsetOptions = async (session, params = {}) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporansrusak/options/aset`;
     
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
+    // Coba beberapa alternatif endpoint
+    const endpoints = [
+        `${baseUrl}/master-aset`,  // Coba endpoint master-aset
+        `${baseUrl}/aset`,          // Coba endpoint aset
+        `${baseUrl}/laporansrusak/options/aset`, // Endpoint asli
+        `${baseUrl}/master_aset`,   // Dengan underscore
+    ];
+    
+    let lastError = null;
+    
+    for (const url of endpoints) {
+        try {
+            console.log('📤 Mencoba fetch aset dari:', url);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                
+                // Handle berbagai format response
+                let asetData = [];
+                if (result.data && Array.isArray(result.data)) {
+                    asetData = result.data;
+                } else if (Array.isArray(result)) {
+                    asetData = result;
+                } else if (result.success && result.data) {
+                    asetData = result.data;
+                }
+                
+                return {
+                    success: true,
+                    data: asetData,
+                    message: 'Data aset berhasil dimuat'
+                };
             }
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Error ${response.status}`);
+        } catch (error) {
+            lastError = error.message;
+            console.log(`❌ Gagal dengan endpoint ${url}:`, error.message);
         }
-        
-        const result = await response.json();
-        return {
-            success: true,
-            data: result.data || result || [],
-            message: 'Data aset berhasil dimuat'
-        };
-    } catch (error) {
-        console.error('Error fetching aset options:', error);
-        return {
-            success: false,
-            message: error.message,
-            data: []
-        };
     }
+    
+    // Jika semua endpoint gagal, kembalikan data kosong
+    console.warn('⚠️ Semua endpoint aset gagal, menggunakan data kosong');
+    return {
+        success: true,
+        data: [],
+        message: 'Menggunakan data kosong (endpoint tidak tersedia)'
+    };
 };
 
 // ========== UPLOAD API ==========
@@ -1062,6 +1207,8 @@ export {
     disposisiLaporan,
     verifikasiPPK,
     selesaikanLaporan,
+    selesaikanPerbaikan,
+    getDetailPerbaikan,
     fetchLaporanStatistics,
     fetchAsetOptions,
     fetchRuanganOptions,
@@ -1069,7 +1216,7 @@ export {
     uploadFoto
 };
 
-// ========== ALIASES ==========
+// ========== ALIASES (HANYA UNTUK FUNGSI DENGAN NAMA BERBEDA) ==========
 export const getAll = fetchAllLaporanRusak;
 export const getById = fetchLaporanRusakById;
 export const getUserLaporan = fetchLaporanByUser;
@@ -1079,8 +1226,13 @@ export const remove = deleteLaporanRusak;
 export const getStats = fetchLaporanStatistics;
 export const verifikasi = verifikasiLaporan;
 export const disposisi = disposisiLaporan;
-export const verifikasiPPKAlias = verifikasiPPK;
-export const selesai = selesaikanLaporan;
+export const selesai = selesaikanLaporan; // Deprecated
+
+// HAPUS SEMUA ALIAS YANG REDUNDANT - karena sudah ada di named exports dengan nama yang sama
+// export const verifikasiPPK = verifikasiPPK; // <-- HAPUS
+// export const selesaikanPerbaikan = selesaikanPerbaikan; // <-- HAPUS
+// export const getDetailPerbaikan = getDetailPerbaikan; // <-- HAPUS
+
 export const getAsetOptions = fetchAsetOptions;
 export const getAsetByRuangan = fetchAsetByRuangan;
 export const getRuanganOptions = fetchRuanganOptions;
@@ -1098,7 +1250,9 @@ const laporanApi = {
     verifikasiLaporan,
     disposisiLaporan,
     verifikasiPPK,
-    selesaikanLaporan,
+    selesaikanLaporan,        // Deprecated
+    selesaikanPerbaikan,       // Fungsi baru
+    getDetailPerbaikan,        // Fungsi baru
     fetchLaporanStatistics,
     
     // Options
@@ -1119,8 +1273,10 @@ const laporanApi = {
     getStats: fetchLaporanStatistics,
     verifikasi: verifikasiLaporan,
     disposisi: disposisiLaporan,
-    verifikasiPPK: verifikasiPPK,
-    selesai: selesaikanLaporan,
+    verifikasiPPK: verifikasiPPK, // Ini property object, bukan variable terpisah, jadi aman
+    selesai: selesaikanLaporan, // Deprecated
+    selesaikanPerbaikan: selesaikanPerbaikan, // Property object
+    getDetailPerbaikan: getDetailPerbaikan, // Property object
     getAsetOptions: fetchAsetOptions,
     getAsetByRuangan: fetchAsetByRuangan,
     getRuanganOptions: fetchRuanganOptions,

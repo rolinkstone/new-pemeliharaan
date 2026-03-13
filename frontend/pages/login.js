@@ -156,7 +156,7 @@ export default function LoginPage() {
   const handleSSOLogin = async () => {
     setIsLoading(true);
     try {
-      await signIn('keycloak', { callbackUrl: '/dashboard' });
+      await signIn('keycloak', { callbackUrl: '/' });
     } catch (err) {
       setError('Gagal terhubung ke server SSO');
       setIsLoading(false);

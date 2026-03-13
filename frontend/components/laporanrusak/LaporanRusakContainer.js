@@ -36,6 +36,7 @@ import LaporanRusakModal from './modals/LaporanRusakModal';
 import VerifikasiModal from './modals/VerifikasiModal';
 import DisposisiModal from './modals/DisposisiModal';
 import VerifikasiPPKModal from './modals/VerifikasiPPKModal';
+import SelesaiPerbaikanModal from './modals/SelesaiPerbaikanModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
 
 const LaporanRusakContainer = () => {
@@ -50,6 +51,7 @@ const LaporanRusakContainer = () => {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState(null);
   const [statistics, setStatistics] = useState(null);
+  const [picData, setPicData] = useState({}); // State untuk data PIC
   
   const [filters, setFilters] = useState({
     status: '',
@@ -71,6 +73,7 @@ const LaporanRusakContainer = () => {
   const [verifikasiModalOpen, setVerifikasiModalOpen] = useState(false);
   const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
   const [verifikasiPPKModalOpen, setVerifikasiPPKModalOpen] = useState(false);
+  const [selesaiPerbaikanModalOpen, setSelesaiPerbaikanModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
@@ -181,6 +184,30 @@ const LaporanRusakContainer = () => {
     });
   };
 
+  // Extract PIC data from the response
+  const extractPicData = useCallback((data) => {
+    const picDetails = {};
+    
+    data.forEach(item => {
+      if (item.ruangan_id) {
+        // Jika data sudah memiliki informasi PIC ruangan
+        if (item.pic_ruangan) {
+          picDetails[item.ruangan_id] = item.pic_ruangan;
+        } 
+        // Atau jika ada informasi pelapor yang bisa dijadikan PIC
+        else if (item.pelapor_id && item.pelapor_nama) {
+          picDetails[item.ruangan_id] = {
+            id: item.pelapor_id,
+            nama: item.pelapor_nama,
+            user_id: item.pelapor_id
+          };
+        }
+      }
+    });
+    
+    setPicData(picDetails);
+  }, []);
+
   // Fetch data
   const fetchData = useCallback(async () => {
     if (!session) {
@@ -206,6 +233,9 @@ const LaporanRusakContainer = () => {
         const sortedData = sortData(processedData);
         setDataList(sortedData);
         
+        // Extract PIC data from the response
+        extractPicData(processedData);
+        
         if (result.pagination) {
           setPagination(prev => ({ ...prev, ...result.pagination }));
         }
@@ -223,7 +253,7 @@ const LaporanRusakContainer = () => {
       setLoading(false);
       setInitialLoading(false);
     }
-  }, [session, filters, pagination.currentPage, pagination.perPage, sortData, fetchStatistics]);
+  }, [session, filters, pagination.currentPage, pagination.perPage, sortData, fetchStatistics, extractPicData]);
 
   // Initial fetch
   useEffect(() => {
@@ -295,6 +325,11 @@ const LaporanRusakContainer = () => {
   const handleVerifikasiPPK = (item) => {
     setSelectedItem(item);
     setVerifikasiPPKModalOpen(true);
+  };
+
+  const handleSelesaiPerbaikan = (item) => {
+    setSelectedItem(item);
+    setSelesaiPerbaikanModalOpen(true);
   };
 
   const handleDelete = (item) => {
@@ -437,6 +472,32 @@ const LaporanRusakContainer = () => {
     }
   };
 
+// components/laporanrusak/LaporanRusakContainer.js
+
+const handleConfirmSelesaiPerbaikan = async (data) => {
+  if (!session || !selectedItem) return;
+  setModalLoading(true);
+  try {
+    // PASTIKAN MENGGUNAKAN selesaikanPerbaikan, BUKAN selesai
+    console.log('🔍 Memanggil fungsi:', laporanApi.selesaikanPerbaikan); // Debug
+    const result = await laporanApi.selesaikanPerbaikan(session, selectedItem.id, data);
+    
+    if (result?.success) {
+      showSnackbar('Perbaikan berhasil diselesaikan', 'success');
+      setSelesaiPerbaikanModalOpen(false);
+      initialFetchDone.current = false;
+      fetchData();
+    } else {
+      showSnackbar(result?.message || 'Gagal menyelesaikan perbaikan', 'error');
+    }
+  } catch (error) {
+    console.error('❌ Error selesaikan perbaikan:', error);
+    showSnackbar(error.message, 'error');
+  } finally {
+    setModalLoading(false);
+  }
+};
+
   const handleConfirmDelete = async () => {
     if (!session || !selectedItem) return;
     setModalLoading(true);
@@ -577,10 +638,12 @@ const LaporanRusakContainer = () => {
         onVerifikasi={handleVerifikasi}
         onDisposisi={handleDisposisi}
         onVerifikasiPPK={handleVerifikasiPPK}
+        onSelesaiPerbaikan={handleSelesaiPerbaikan}
         pagination={pagination}
         onPageChange={handlePageChange}
         sortConfig={sortConfig}
         onSort={handleSort}
+        picData={picData}
       />
 
       <Box mt={2}>
@@ -628,6 +691,14 @@ const LaporanRusakContainer = () => {
         open={verifikasiPPKModalOpen}
         onClose={() => setVerifikasiPPKModalOpen(false)}
         onConfirm={handleConfirmVerifikasiPPK}
+        laporan={selectedItem}
+        loading={modalLoading}
+      />
+
+      <SelesaiPerbaikanModal
+        open={selesaiPerbaikanModalOpen}
+        onClose={() => setSelesaiPerbaikanModalOpen(false)}
+        onConfirm={handleConfirmSelesaiPerbaikan}
         laporan={selectedItem}
         loading={modalLoading}
       />
