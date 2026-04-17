@@ -73,9 +73,10 @@ router.get('/', keycloakAuth, async (req, res) => {
                 r.kode_ruangan, 
                 r.nama_ruangan, 
                 r.lokasi,
-                -- Data PIC dari tabel pic_ruangan
+                -- Data PIC dari tabel pic_ruangan (tambahkan user_name)
                 pr.id as pic_id,
                 pr.user_id as pic_user_id,
+                pr.user_name as pic_user_name,
                 pr.tgl_penugasan as pic_tgl_penugasan,
                 pr.status as pic_status,
                 -- Data detail perbaikan
@@ -193,8 +194,9 @@ router.get('/', keycloakAuth, async (req, res) => {
                     ruangan_kode: row.kode_ruangan || '',
                     ruangan_lokasi: row.lokasi || '',
                     
-                    // Data PIC akan dikumpulkan
-                    pic_ruangan: [],
+                    // ✅ TAMBAHKAN PIC_RUANGAN_NAMA (dari user_name)
+                    pic_ruangan_nama: row.pic_user_name || null,
+                    pic_ruangan_id: row.pic_user_id || null,
                     
                     // Data detail perbaikan
                     detail_perbaikan: row.detail_perbaikan_id ? {
@@ -211,16 +213,16 @@ router.get('/', keycloakAuth, async (req, res) => {
                 });
             }
             
-            // Tambahkan PIC jika ada
+            // Tambahkan PIC ke array jika ada (untuk multiple PIC)
             if (row.pic_user_id) {
                 const laporan = laporanMap.get(row.id);
-                // Cek apakah PIC sudah ada
-                const picExists = laporan.pic_ruangan.some(p => p.user_id === row.pic_user_id);
+                const picExists = laporan.pic_ruangan?.some(p => p.user_id === row.pic_user_id);
                 if (!picExists) {
+                    if (!laporan.pic_ruangan) laporan.pic_ruangan = [];
                     laporan.pic_ruangan.push({
                         id: row.pic_id,
                         user_id: row.pic_user_id,
-                        nama: userMap[row.pic_user_id]?.nama || row.pic_user_id,
+                        nama: row.pic_user_name || userMap[row.pic_user_id]?.nama || row.pic_user_id,
                         email: userMap[row.pic_user_id]?.email || '-',
                         tgl_penugasan: row.pic_tgl_penugasan,
                         status: row.pic_status
@@ -277,7 +279,6 @@ router.get('/', keycloakAuth, async (req, res) => {
         });
     }
 });
-
 // ========== GET LAPORAN BY ID ==========
 // backend/routes/laporansRusak.js
 
