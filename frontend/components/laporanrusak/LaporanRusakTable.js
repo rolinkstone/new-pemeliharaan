@@ -262,7 +262,8 @@ const PICAvatar = ({ pic, size = 32 }) => {
   
   const getDisplayName = (p) => {
     if (!p) return 'PIC';
-    return p.user_name || p.userName || p.nama || p.name || 'PIC';
+    if (typeof p === 'string') return p;
+    return p.user_name || p.userName || p.nama || p.name || p.pic_nama || 'PIC';
   };
 
   if (!pic) {
@@ -324,7 +325,6 @@ const LaporanRusakTable = ({
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [filteredData, setFilteredData] = useState([]);
   const [loadingPIC, setLoadingPIC] = useState(false);
-  const [allPICData, setAllPICData] = useState([]);
 
   // ========== DAPATKAN ROLE USER DARI SESSION (MENGGUNAKAN REALM_ACCESS) ==========
   const realmRoles = session?.user?.realm_access?.roles || [];
@@ -342,57 +342,107 @@ const LaporanRusakTable = ({
   console.log('isPICRuangan:', isPICRuangan);
   console.log('================================');
 
-  // ========== AMBIL SEMUA DATA PIC DARI API ==========
+  // ========== AMBIL DATA PIC DARI BEBERAPA SUMBER ==========
   useEffect(() => {
-    const fetchAllPIC = async () => {
+    const fetchPicData = async () => {
       if (!session?.accessToken) return;
       
       setLoadingPIC(true);
-      try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5002';
-        const response = await fetch(`${baseUrl}/api/picruangan`, {
-          headers: {
-            'Authorization': `Bearer ${session.accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (response.ok) {
-          const result = await response.json();
-          let pics = [];
-          if (result.data && Array.isArray(result.data)) {
-            pics = result.data;
-          } else if (Array.isArray(result)) {
-            pics = result;
+      
+      // Coba beberapa endpoint
+      const endpoints = [
+        `${BASE_URL}/api/picruangan`,
+        `${BASE_URL}/api/pic_ruangan`,
+        `${BASE_URL}/api/ruangan`,
+      ];
+      
+      let pics = [];
+      
+      for (const url of endpoints) {
+        try {
+          console.log(`📤 Mencoba fetch dari: ${url}`);
+          const response = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${session.accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            console.log(`📥 Response dari ${url}:`, result);
+            
+            if (url.includes('ruangan') && !url.includes('pic')) {
+              // Data dari endpoint ruangan
+              let ruanganData = result.data || result;
+              if (Array.isArray(ruanganData)) {
+                ruanganData.forEach(ruangan => {
+                  if (ruangan.id && (ruangan.pic_user_name || ruangan.pic_user_id)) {
+                    pics.push({
+                      ruangan_id: ruangan.id,
+                      user_name: ruangan.pic_user_name,
+                      user_id: ruangan.pic_user_id,
+                    });
+                  }
+                });
+              }
+            } else {
+              // Data dari endpoint picruangan
+              let picData = result.data || result;
+              if (Array.isArray(picData)) {
+                pics = picData;
+              }
+            }
+            
+            if (pics.length > 0) break;
           }
-          
-          console.log('📋 Data PIC dari API:', pics);
-          setAllPICData(pics);
-          
-          // Buat mapping ruangan_id -> data PIC
-          const picMapping = {};
-          pics.forEach(pic => {
-            const ruanganId = pic.ruangan_id || pic.ruanganId;
-            if (ruanganId) {
-              picMapping[ruanganId] = {
-                user_name: pic.user_name || pic.userName,
-                user_id: pic.user_id || pic.userId,
-                ...pic
-              };
+        } catch (error) {
+          console.log(`❌ Error dengan ${url}:`, error.message);
+        }
+      }
+      
+      if (pics.length > 0) {
+        console.log('📋 Data PIC yang ditemukan:', pics);
+        
+        // Buat mapping ruangan_id -> data PIC
+        const picMapping = {};
+        pics.forEach(pic => {
+          const ruanganId = pic.ruangan_id || pic.ruanganId;
+          if (ruanganId) {
+            picMapping[ruanganId] = {
+              user_name: pic.user_name || pic.userName || pic.nama,
+              user_id: pic.user_id || pic.userId,
+            };
+          }
+        });
+        setPicDetails(picMapping);
+        console.log('📋 Mapping PIC by ruangan:', picMapping);
+      } else {
+        console.log('⚠️ Tidak ada data PIC dari API, menggunakan fallback dari data row');
+        
+        // Fallback: Ambil PIC dari data row yang sudah ada
+        const fallbackMapping = {};
+        if (data && data.length > 0) {
+          data.forEach(row => {
+            if (row.ruangan_id) {
+              let picName = row.pic_ruangan_nama || row.pic_nama || row.pic_ruangan;
+              if (picName && typeof picName === 'string') {
+                fallbackMapping[row.ruangan_id] = {
+                  user_name: picName,
+                };
+              }
             }
           });
-          setPicDetails(picMapping);
-          console.log('📋 Mapping PIC by ruangan:', picMapping);
+          setPicDetails(fallbackMapping);
+          console.log('📋 Fallback PIC mapping:', fallbackMapping);
         }
-      } catch (error) {
-        console.error('Error fetching PIC data:', error);
-      } finally {
-        setLoadingPIC(false);
       }
+      
+      setLoadingPIC(false);
     };
     
-    fetchAllPIC();
-  }, [session]);
+    fetchPicData();
+  }, [session, data]);
 
   // ========== FUNGSI CAN VERIFIKASI ==========
   const canVerifikasi = (status) => {
@@ -419,14 +469,27 @@ const LaporanRusakTable = ({
 
     if (isPICRuangan) {
       // Dapatkan daftar ruangan yang menjadi tanggung jawab PIC
-      const userPicRooms = allPICData
-        .filter(pic => {
-          const picUserId = pic.user_id || pic.userId;
-          return picUserId === session?.user?.id;
-        })
-        .map(pic => pic.ruangan_id || pic.ruanganId);
+      // Gunakan data dari picDetails atau dari row
+      const userPicRooms = [];
       
-      console.log('User PIC Rooms from API:', userPicRooms);
+      // Cari dari picDetails
+      Object.entries(picDetails).forEach(([ruanganId, pic]) => {
+        if (pic.user_id === session?.user?.id) {
+          userPicRooms.push(parseInt(ruanganId));
+        }
+      });
+      
+      // Juga cek dari data row
+      data.forEach(row => {
+        const picName = row.pic_ruangan_nama || row.pic_nama;
+        if (picName && picName === session?.user?.name) {
+          if (!userPicRooms.includes(row.ruangan_id)) {
+            userPicRooms.push(row.ruangan_id);
+          }
+        }
+      });
+      
+      console.log('User PIC Rooms:', userPicRooms);
       
       const filtered = data.filter(item => userPicRooms.includes(item.ruangan_id));
       setFilteredData(filtered);
@@ -434,7 +497,7 @@ const LaporanRusakTable = ({
     }
 
     setFilteredData(data);
-  }, [data, isAdmin, isPICRuangan, allPICData, session]);
+  }, [data, isAdmin, isPICRuangan, picDetails, session]);
 
   const handleMenuOpen = (event, row) => {
     event.stopPropagation();
@@ -549,12 +612,25 @@ const LaporanRusakTable = ({
     }
   };
 
-  // Get PIC for room dari mapping yang sudah diambil
-  const getPICForRoom = (ruanganId) => {
-    const pic = picDetails[ruanganId];
-    if (pic) {
+  // Get PIC for room - PRIORITAS dari data row terlebih dahulu
+  const getPICForRoom = (row) => {
+    // Cek dari data row langsung (paling akurat karena dari backend)
+    if (row.pic_ruangan_nama && typeof row.pic_ruangan_nama === 'string') {
+      return { user_name: row.pic_ruangan_nama };
+    }
+    if (row.pic_nama && typeof row.pic_nama === 'string') {
+      return { user_name: row.pic_nama };
+    }
+    if (row.pic_ruangan && typeof row.pic_ruangan === 'string') {
+      return { user_name: row.pic_ruangan };
+    }
+    
+    // Fallback ke mapping dari API
+    const pic = picDetails[row.ruangan_id];
+    if (pic && pic.user_name) {
       return pic;
     }
+    
     return null;
   };
 
@@ -637,7 +713,7 @@ const LaporanRusakTable = ({
                 paginatedData.map((row, index) => {
                   const statusConfig = getStatusConfig(row.status);
                   const priorityConfig = getPriorityConfig(row.prioritas);
-                  const picRuangan = getPICForRoom(row.ruangan_id);
+                  const picRuangan = getPICForRoom(row);
                   const priorityColor = getThemeColor(priorityConfig.color);
 
                   return (
