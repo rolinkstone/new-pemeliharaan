@@ -29,10 +29,6 @@ export const authOptions = {
             role = 'ppk';
           } else if (profile.realm_access.roles.includes('bendahara')) {
             role = 'bendahara';
-          } else if (profile.realm_access.roles.includes('pic_ruangan')) {
-            role = 'pic_ruangan';
-          } else if (profile.realm_access.roles.includes('kabag_tu')) {
-            role = 'kabag_tu';
           }
         }
         
