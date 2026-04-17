@@ -86,14 +86,14 @@ const VerifikasiPPKModal = ({
             pics = result;
           }
           
-          console.log('📋 Semua data PIC:', pics);
+          console.log('📋 Semua data PIC dari API:', pics);
           
           // Cari PIC berdasarkan ruangan_id
           const foundPic = pics.find(pic => pic.ruangan_id === laporan.ruangan_id);
           
           if (foundPic) {
             setPicData(foundPic);
-            console.log('✅ PIC ditemukan:', foundPic);
+            console.log('✅ PIC ditemukan dari API:', foundPic);
           } else {
             console.log('❌ PIC tidak ditemukan untuk ruangan_id:', laporan.ruangan_id);
           }
@@ -151,19 +151,19 @@ const VerifikasiPPKModal = ({
 
   const estimasiBiayaDariPIC = laporan.estimasi_biaya;
   
-  // Ambil nama PIC dari data yang sudah di-fetch
+  // ========== PRIORITAS: Ambil nama PIC dari laporan terlebih dahulu ==========
   let picRuanganNama = '-';
   let picRuanganId = null;
   let picRuanganTglPenugasan = null;
   
-  if (picData) {
-    // Data dari fetch API
-    picRuanganNama = picData.user_name || picData.userName || picData.nama || '-';
-    picRuanganId = picData.user_id || picData.id;
-    picRuanganTglPenugasan = picData.tgl_penugasan;
-    console.log('📋 Menggunakan data PIC dari fetch API:', picRuanganNama);
-  } else if (laporan.pic_ruangan) {
-    // Fallback ke data dari laporan jika ada
+  // PRIORITAS 1: Dari laporan.pic_ruangan_nama (dari backend yang sudah diperbaiki)
+  if (laporan.pic_ruangan_nama && typeof laporan.pic_ruangan_nama === 'string') {
+    picRuanganNama = laporan.pic_ruangan_nama;
+    picRuanganId = laporan.pic_ruangan_id || null;
+    console.log('📋 Menggunakan pic_ruangan_nama dari laporan:', picRuanganNama);
+  }
+  // PRIORITAS 2: Dari laporan.pic_ruangan (object)
+  else if (laporan.pic_ruangan) {
     if (typeof laporan.pic_ruangan === 'object') {
       picRuanganNama = laporan.pic_ruangan.user_name || 
                        laporan.pic_ruangan.userName || 
@@ -175,16 +175,26 @@ const VerifikasiPPKModal = ({
     } else if (typeof laporan.pic_ruangan === 'string') {
       picRuanganNama = laporan.pic_ruangan;
     }
-  } else if (laporan.pic_ruangan_nama) {
-    picRuanganNama = laporan.pic_ruangan_nama;
-  } else if (laporan.pic_nama) {
+  }
+  // PRIORITAS 3: Dari laporan.pic_nama
+  else if (laporan.pic_nama && typeof laporan.pic_nama === 'string') {
     picRuanganNama = laporan.pic_nama;
-  } else if (laporan.pelapor_nama) {
-    // Fallback terakhir ke pelapor_nama
+  }
+  // PRIORITAS 4: Dari data fetch API
+  else if (picData) {
+    picRuanganNama = picData.user_name || picData.userName || picData.nama || '-';
+    picRuanganId = picData.user_id || picData.id;
+    picRuanganTglPenugasan = picData.tgl_penugasan;
+    console.log('📋 Menggunakan data PIC dari fetch API:', picRuanganNama);
+  }
+  // PRIORITAS 5: Fallback ke pelapor_nama
+  else if (laporan.pelapor_nama) {
     picRuanganNama = laporan.pelapor_nama;
+    console.log('📋 Fallback ke pelapor_nama:', picRuanganNama);
   }
 
   console.log('📋 Final PIC Ruangan Nama:', picRuanganNama);
+  console.log('📋 Full laporan object:', laporan);
 
   return (
     <Dialog
