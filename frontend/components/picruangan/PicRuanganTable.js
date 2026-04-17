@@ -48,6 +48,7 @@ const PicRuanganTable = ({
   onPageChange,
   sortConfig,
   onSort,
+  readOnly = false,
 }) => {
   const theme = useTheme();
   const [hoveredRow, setHoveredRow] = useState(null);
@@ -86,6 +87,57 @@ const PicRuanganTable = ({
         label: 'Nonaktif'
       };
     }
+  };
+
+  // Helper function to get user name from various possible fields
+  const getUserName = (item) => {
+    // Priority order for user name
+    if (item.user_name && item.user_name !== '') {
+      return item.user_name;
+    }
+    if (item.user_nama && item.user_nama !== '') {
+      return item.user_nama;
+    }
+    if (item.user_detail?.nama && item.user_detail?.nama !== '') {
+      return item.user_detail.nama;
+    }
+    if (item.nama && item.nama !== '') {
+      return item.nama;
+    }
+    // Fallback to user_id
+    return `User ID: ${item.user_id?.substring(0, 8) || 'Unknown'}`;
+  };
+
+  // Helper function to get user NIP
+  const getUserNip = (item) => {
+    if (item.user_nip && item.user_nip !== '-') return item.user_nip;
+    if (item.user_detail?.nip && item.user_detail?.nip !== '-') return item.user_detail.nip;
+    return null;
+  };
+
+  // Helper function to get user Jabatan
+  const getUserJabatan = (item) => {
+    if (item.user_jabatan && item.user_jabatan !== '-') return item.user_jabatan;
+    if (item.user_detail?.jabatan && item.user_detail?.jabatan !== '-') return item.user_detail.jabatan;
+    return null;
+  };
+
+  // Helper function to get user Email
+  const getUserEmail = (item) => {
+    if (item.user_email && item.user_email !== '-') return item.user_email;
+    if (item.user_detail?.email && item.user_detail?.email !== '-') return item.user_detail.email;
+    return null;
+  };
+
+  // Helper function to get ruangan name
+  const getRuanganName = (item) => {
+    if (item.ruangan_nama && item.ruangan_nama !== '') {
+      return item.ruangan_nama;
+    }
+    if (item.ruangan_detail?.nama_ruangan && item.ruangan_detail?.nama_ruangan !== '') {
+      return item.ruangan_detail.nama_ruangan;
+    }
+    return `Ruangan ID: ${item.ruangan_id}`;
   };
 
   if (loading) {
@@ -236,6 +288,12 @@ const PicRuanganTable = ({
                 const statusConfig = getStatusConfig(item.status);
                 const isHovered = hoveredRow === item.id;
                 const isAktif = item.status === 'aktif';
+                
+                const userName = getUserName(item);
+                const userNip = getUserNip(item);
+                const userJabatan = getUserJabatan(item);
+                const userEmail = getUserEmail(item);
+                const ruanganName = getRuanganName(item);
 
                 return (
                   <TableRow
@@ -281,27 +339,27 @@ const PicRuanganTable = ({
                         </Avatar>
                         <Box>
                           <Typography variant="body2" fontWeight={600}>
-                            {item.user_nama || item.user_id}
+                            {userName}
                           </Typography>
                           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-                            {item.user_nip && item.user_nip !== '-' && (
+                            {userNip && (
                               <Chip
                                 size="small"
                                 icon={<BadgeIcon fontSize="small" />}
-                                label={item.user_nip}
+                                label={userNip}
                                 variant="outlined"
                                 sx={{ height: 20 }}
                               />
                             )}
-                            {item.user_email && item.user_email !== '-' && (
+                            {userEmail && (
                               <Typography variant="caption" color="textSecondary">
-                                {item.user_email}
+                                {userEmail}
                               </Typography>
                             )}
                           </Stack>
-                          {item.user_jabatan && item.user_jabatan !== '-' && (
+                          {userJabatan && (
                             <Typography variant="caption" color="textSecondary">
-                              {item.user_jabatan}
+                              {userJabatan}
                             </Typography>
                           )}
                         </Box>
@@ -323,7 +381,7 @@ const PicRuanganTable = ({
                         </Avatar>
                         <Box>
                           <Typography variant="body2" fontWeight={600}>
-                            {item.ruangan_nama || `Ruangan ID: ${item.ruangan_id}`}
+                            {ruanganName}
                           </Typography>
                           {item.ruangan_kode && (
                             <Typography variant="caption" color="textSecondary">
@@ -386,7 +444,7 @@ const PicRuanganTable = ({
                           </Tooltip>
                         )}
                         
-                        {onEdit && (
+                        {!readOnly && onEdit && (
                           <Tooltip title="Edit Data" arrow>
                             <IconButton
                               size="small"
@@ -403,7 +461,7 @@ const PicRuanganTable = ({
                           </Tooltip>
                         )}
                         
-                        {onDelete && (
+                        {!readOnly && onDelete && (
                           <Tooltip title="Hapus Data" arrow>
                             <IconButton
                               size="small"

@@ -16,6 +16,7 @@ import {
   alpha,
   LinearProgress,
   Fade,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -23,6 +24,7 @@ import {
   Inventory as InventoryIcon,
   Download as DownloadIcon,
   Print as PrintIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import * as asetApi from './api/asetApi';
@@ -49,10 +51,10 @@ const AsetContainer = () => {
     search: '',
   });
   
-  // State untuk sorting - TAMBAHAN BARU
+  // State untuk sorting
   const [sortConfig, setSortConfig] = useState({
-    field: 'id',        // default sort by id
-    direction: 'desc'   // default descending (terbaru dulu)
+    field: 'id',
+    direction: 'desc'
   });
   
   // State untuk modal
@@ -76,6 +78,53 @@ const AsetContainer = () => {
     totalPages: 0,
   });
 
+  // ========== HELPER FUNCTIONS FOR ROLE CHECK ==========
+  const getUserRoles = () => {
+    const roles = [];
+    
+    // Cek dari struktur realm_access (Keycloak standard)
+    if (session?.user?.realm_access?.roles) {
+      roles.push(...session.user.realm_access.roles);
+    }
+    
+    // Cek dari field role langsung (custom structure)
+    if (session?.user?.role) {
+      roles.push(session.user.role);
+    }
+    
+    // Cek dari session?.role
+    if (session?.role) {
+      roles.push(session.role);
+    }
+    
+    // Cek dari user metadata
+    if (session?.user?.metadata?.role) {
+      roles.push(session.user.metadata.role);
+    }
+    
+    // Remove duplicates
+    return [...new Set(roles)];
+  };
+
+  const hasRole = (allowedRoles) => {
+    const userRoles = getUserRoles();
+    console.log('📋 User roles detected:', userRoles);
+    console.log('🔍 Allowed roles:', allowedRoles);
+    const hasAccess = allowedRoles.some(role => userRoles.includes(role));
+    console.log('✅ Has access:', hasAccess);
+    return hasAccess;
+  };
+
+  // Yang bisa modify data: admin_pemeliharaan, admin, superadmin
+  const canModifyData = () => {
+    const allowedRoles = ['admin_pemeliharaan', 'admin', 'superadmin'];
+    return hasRole(allowedRoles);
+  };
+
+  const isReadOnly = () => {
+    return !canModifyData();
+  };
+
   // ========== CEK SESSION ==========
   useEffect(() => {
     if (status === 'loading') return;
@@ -87,6 +136,13 @@ const AsetContainer = () => {
         message: 'Session expired. Silakan login kembali.',
         severity: 'warning',
       });
+    } else {
+      // Log session data untuk debugging
+      console.log('🔐 Full session data:', session);
+      console.log('👤 User object:', session.user);
+      console.log('📋 User roles from helper:', getUserRoles());
+      console.log('🔒 Can modify data:', canModifyData());
+      console.log('📖 Read-only mode:', isReadOnly());
     }
   }, [session, status]);
 
@@ -112,23 +168,19 @@ const AsetContainer = () => {
       let aValue = a[sortConfig.field];
       let bValue = b[sortConfig.field];
       
-      // Handle null/undefined values
       if (aValue === null || aValue === undefined) aValue = '';
       if (bValue === null || bValue === undefined) bValue = '';
       
-      // Handle different data types
       if (typeof aValue === 'number' && typeof bValue === 'number') {
         return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
       }
       
-      // Handle dates
       if (sortConfig.field === 'tanggal_perolehan') {
         const dateA = aValue ? new Date(aValue).getTime() : 0;
         const dateB = bValue ? new Date(bValue).getTime() : 0;
         return sortConfig.direction === 'asc' ? dateA - dateB : dateB - dateA;
       }
       
-      // Handle strings (case-insensitive)
       const strA = String(aValue).toLowerCase();
       const strB = String(bValue).toLowerCase();
       
@@ -153,7 +205,6 @@ const AsetContainer = () => {
     try {
       let result;
       
-      // Apply filters
       if (filters.search) {
         result = await asetApi.searchAset(session, filters.search);
       } else if (filters.jenis) {
@@ -163,7 +214,6 @@ const AsetContainer = () => {
       } else if (filters.status) {
         result = await asetApi.filterByStatus(session, filters.status);
       } else {
-        // Use pagination
         result = await asetApi.fetchPaginatedAset(
           session, 
           pagination.currentPage, 
@@ -174,7 +224,6 @@ const AsetContainer = () => {
       console.log('📥 Data aset:', result);
 
       if (result?.success) {
-        // Apply client-side sorting
         const sortedData = sortDataClientSide(result.data || []);
         setAsetList(sortedData);
         
@@ -185,7 +234,6 @@ const AsetContainer = () => {
           }));
         }
         
-        // Fetch statistics after data load
         fetchStatistics();
       } else {
         const errorMessage = result?.message || 'Gagal memuat data aset';
@@ -217,7 +265,6 @@ const AsetContainer = () => {
       direction: prev.field === field && prev.direction === 'asc' ? 'desc' : 'asc'
     }));
     
-    // Re-sort existing data
     setAsetList(prev => sortDataClientSide(prev));
   };
 
@@ -231,7 +278,7 @@ const AsetContainer = () => {
   // ========== HANDLE FILTER CHANGE ==========
   const handleFilterChange = (newFilters) => {
     setFilters(prev => ({ ...prev, ...newFilters }));
-    setPagination(prev => ({ ...prev, currentPage: 1 })); // Reset ke halaman 1
+    setPagination(prev => ({ ...prev, currentPage: 1 }));
   };
 
   // ========== HANDLE PAGE CHANGE ==========
@@ -253,20 +300,44 @@ const AsetContainer = () => {
     });
   };
 
-  // ========== HANDLE CREATE ==========
+  // ========== HANDLE CREATE (with role check) ==========
   const handleCreate = () => {
+    if (isReadOnly()) {
+      setSnackbar({
+        open: true,
+        message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menambah barang.',
+        severity: 'error',
+      });
+      return;
+    }
     setSelectedAset(null);
     setModalOpen(true);
   };
 
-  // ========== HANDLE EDIT ==========
+  // ========== HANDLE EDIT (with role check) ==========
   const handleEdit = (aset) => {
+    if (isReadOnly()) {
+      setSnackbar({
+        open: true,
+        message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mengubah barang.',
+        severity: 'error',
+      });
+      return;
+    }
     setSelectedAset(aset);
     setModalOpen(true);
   };
 
-  // ========== HANDLE DELETE ==========
+  // ========== HANDLE DELETE (with role check) ==========
   const handleDelete = (aset) => {
+    if (isReadOnly()) {
+      setSnackbar({
+        open: true,
+        message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menghapus barang.',
+        severity: 'error',
+      });
+      return;
+    }
     setSelectedAset(aset);
     setDeleteModalOpen(true);
   };
@@ -277,6 +348,16 @@ const AsetContainer = () => {
       setSnackbar({
         open: true,
         message: 'Session tidak ditemukan',
+        severity: 'error',
+      });
+      return;
+    }
+
+    // Double-check role before submit
+    if (isReadOnly()) {
+      setSnackbar({
+        open: true,
+        message: 'Akses ditolak. Anda tidak memiliki izin untuk menyimpan data.',
         severity: 'error',
       });
       return;
@@ -313,11 +394,20 @@ const AsetContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error submitting aset:', error);
-      setSnackbar({
-        open: true,
-        message: error?.message || 'Terjadi kesalahan saat menyimpan data',
-        severity: 'error',
-      });
+      
+      if (error?.response?.status === 403) {
+        setSnackbar({
+          open: true,
+          message: 'Akses ditolak. Anda tidak memiliki izin untuk melakukan operasi ini.',
+          severity: 'error',
+        });
+      } else {
+        setSnackbar({
+          open: true,
+          message: error?.message || 'Terjadi kesalahan saat menyimpan data',
+          severity: 'error',
+        });
+      }
     } finally {
       setModalLoading(false);
     }
@@ -326,6 +416,16 @@ const AsetContainer = () => {
   // ========== HANDLE CONFIRM DELETE ==========
   const handleConfirmDelete = async () => {
     if (!session || !selectedAset) return;
+
+    // Double-check role before delete
+    if (isReadOnly()) {
+      setSnackbar({
+        open: true,
+        message: 'Akses ditolak. Anda tidak memiliki izin untuk menghapus data.',
+        severity: 'error',
+      });
+      return;
+    }
 
     setModalLoading(true);
 
@@ -350,11 +450,20 @@ const AsetContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error deleting aset:', error);
-      setSnackbar({
-        open: true,
-        message: error?.message || 'Terjadi kesalahan saat menghapus data',
-        severity: 'error',
-      });
+      
+      if (error?.response?.status === 403) {
+        setSnackbar({
+          open: true,
+          message: 'Akses ditolak. Anda tidak memiliki izin untuk menghapus data.',
+          severity: 'error',
+        });
+      } else {
+        setSnackbar({
+          open: true,
+          message: error?.message || 'Terjadi kesalahan saat menghapus data',
+          severity: 'error',
+        });
+      }
     } finally {
       setModalLoading(false);
     }
@@ -393,6 +502,49 @@ const AsetContainer = () => {
   // ========== HANDLE CLOSE SNACKBAR ==========
   const handleCloseSnackbar = () => {
     setSnackbar(prev => ({ ...prev, open: false }));
+  };
+
+  // ========== ROLE BADGE COMPONENT ==========
+  const RoleBadge = () => {
+    const roles = getUserRoles();
+    
+    if (!roles.length) return null;
+    
+    return (
+      <Box sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Typography variant="caption" color="textSecondary">
+          Role Anda:
+        </Typography>
+        {roles.map((role, index) => (
+          <Chip
+            key={index}
+            label={role}
+            size="small"
+            color={role === 'admin_pemeliharaan' || role === 'admin' ? 'primary' : 'default'}
+            variant={role === 'admin_pemeliharaan' || role === 'admin' ? 'filled' : 'outlined'}
+            sx={{ fontSize: '0.7rem' }}
+          />
+        ))}
+        {isReadOnly() && (
+          <Chip
+            label="Read Only Mode"
+            size="small"
+            color="warning"
+            icon={<LockIcon />}
+            sx={{ ml: 1 }}
+          />
+        )}
+        {canModifyData() && (
+          <Chip
+            label="Full Access (Can Add/Edit/Delete)"
+            size="small"
+            color="success"
+            icon={<AddIcon />}
+            sx={{ ml: 1 }}
+          />
+        )}
+      </Box>
+    );
   };
 
   // ========== STATISTICS CARD COMPONENT ==========
@@ -522,17 +674,24 @@ const AsetContainer = () => {
           >
             Print
           </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-            disabled={loading}
-          >
-            Tambah Aset
-          </Button>
+          <Tooltip title={isReadOnly() ? 'Hanya admin_pemeliharaan dan admin yang dapat menambah barang' : 'Tambah aset baru'}>
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
+                onClick={handleCreate}
+                disabled={loading || isReadOnly()}
+              >
+                Tambah Aset
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
+
+      {/* Role Badge for Info */}
+      <RoleBadge />
 
       {/* Statistics Cards */}
       <StatisticsCards />
@@ -558,7 +717,7 @@ const AsetContainer = () => {
         </Box>
       </Fade>
 
-      {/* Table with Sorting */}
+      {/* Table with Sorting - Pass readOnly mode to table */}
       <AsetTable
         data={asetList}
         loading={loading}
@@ -568,6 +727,7 @@ const AsetContainer = () => {
         onPageChange={handlePageChange}
         sortConfig={sortConfig}
         onSort={handleSort}
+        readOnly={isReadOnly()}
       />
 
       {/* Footer Info */}
@@ -589,6 +749,7 @@ const AsetContainer = () => {
         title={selectedAset ? 'Edit Aset' : 'Tambah Aset Baru'}
         loading={modalLoading}
         session={session}
+        readOnly={isReadOnly()}
       />
 
       {/* Delete Confirmation Modal */}

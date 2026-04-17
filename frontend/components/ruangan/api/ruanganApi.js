@@ -50,10 +50,7 @@ const getBaseUrl = () => {
   // Prioritaskan environment variable
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
   
-  if (!apiUrl) {
-    console.warn('⚠️ NEXT_PUBLIC_API_URL tidak ditemukan, menggunakan fallback http://localhost:5002/api');
-    return 'http://localhost:5002/api';
-  }
+ 
   
   // Hapus trailing slash jika ada
   return apiUrl.replace(/\/$/, '');

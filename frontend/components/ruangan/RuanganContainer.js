@@ -17,6 +17,8 @@ import {
   LinearProgress,
   Fade,
   Container,
+  Chip,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -25,6 +27,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Dashboard as DashboardIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import * as ruanganApi from './api/ruanganApi';
@@ -78,6 +81,68 @@ const RuanganContainer = () => {
     total: 0,
     totalPages: 0,
   });
+
+  // ========== HELPER FUNCTIONS FOR ROLE CHECK ==========
+  const getUserRoles = () => {
+    const roles = [];
+    
+    // 1. Dari realm_access (Keycloak standard)
+    if (session?.user?.realm_access?.roles) {
+      roles.push(...session.user.realm_access.roles);
+    }
+    
+    // 2. Dari field role langsung (PENTING! untuk role admin yang ada di session.user.role)
+    if (session?.user?.role) {
+      roles.push(session.user.role);
+    }
+    
+    // 3. Dari session.role
+    if (session?.role) {
+      roles.push(session.role);
+    }
+    
+    // 4. Dari user metadata
+    if (session?.user?.metadata?.role) {
+      roles.push(session.user.metadata.role);
+    }
+    
+    // 5. Dari access token (jika ada)
+    if (session?.accessToken) {
+      try {
+        const base64Url = session.accessToken.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(atob(base64));
+        if (payload.realm_access?.roles) {
+          roles.push(...payload.realm_access.roles);
+        }
+        if (payload.resource_access) {
+          Object.values(payload.resource_access).forEach(resource => {
+            if (resource.roles) {
+              roles.push(...resource.roles);
+            }
+          });
+        }
+      } catch (e) {
+        console.error('Error parsing access token:', e);
+      }
+    }
+    
+    // Remove duplicates
+    return [...new Set(roles)];
+  };
+
+  const hasRole = (allowedRoles) => {
+    const userRoles = getUserRoles();
+    return allowedRoles.some(role => userRoles.includes(role));
+  };
+
+  const canModifyData = () => {
+    return hasRole(['admin_pemeliharaan', 'admin', 'superadmin']);
+  };
+
+  const isReadOnly = () => {
+    return !canModifyData();
+  };
 
   // ========== FETCH STATISTICS ==========
   const fetchStatistics = useCallback(async () => {
@@ -213,8 +278,12 @@ const RuanganContainer = () => {
     showSnackbar('Data berhasil diperbarui', 'success');
   };
 
-  // ========== HANDLE CREATE ==========
+  // ========== HANDLE CREATE (with role check) ==========
   const handleCreate = () => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menambah ruangan.', 'error');
+      return;
+    }
     setSelectedRuangan(null);
     setModalOpen(true);
   };
@@ -225,14 +294,22 @@ const RuanganContainer = () => {
     setViewModalOpen(true);
   };
 
-  // ========== HANDLE EDIT ==========
+  // ========== HANDLE EDIT (with role check) ==========
   const handleEdit = (ruangan) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mengubah ruangan.', 'error');
+      return;
+    }
     setSelectedRuangan(ruangan);
     setModalOpen(true);
   };
 
-  // ========== HANDLE DELETE ==========
+  // ========== HANDLE DELETE (with role check) ==========
   const handleDelete = (ruangan) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menghapus ruangan.', 'error');
+      return;
+    }
     setSelectedRuangan(ruangan);
     setDeleteModalOpen(true);
   };
@@ -241,6 +318,12 @@ const RuanganContainer = () => {
   const handleSubmit = async (formData) => {
     if (!session) {
       showSnackbar('Session tidak ditemukan', 'error');
+      return;
+    }
+
+    // Double-check role before submit
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menyimpan data.', 'error');
       return;
     }
 
@@ -269,7 +352,12 @@ const RuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error submitting ruangan:', error);
-      showSnackbar('Terjadi kesalahan saat menyimpan data', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk melakukan operasi ini.', 'error');
+      } else {
+        showSnackbar('Terjadi kesalahan saat menyimpan data', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
@@ -278,6 +366,12 @@ const RuanganContainer = () => {
   // ========== HANDLE CONFIRM DELETE ==========
   const handleConfirmDelete = async () => {
     if (!session || !selectedRuangan) return;
+
+    // Double-check role before delete
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menghapus data.', 'error');
+      return;
+    }
 
     setModalLoading(true);
 
@@ -293,7 +387,12 @@ const RuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error deleting ruangan:', error);
-      showSnackbar('Terjadi kesalahan saat menghapus data', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menghapus data.', 'error');
+      } else {
+        showSnackbar('Terjadi kesalahan saat menghapus data', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
@@ -306,6 +405,10 @@ const RuanganContainer = () => {
       message,
       severity,
     });
+  };
+
+  const handleCloseSnackbar = () => {
+    setSnackbar(prev => ({ ...prev, open: false }));
   };
 
   // ========== STATISTICS CARDS ==========
@@ -419,15 +522,19 @@ const RuanganContainer = () => {
           >
             Refresh
           </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-            disabled={loading}
-          >
-            Tambah Ruangan
-          </Button>
+          <Tooltip title={isReadOnly() ? 'Hanya admin_pemeliharaan dan admin yang dapat menambah ruangan' : 'Tambah ruangan baru'}>
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
+                onClick={handleCreate}
+                disabled={loading || isReadOnly()}
+              >
+                Tambah Ruangan
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
 
@@ -465,6 +572,7 @@ const RuanganContainer = () => {
         onPageChange={handlePageChange}
         sortConfig={sortConfig}
         onSort={handleSort}
+        readOnly={isReadOnly()}
       />
 
       {/* Footer Info */}
@@ -482,6 +590,7 @@ const RuanganContainer = () => {
         initialData={selectedRuangan}
         title={selectedRuangan ? 'Edit Ruangan' : 'Tambah Ruangan Baru'}
         loading={modalLoading}
+        readOnly={isReadOnly()}
       />
 
       {/* Modal View */}
@@ -507,11 +616,11 @@ const RuanganContainer = () => {
       <Snackbar
         open={snackbar.open}
         autoHideDuration={5000}
-        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        onClose={handleCloseSnackbar}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
         <Alert
-          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+          onClose={handleCloseSnackbar}
           severity={snackbar.severity}
           variant="filled"
         >

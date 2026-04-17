@@ -29,13 +29,9 @@ const getBaseUrl = () => {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL;
         console.log('🔍 NEXT_PUBLIC_API_URL:', apiUrl);
         
-        if (!apiUrl) {
-            console.warn('⚠️ NEXT_PUBLIC_API_URL tidak ditemukan, menggunakan fallback http://localhost:5002/api');
-            return 'http://localhost:5002/api';
-        }
-        return apiUrl.replace(/\/$/, '');
+       
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    return process.env.NEXT_PUBLIC_API_URL ;
 };
 
 // ========== PIC RUANGAN API ==========

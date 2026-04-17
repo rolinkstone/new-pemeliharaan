@@ -1,4 +1,4 @@
-// components/laporanrusak/LaporanRakTable.js
+// components/laporanrusak/LaporanRusakTable.js
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -17,7 +17,6 @@ import {
   Tooltip,
   Typography,
   Avatar,
-  AvatarGroup,
   Menu,
   MenuItem,
   ListItemIcon,
@@ -28,14 +27,12 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  IconButton as MuiIconButton,
   ImageList,
   ImageListItem,
   ImageListItemBar,
-  Badge,
-  Stack,
   Snackbar,
   Alert,
+  CircularProgress,
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
@@ -56,21 +53,17 @@ import {
   Photo as PhotoIcon,
   BrokenImage as BrokenImageIcon,
   PersonOutline as PersonOutlineIcon,
-  VerifiedUser as VerifiedUserIcon,
   SupervisorAccount as SupervisorAccountIcon,
   ArrowForward as ArrowForwardIcon,
   AttachMoney as AttachMoneyIcon,
   CheckCircleOutline as CheckCircleOutlineIcon,
-  AdminPanelSettings as AdminIcon,
-  ThumbUp as ThumbUpIcon,
-  ThumbDown as ThumbDownIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
 import { useSession } from 'next-auth/react';
 
 // ============================================
-// KONSTANTA STATUS - SESUAI DENGAN DATABASE
+// KONSTANTA STATUS
 // ============================================
 const STATUS = {
   DRAFT: 'draft',
@@ -86,19 +79,7 @@ const STATUS = {
   DITOLAK: 'ditolak'
 };
 
-// ============================================
-// ROLE CONSTANTS
-// ============================================
-const ROLES = {
-  ADMIN: 'admin',
-  PIC_RUANGAN: 'pic_ruangan',
-  PIC: 'pic',
-  KABAG_TU: 'kabag_tu',
-  PPK: 'ppk',
-  USER: 'user'
-};
-
-// Base URL tanpa /api
+// Base URL
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5002';
 
 // Placeholder image
@@ -141,8 +122,6 @@ const cleanPhotoUrl = (photo) => {
 // KOMPONEN FOTO PREVIEW
 // ============================================
 const FotoPreviewDialog = ({ open, onClose, photos = [], title = 'Foto Kerusakan' }) => {
-  const theme = useTheme();
-  
   const handleDownload = async (photo) => {
     try {
       const imageUrl = cleanPhotoUrl(photo);
@@ -173,39 +152,18 @@ const FotoPreviewDialog = ({ open, onClose, photos = [], title = 'Foto Kerusakan
   const photosArray = Array.isArray(photos) ? photos : [];
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
-      PaperProps={{
-        sx: {
-          minHeight: '60vh',
-          maxHeight: '90vh',
-        }
-      }}
-    >
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle>
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Typography variant="h6">{title}</Typography>
-          <IconButton onClick={onClose} size="small">
-            <CloseIcon />
-          </IconButton>
+          <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
         </Box>
       </DialogTitle>
       <DialogContent dividers>
         {photosArray.length === 0 ? (
-          <Box 
-            display="flex" 
-            flexDirection="column" 
-            alignItems="center" 
-            justifyContent="center"
-            sx={{ py: 8 }}
-          >
+          <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" sx={{ py: 8 }}>
             <PhotoIcon sx={{ fontSize: 64, color: 'grey.400', mb: 2 }} />
-            <Typography variant="body1" color="textSecondary">
-              Tidak ada foto
-            </Typography>
+            <Typography variant="body1" color="textSecondary">Tidak ada foto</Typography>
           </Box>
         ) : (
           <ImageList cols={2} gap={16}>
@@ -218,33 +176,15 @@ const FotoPreviewDialog = ({ open, onClose, photos = [], title = 'Foto Kerusakan
                     alt={`Foto ${index + 1}`}
                     loading="lazy"
                     onError={handleImageError}
-                    style={{
-                      width: '100%',
-                      height: 200,
-                      objectFit: 'cover',
-                      borderRadius: 8,
-                      cursor: 'pointer'
-                    }}
+                    style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 8, cursor: 'pointer' }}
                     onClick={() => window.open(imageUrl, '_blank')}
                   />
                   <ImageListItemBar
-                    sx={{
-                      background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0) 100%)',
-                      borderBottomLeftRadius: 8,
-                      borderBottomRightRadius: 8,
-                    }}
+                    sx={{ background: 'linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 70%, rgba(0,0,0,0) 100%)' }}
                     position="bottom"
-                    title={
-                      <Typography variant="caption" sx={{ color: 'white' }}>
-                        {photo.name || `Foto ${index + 1}`}
-                      </Typography>
-                    }
+                    title={<Typography variant="caption" sx={{ color: 'white' }}>{photo.name || `Foto ${index + 1}`}</Typography>}
                     actionIcon={
-                      <IconButton
-                        sx={{ color: 'white' }}
-                        onClick={() => handleDownload(photo)}
-                        size="small"
-                      >
+                      <IconButton sx={{ color: 'white' }} onClick={() => handleDownload(photo)} size="small">
                         <DownloadIcon fontSize="small" />
                       </IconButton>
                     }
@@ -265,11 +205,9 @@ const FotoPreviewDialog = ({ open, onClose, photos = [], title = 'Foto Kerusakan
 const FotoThumbnail = ({ photos = [], onView }) => {
   const [hover, setHover] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [loadAttempted, setLoadAttempted] = useState(false);
   
   useEffect(() => {
     setImageError(false);
-    setLoadAttempted(false);
   }, [photos]);
   
   const handleClick = (e) => {
@@ -279,21 +217,7 @@ const FotoThumbnail = ({ photos = [], onView }) => {
   
   if (!photos || photos.length === 0) {
     return (
-      <Box
-        sx={{
-          width: 50,
-          height: 50,
-          bgcolor: 'grey.100',
-          borderRadius: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '1px solid',
-          borderColor: 'grey.200',
-          cursor: 'pointer',
-        }}
-        onClick={handleClick}
-      >
+      <Box sx={{ width: 50, height: 50, bgcolor: 'grey.100', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid', borderColor: 'grey.200', cursor: 'pointer' }} onClick={handleClick}>
         <PhotoIcon sx={{ fontSize: 24, color: 'grey.400' }} />
       </Box>
     );
@@ -303,100 +227,25 @@ const FotoThumbnail = ({ photos = [], onView }) => {
   const firstPhoto = photosArray[0];
   const imageUrl = cleanPhotoUrl(firstPhoto);
 
-  const handleImageError = (e) => {
-    if (!loadAttempted) {
-      setLoadAttempted(true);
-      setImageError(true);
-      e.target.onerror = null;
-    }
-  };
-
-  if (imageError || loadAttempted || !imageUrl) {
+  if (imageError || !imageUrl) {
     return (
-      <Box
-        sx={{
-          width: 50,
-          height: 50,
-          bgcolor: 'grey.100',
-          borderRadius: 1,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '1px solid',
-          borderColor: 'grey.200',
-          cursor: 'pointer',
-        }}
-        onClick={handleClick}
-      >
+      <Box sx={{ width: 50, height: 50, bgcolor: 'grey.100', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid', borderColor: 'grey.200', cursor: 'pointer' }} onClick={handleClick}>
         <BrokenImageIcon sx={{ fontSize: 24, color: 'grey.400' }} />
       </Box>
     );
   }
 
   return (
-    <Box
-      sx={{ position: 'relative', width: 50, height: 50 }}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-    >
-      <Box
-        component="img"
-        src={imageUrl}
-        alt="Foto"
-        onError={handleImageError}
-        onClick={handleClick}
-        sx={{
-          width: 50,
-          height: 50,
-          borderRadius: 1,
-          objectFit: 'cover',
-          cursor: 'pointer',
-          border: '1px solid',
-          borderColor: 'grey.200',
-        }}
-      />
+    <Box sx={{ position: 'relative', width: 50, height: 50 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <Box component="img" src={imageUrl} alt="Foto" onError={() => setImageError(true)} onClick={handleClick} sx={{ width: 50, height: 50, borderRadius: 1, objectFit: 'cover', cursor: 'pointer', border: '1px solid', borderColor: 'grey.200' }} />
       {photosArray.length > 1 && (
-        <Box
-          sx={{
-            position: 'absolute',
-            bottom: -4,
-            right: -4,
-            bgcolor: 'primary.main',
-            color: 'white',
-            borderRadius: '50%',
-            width: 16,
-            height: 16,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: '0.625rem',
-            fontWeight: 'bold',
-            zIndex: 2,
-            pointerEvents: 'none',
-          }}
-        >
+        <Box sx={{ position: 'absolute', bottom: -4, right: -4, bgcolor: 'primary.main', color: 'white', borderRadius: '50%', width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 'bold', zIndex: 2, pointerEvents: 'none' }}>
           +{photosArray.length - 1}
         </Box>
       )}
       {hover && (
         <Tooltip title={`${photosArray.length} foto`}>
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              bgcolor: 'rgba(0,0,0,0.5)',
-              borderRadius: 1,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              zIndex: 1,
-            }}
-            onClick={handleClick}
-          >
+          <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, bgcolor: 'rgba(0,0,0,0.5)', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 1 }} onClick={handleClick}>
             <VisibilityIcon sx={{ fontSize: 16, color: 'white' }} />
           </Box>
         </Tooltip>
@@ -412,83 +261,34 @@ const PICAvatar = ({ pic, size = 32 }) => {
   const theme = useTheme();
   
   const getDisplayName = (p) => {
-    return p?.nama || p?.user_id || 'PIC';
+    if (!p) return 'PIC';
+    return p.user_name || p.userName || p.nama || p.name || 'PIC';
   };
 
-  if (!pic || (Array.isArray(pic) && pic.length === 0)) {
+  if (!pic) {
     return (
       <Box display="flex" alignItems="center" gap={1}>
-        <Avatar
-          sx={{
-            width: size,
-            height: size,
-            bgcolor: alpha(theme.palette.grey[500], 0.1),
-            color: theme.palette.grey[500],
-          }}
-        >
+        <Avatar sx={{ width: size, height: size, bgcolor: alpha(theme.palette.grey[500], 0.1), color: theme.palette.grey[500] }}>
           <PersonOutlineIcon sx={{ fontSize: size * 0.6 }} />
         </Avatar>
-        <Typography variant="caption" color="textSecondary">
-          Tidak ada PIC
-        </Typography>
+        <Typography variant="caption" color="textSecondary">Belum ada PIC</Typography>
       </Box>
     );
   }
 
-  if (Array.isArray(pic) && pic.length > 1) {
-    const names = pic.map(p => getDisplayName(p)).join(', ');
-    return (
-      <Tooltip title={names}>
-        <Box display="flex" alignItems="center" gap={1}>
-          <AvatarGroup max={3} sx={{ '& .MuiAvatar-root': { width: size, height: size, fontSize: size * 0.4 } }}>
-            {pic.slice(0, 3).map((p, idx) => (
-              <Avatar
-                key={idx}
-                sx={{
-                  bgcolor: alpha(theme.palette.primary.main, 0.1),
-                  color: theme.palette.primary.main,
-                }}
-              >
-                {getDisplayName(p).charAt(0).toUpperCase()}
-              </Avatar>
-            ))}
-          </AvatarGroup>
-          <Typography variant="caption" color="textSecondary">
-            {pic.length} PIC
-          </Typography>
-        </Box>
-      </Tooltip>
-    );
-  }
-
-  const singlePic = Array.isArray(pic) ? pic[0] : pic;
-  const displayName = getDisplayName(singlePic);
+  const displayName = getDisplayName(pic);
   const initial = displayName.charAt(0).toUpperCase();
   
   return (
     <Tooltip title={displayName}>
       <Box display="flex" alignItems="center" gap={1}>
-        <Avatar
-          sx={{
-            width: size,
-            height: size,
-            bgcolor: alpha(theme.palette.primary.main, 0.1),
-            color: theme.palette.primary.main,
-            fontSize: size * 0.5,
-            fontWeight: 600,
-          }}
-        >
+        <Avatar sx={{ width: size, height: size, bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main, fontSize: size * 0.5, fontWeight: 600 }}>
           {initial}
         </Avatar>
-        <Box>
+        <Box sx={{ minWidth: 0 }}>
           <Typography variant="body2" fontWeight="medium" noWrap sx={{ maxWidth: 120 }}>
             {displayName}
           </Typography>
-          {singlePic.jabatan && (
-            <Typography variant="caption" color="textSecondary" display="block">
-              {singlePic.jabatan}
-            </Typography>
-          )}
         </Box>
       </Box>
     </Tooltip>
@@ -522,27 +322,119 @@ const LaporanRusakTable = ({
   const [previewPhotos, setPreviewPhotos] = useState([]);
   const [picDetails, setPicDetails] = useState({});
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
+  const [filteredData, setFilteredData] = useState([]);
+  const [loadingPIC, setLoadingPIC] = useState(false);
+  const [allPICData, setAllPICData] = useState([]);
 
-  // Dapatkan role user dari session
-  const userRole = session?.user?.role || session?.user?.roles?.[0] || 'user';
-  const isAdmin = userRole === ROLES.ADMIN;
-  const isPICRuangan = [ROLES.PIC_RUANGAN, ROLES.PIC].includes(userRole);
-  const isKabagTU = userRole === ROLES.KABAG_TU;
-  const isPPK = userRole === ROLES.PPK;
+  // ========== DAPATKAN ROLE USER DARI SESSION (MENGGUNAKAN REALM_ACCESS) ==========
+  const realmRoles = session?.user?.realm_access?.roles || [];
+  
+  const isAdmin = realmRoles.includes('admin') || realmRoles.includes('superadmin');
+  const isPICRuangan = realmRoles.includes('pic_ruangan') || realmRoles.includes('pic');
+  const isKabagTU = realmRoles.includes('kabag_tu');
+  const isPPK = realmRoles.includes('ppk');
+  const isBendahara = realmRoles.includes('bendahara');
+  const isKabalai = realmRoles.includes('kabalai');
+  
+  console.log('========== USER INFO ==========');
+  console.log('Realm Roles:', realmRoles);
+  console.log('isKabagTU:', isKabagTU);
+  console.log('isPICRuangan:', isPICRuangan);
+  console.log('================================');
 
+  // ========== AMBIL SEMUA DATA PIC DARI API ==========
   useEffect(() => {
-    const newPicDetails = {};
-    data.forEach(row => {
-      if (row.ruangan_id) {
-        if (row.pic_ruangan) {
-          newPicDetails[row.ruangan_id] = row.pic_ruangan;
-        } else if (picData[row.ruangan_id]) {
-          newPicDetails[row.ruangan_id] = picData[row.ruangan_id];
+    const fetchAllPIC = async () => {
+      if (!session?.accessToken) return;
+      
+      setLoadingPIC(true);
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5002';
+        const response = await fetch(`${baseUrl}/api/picruangan`, {
+          headers: {
+            'Authorization': `Bearer ${session.accessToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (response.ok) {
+          const result = await response.json();
+          let pics = [];
+          if (result.data && Array.isArray(result.data)) {
+            pics = result.data;
+          } else if (Array.isArray(result)) {
+            pics = result;
+          }
+          
+          console.log('📋 Data PIC dari API:', pics);
+          setAllPICData(pics);
+          
+          // Buat mapping ruangan_id -> data PIC
+          const picMapping = {};
+          pics.forEach(pic => {
+            const ruanganId = pic.ruangan_id || pic.ruanganId;
+            if (ruanganId) {
+              picMapping[ruanganId] = {
+                user_name: pic.user_name || pic.userName,
+                user_id: pic.user_id || pic.userId,
+                ...pic
+              };
+            }
+          });
+          setPicDetails(picMapping);
+          console.log('📋 Mapping PIC by ruangan:', picMapping);
         }
+      } catch (error) {
+        console.error('Error fetching PIC data:', error);
+      } finally {
+        setLoadingPIC(false);
       }
-    });
-    setPicDetails(newPicDetails);
-  }, [data, picData]);
+    };
+    
+    fetchAllPIC();
+  }, [session]);
+
+  // ========== FUNGSI CAN VERIFIKASI ==========
+  const canVerifikasi = (status) => {
+    if (isPICRuangan && status === STATUS.MENUNGGU_VERIFIKASI_PIC) {
+      return true;
+    }
+    if (isAdmin) {
+      return true;
+    }
+    return false;
+  };
+
+  // Filter data berdasarkan user yang login (untuk PIC Ruangan)
+  useEffect(() => {
+    if (!data || data.length === 0) {
+      setFilteredData([]);
+      return;
+    }
+
+    if (isAdmin) {
+      setFilteredData(data);
+      return;
+    }
+
+    if (isPICRuangan) {
+      // Dapatkan daftar ruangan yang menjadi tanggung jawab PIC
+      const userPicRooms = allPICData
+        .filter(pic => {
+          const picUserId = pic.user_id || pic.userId;
+          return picUserId === session?.user?.id;
+        })
+        .map(pic => pic.ruangan_id || pic.ruanganId);
+      
+      console.log('User PIC Rooms from API:', userPicRooms);
+      
+      const filtered = data.filter(item => userPicRooms.includes(item.ruangan_id));
+      setFilteredData(filtered);
+      return;
+    }
+
+    setFilteredData(data);
+  }, [data, isAdmin, isPICRuangan, allPICData, session]);
 
   const handleMenuOpen = (event, row) => {
     event.stopPropagation();
@@ -559,45 +451,29 @@ const LaporanRusakTable = ({
     handleMenuClose();
     if (selectedRow) {
       switch (action) {
-        case 'view':
-          if (onView) onView(selectedRow);
+        case 'view': onView?.(selectedRow); break;
+        case 'edit': onEdit?.(selectedRow); break;
+        case 'delete': onDelete?.(selectedRow); break;
+        case 'verifikasi': onVerifikasi?.(selectedRow); break;
+        case 'disposisi': 
+          console.log('📤 Menjalankan disposisi untuk:', selectedRow.nomor_laporan);
+          onDisposisi?.(selectedRow); 
           break;
-        case 'edit':
-          if (onEdit) onEdit(selectedRow);
-          break;
-        case 'delete':
-          if (onDelete) onDelete(selectedRow);
-          break;
-        case 'verifikasi':
-          if (onVerifikasi) onVerifikasi(selectedRow);
-          break;
-        case 'disposisi':
-          if (onDisposisi) onDisposisi(selectedRow);
-          break;
-        case 'verifikasi-ppk':
-          if (onVerifikasiPPK) onVerifikasiPPK(selectedRow);
-          break;
+        case 'verifikasi-ppk': onVerifikasiPPK?.(selectedRow); break;
         case 'selesai-perbaikan':
           if (onSelesaiPerbaikan) {
             onSelesaiPerbaikan(selectedRow);
           } else {
-            console.warn('⚠️ Fungsi onSelesaiPerbaikan tidak tersedia');
-            setSnackbar({
-              open: true,
-              message: 'Fitur selesaikan perbaikan belum tersedia',
-              severity: 'warning'
-            });
+            setSnackbar({ open: true, message: 'Fitur selesaikan perbaikan belum tersedia', severity: 'warning' });
           }
           break;
-        default:
-          break;
+        default: break;
       }
     }
   };
 
   const handleViewPhotos = (photos) => {
-    const photosArray = Array.isArray(photos) ? photos : [];
-    setPreviewPhotos(photosArray);
+    setPreviewPhotos(Array.isArray(photos) ? photos : []);
     setPreviewOpen(true);
   };
 
@@ -606,47 +482,54 @@ const LaporanRusakTable = ({
     setPreviewPhotos([]);
   };
 
-  const handleChangePage = (event, newPage) => {
-    onPageChange(newPage + 1);
+  const handleChangePage = (event, newPage) => onPageChange(newPage + 1);
+  const handleChangeRowsPerPage = (event) => onPageChange(1, parseInt(event.target.value, 10));
+  const handleSortClick = (field) => onSort(field);
+
+  const canEdit = (status) => {
+    if (isAdmin) return true;
+    return isPICRuangan && [STATUS.DRAFT, STATUS.MENUNGGU_VERIFIKASI_PIC].includes(status);
   };
 
-  const handleChangeRowsPerPage = (event) => {
-    onPageChange(1, parseInt(event.target.value, 10));
+  const canDelete = () => isAdmin;
+
+  const canDisposisi = (status) => {
+    if (isKabagTU && status === STATUS.MENUNGGU_DISPOSISI) {
+      return true;
+    }
+    if (isAdmin) {
+      return true;
+    }
+    return false;
   };
 
-  const handleSortClick = (field) => {
-    onSort(field);
+  const canVerifikasiPPK = (status) => {
+    if (isAdmin) return true;
+    return isPPK && status === STATUS.MENUNGGU_VERIFIKASI_PPK;
   };
 
-  // Cek apakah user adalah PIC dari ruangan tertentu
-  const isPICOfThisRoom = (ruanganId) => {
-    if (!ruanganId || !session?.user?.id) return false;
-    const pic = picDetails[ruanganId];
-    if (!pic) return false;
-    
-    const picUserId = pic.user_id || pic.id || pic.pic_id;
-    return picUserId === session.user.id || picUserId === session.user.sub;
+  const canSelesaikanPerbaikan = (status) => {
+    if (isAdmin) return status === STATUS.DALAM_PERBAIKAN;
+    return isPICRuangan && status === STATUS.DALAM_PERBAIKAN;
   };
 
-  // Konfigurasi status - PERBAIKAN: Pastikan 'diteruskan' muncul dengan label yang benar
   const getStatusConfig = (status) => {
     const configs = {
-      'draft': { label: 'Draft', color: 'default', icon: <ScheduleIcon /> },
-      'menunggu_verifikasi_pic': { label: 'Menunggu Verifikasi PIC', color: 'warning', icon: <WarningIcon /> },
-      'menunggu_verifikasi_ppk': { label: 'Menunggu Verifikasi PPK', color: 'warning', icon: <WarningIcon /> },
-      'diverifikasi_pic': { label: 'Diverifikasi PIC', color: 'info', icon: <CheckCircleIcon /> },
-      'diverifikasi_ppk': { label: 'Diverifikasi PPK', color: 'info', icon: <CheckCircleIcon /> },
-      'menunggu_disposisi': { label: 'Menunggu Disposisi', color: 'secondary', icon: <AssignmentIcon /> },
-      'diteruskan': { label: 'Diteruskan ke Kabag TU', color: 'warning', icon: <ArrowForwardIcon /> }, // PERBAIKAN: Label yang jelas
-      'didisposisi': { label: 'Didisposisi ke PPK', color: 'primary', icon: <PersonIcon /> },
-      'dalam_perbaikan': { label: 'Dalam Perbaikan', color: 'warning', icon: <BuildIcon /> },
-      'selesai': { label: 'Selesai', color: 'success', icon: <DoneAllIcon /> },
-      'ditolak': { label: 'Ditolak', color: 'error', icon: <ErrorIcon /> },
+      'draft': { label: 'Draft', icon: <ScheduleIcon />, bgColor: '#9e9e9e', textColor: '#ffffff' },
+      'menunggu_verifikasi_pic': { label: 'Menunggu Verifikasi PIC', icon: <WarningIcon />, bgColor: '#ed6c02', textColor: '#ffffff' },
+      'menunggu_verifikasi_ppk': { label: 'Menunggu Verifikasi PPK', icon: <AttachMoneyIcon />, bgColor: '#0288d1', textColor: '#ffffff' },
+      'diverifikasi_pic': { label: 'Diverifikasi PIC', icon: <CheckCircleIcon />, bgColor: '#2e7d32', textColor: '#ffffff' },
+      'diverifikasi_ppk': { label: 'Diverifikasi PPK', icon: <CheckCircleIcon />, bgColor: '#2e7d32', textColor: '#ffffff' },
+      'menunggu_disposisi': { label: 'Menunggu Disposisi', icon: <AssignmentIcon />, bgColor: '#9c27b0', textColor: '#ffffff' },
+      'diteruskan': { label: 'Diteruskan ke Kabag TU', icon: <ArrowForwardIcon />, bgColor: '#ed6c02', textColor: '#ffffff' },
+      'didisposisi': { label: 'Didisposisi ke PPK', icon: <PersonIcon />, bgColor: '#1976d2', textColor: '#ffffff' },
+      'dalam_perbaikan': { label: 'Dalam Perbaikan', icon: <BuildIcon />, bgColor: '#ed6c02', textColor: '#ffffff' },
+      'selesai': { label: 'Selesai', icon: <DoneAllIcon />, bgColor: '#2e7d32', textColor: '#ffffff' },
+      'ditolak': { label: 'Ditolak', icon: <ErrorIcon />, bgColor: '#d32f2f', textColor: '#ffffff' },
     };
-    return configs[status] || { label: status || 'Unknown', color: 'default', icon: <AssignmentIcon /> };
+    return configs[status] || { label: status || 'Unknown', icon: <AssignmentIcon />, bgColor: '#9e9e9e', textColor: '#ffffff' };
   };
 
-  // Konfigurasi prioritas
   const getPriorityConfig = (priority) => {
     const configs = {
       rendah: { label: 'Rendah', color: 'success', variant: 'outlined' },
@@ -657,42 +540,6 @@ const LaporanRusakTable = ({
     return configs[priority] || { label: priority || 'Unknown', color: 'default', variant: 'outlined' };
   };
 
-  // Cek apakah bisa diedit
-  const canEdit = (status) => {
-    if (isAdmin) return true;
-    return [STATUS.DRAFT, STATUS.MENUNGGU_VERIFIKASI_PIC].includes(status);
-  };
-
-  // Cek apakah bisa dihapus
-  const canDelete = () => {
-    return isAdmin;
-  };
-
-  // Cek apakah bisa diverifikasi (PIC)
-  const canVerifikasi = (status) => {
-    if (isAdmin) return true;
-    return isPICRuangan && status === STATUS.MENUNGGU_VERIFIKASI_PIC;
-  };
-
-  // Cek apakah bisa disposisi (Kabag TU)
-  const canDisposisi = (status) => {
-    if (isAdmin) return true;
-    return isKabagTU && status === STATUS.DITERUSKAN; // PERBAIKAN: Kabag TU melihat status 'diteruskan'
-  };
-
-  // Cek apakah bisa verifikasi PPK
-  const canVerifikasiPPK = (status) => {
-    if (isAdmin) return true;
-    return isPPK && status === STATUS.MENUNGGU_VERIFIKASI_PPK;
-  };
-
-  // Cek apakah bisa selesaikan perbaikan (setelah verifikasi PPK)
-  const canSelesaikanPerbaikan = (status, ruanganId) => {
-    if (isAdmin) return status === STATUS.DALAM_PERBAIKAN;
-    return status === STATUS.DALAM_PERBAIKAN && isPICOfThisRoom(ruanganId);
-  };
-
-  // Format tanggal
   const formatDate = (dateString) => {
     if (!dateString) return '-';
     try {
@@ -702,19 +549,37 @@ const LaporanRusakTable = ({
     }
   };
 
-  // Get PIC for room
+  // Get PIC for room dari mapping yang sudah diambil
   const getPICForRoom = (ruanganId) => {
-    if (!ruanganId) return null;
-    return picDetails[ruanganId] || null;
+    const pic = picDetails[ruanganId];
+    if (pic) {
+      return pic;
+    }
+    return null;
   };
 
-  // Safe color getter
   const getThemeColor = (colorName) => {
-    if (colorName === 'default') {
-      return theme.palette.grey;
-    }
+    if (colorName === 'default') return theme.palette.grey;
     return theme.palette[colorName] || theme.palette.primary;
   };
+
+  const displayData = filteredData;
+  const totalFiltered = displayData.length;
+  const currentPage = pagination.currentPage || 1;
+  const perPage = pagination.perPage || 10;
+  const startIndex = (currentPage - 1) * perPage;
+  const paginatedData = displayData.slice(startIndex, startIndex + perPage);
+
+  if (loadingPIC) {
+    return (
+      <Paper sx={{ width: '100%', p: 4 }}>
+        <Box display="flex" justifyContent="center" alignItems="center">
+          <CircularProgress size={40} />
+          <Typography sx={{ ml: 2 }}>Memuat data PIC...</Typography>
+        </Box>
+      </Paper>
+    );
+  }
 
   return (
     <>
@@ -756,87 +621,56 @@ const LaporanRusakTable = ({
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={12} align="center" sx={{ py: 3 }}>
-                    <Typography variant="body2" color="textSecondary">
-                      Memuat data...
-                    </Typography>
+                  <TableCell colSpan={12} align="center">
+                    <Typography variant="body2" color="textSecondary">Memuat data...</Typography>
                   </TableCell>
                 </TableRow>
-              ) : data.length === 0 ? (
+              ) : paginatedData.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={12} align="center" sx={{ py: 3 }}>
+                  <TableCell colSpan={12} align="center">
                     <Typography variant="body2" color="textSecondary">
-                      Tidak ada data
+                      {isPICRuangan ? 'Tidak ada laporan untuk ruangan yang Anda tangani' : 'Tidak ada data'}
                     </Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                data.map((row, index) => {
+                paginatedData.map((row, index) => {
                   const statusConfig = getStatusConfig(row.status);
                   const priorityConfig = getPriorityConfig(row.prioritas);
                   const picRuangan = getPICForRoom(row.ruangan_id);
-                  
-                  const statusColor = getThemeColor(statusConfig.color);
                   const priorityColor = getThemeColor(priorityConfig.color);
 
                   return (
                     <TableRow
                       key={row.id || index}
                       hover
-                      sx={{
-                        '&:last-child td, &:last-child th': { border: 0 },
-                        cursor: 'pointer',
-                        '&:hover': {
-                          backgroundColor: alpha(theme.palette.primary.main, 0.04),
-                        },
-                      }}
+                      sx={{ cursor: 'pointer', '&:hover': { backgroundColor: alpha(theme.palette.primary.main, 0.04) } }}
                       onClick={() => onView(row)}
                     >
                       <TableCell padding="checkbox">
-                        <Typography variant="body2" color="textSecondary">
-                          {((pagination.currentPage - 1) * pagination.perPage) + index + 1}
-                        </Typography>
+                        <Typography variant="body2" color="textSecondary">{startIndex + index + 1}</Typography>
                       </TableCell>
                       <TableCell>
-                        <FotoThumbnail 
-                          photos={row.foto_kerusakan || []} 
-                          onView={handleViewPhotos}
-                        />
+                        <FotoThumbnail photos={row.foto_kerusakan || []} onView={handleViewPhotos} />
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" fontWeight="medium">
-                          {row.nomor_laporan || '-'}
-                        </Typography>
+                        <Typography variant="body2" fontWeight="medium">{row.nomor_laporan || '-'}</Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2">
-                          {formatDate(row.tgl_laporan)}
-                        </Typography>
+                        <Typography variant="body2">{formatDate(row.tgl_laporan)}</Typography>
                       </TableCell>
                       <TableCell>
                         <Box display="flex" alignItems="center" gap={1}>
-                          <Avatar
-                            sx={{
-                              width: 24,
-                              height: 24,
-                              bgcolor: alpha(theme.palette.primary.main, 0.1),
-                              color: theme.palette.primary.main,
-                              fontSize: '0.75rem',
-                            }}
-                          >
+                          <Avatar sx={{ width: 24, height: 24, bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main, fontSize: '0.75rem' }}>
                             {row.pelapor_nama?.charAt(0) || 'U'}
                           </Avatar>
-                          <Typography variant="body2" noWrap sx={{ maxWidth: 120 }}>
-                            {row.pelapor_nama || '-'}
-                          </Typography>
+                          <Typography variant="body2" noWrap sx={{ maxWidth: 120 }}>{row.pelapor_nama || '-'}</Typography>
                         </Box>
                       </TableCell>
                       <TableCell>
                         <Box display="flex" alignItems="center" gap={1}>
                           <RoomIcon sx={{ fontSize: 16, color: theme.palette.text.secondary }} />
-                          <Typography variant="body2" noWrap sx={{ maxWidth: 100 }}>
-                            {row.ruangan_nama || '-'}
-                          </Typography>
+                          <Typography variant="body2" noWrap sx={{ maxWidth: 100 }}>{row.ruangan_nama || '-'}</Typography>
                         </Box>
                       </TableCell>
                       <TableCell>
@@ -844,27 +678,13 @@ const LaporanRusakTable = ({
                       </TableCell>
                       <TableCell>
                         <Box>
-                          <Typography variant="body2" fontWeight="medium">
-                            {row.aset_nama || '-'}
-                          </Typography>
-                          {row.aset_kode && (
-                            <Typography variant="caption" color="textSecondary">
-                              {row.aset_kode}
-                            </Typography>
-                          )}
+                          <Typography variant="body2" fontWeight="medium">{row.aset_nama || '-'}</Typography>
+                          {row.aset_kode && <Typography variant="caption" color="textSecondary">{row.aset_kode}</Typography>}
                         </Box>
                       </TableCell>
                       <TableCell>
                         <Tooltip title={row.deskripsi || ''}>
-                          <Typography
-                            variant="body2"
-                            sx={{
-                              maxWidth: 200,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
+                          <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {row.deskripsi || '-'}
                           </Typography>
                         </Tooltip>
@@ -875,12 +695,8 @@ const LaporanRusakTable = ({
                           size="small"
                           variant={priorityConfig.variant}
                           sx={{
-                            bgcolor: priorityConfig.variant === 'filled' 
-                              ? priorityColor.main 
-                              : alpha(priorityColor.main, 0.1),
-                            color: priorityConfig.variant === 'filled' 
-                              ? '#fff' 
-                              : priorityColor.main,
+                            bgcolor: priorityConfig.variant === 'filled' ? priorityColor.main : alpha(priorityColor.main, 0.1),
+                            color: priorityConfig.variant === 'filled' ? '#fff' : priorityColor.main,
                             fontWeight: 600,
                             minWidth: 70,
                           }}
@@ -891,22 +707,24 @@ const LaporanRusakTable = ({
                           icon={statusConfig.icon}
                           label={statusConfig.label}
                           size="small"
+                          variant="filled"
                           sx={{
-                            bgcolor: alpha(statusColor.main, 0.1),
-                            color: statusColor.main,
+                            bgcolor: statusConfig.bgColor,
+                            color: statusConfig.textColor,
                             fontWeight: 600,
-                            maxWidth: 150,
-                            '& .MuiChip-icon': {
-                              color: 'inherit',
+                            maxWidth: 180,
+                            '& .MuiChip-icon': { 
+                              color: statusConfig.textColor,
+                              fontSize: '1rem'
                             },
+                            '& .MuiChip-label': {
+                              px: 1.5
+                            }
                           }}
                         />
                       </TableCell>
                       <TableCell align="right">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => handleMenuOpen(e, row)}
-                        >
+                        <IconButton size="small" onClick={(e) => handleMenuOpen(e, row)}>
                           <MoreVertIcon />
                         </IconButton>
                       </TableCell>
@@ -921,41 +739,32 @@ const LaporanRusakTable = ({
         <TablePagination
           rowsPerPageOptions={[5, 10, 25, 50]}
           component="div"
-          count={pagination.total || 0}
-          rowsPerPage={pagination.perPage || 10}
-          page={pagination.currentPage ? pagination.currentPage - 1 : 0}
+          count={totalFiltered}
+          rowsPerPage={perPage}
+          page={currentPage - 1}
           onPageChange={handleChangePage}
           onRowsPerPageChange={handleChangeRowsPerPage}
           labelRowsPerPage="Baris per halaman"
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} dari ${count !== -1 ? count : `lebih dari ${to}`}`}
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} dari ${count}`}
         />
 
-        <Menu
-          anchorEl={anchorEl}
-          open={Boolean(anchorEl)}
-          onClose={handleMenuClose}
-          onClick={(e) => e.stopPropagation()}
-        >
+        <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose} onClick={(e) => e.stopPropagation()}>
           <MenuItem onClick={() => handleAction('view')}>
-            <ListItemIcon>
-              <VisibilityIcon fontSize="small" />
-            </ListItemIcon>
+            <ListItemIcon><VisibilityIcon fontSize="small" /></ListItemIcon>
             <ListItemText>Detail</ListItemText>
           </MenuItem>
 
-          {/* Verifikasi untuk PIC - Muncul untuk Admin atau PIC yang berwenang */}
           {selectedRow && canVerifikasi(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('verifikasi')}>
               <ListItemIcon>
-                <CheckCircleIcon fontSize="small" color="primary" />
+                <CheckCircleIcon fontSize="small" color={isAdmin ? "primary" : "success"} />
               </ListItemIcon>
               <ListItemText>
-                {isAdmin ? 'Verifikasi (Admin)' : 'Verifikasi'}
+                {isAdmin ? 'Verifikasi (Admin)' : 'Verifikasi Laporan'}
               </ListItemText>
             </MenuItem>
           )}
 
-          {/* Disposisi untuk Kabag TU - Muncul untuk Admin atau Kabag TU */}
           {selectedRow && canDisposisi(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('disposisi')}>
               <ListItemIcon>
@@ -967,87 +776,48 @@ const LaporanRusakTable = ({
             </MenuItem>
           )}
 
-          {/* Verifikasi PPK - Muncul untuk Admin atau PPK */}
-          {selectedRow && canVerifikasiPPK(selectedRow.status) && (
-            <MenuItem onClick={() => handleAction('verifikasi-ppk')}>
-              <ListItemIcon>
-                <AttachMoneyIcon fontSize="small" color="success" />
-              </ListItemIcon>
-              <ListItemText>
-                {isAdmin ? 'Verifikasi PPK (Admin)' : 'Verifikasi PPK'}
-              </ListItemText>
-            </MenuItem>
-          )}
-
-          {/* Selesaikan Perbaikan untuk PIC Ruangan - Setelah verifikasi PPK */}
-          {selectedRow && canSelesaikanPerbaikan(selectedRow.status, selectedRow.ruangan_id) && (
-            <MenuItem 
-              onClick={() => handleAction('selesai-perbaikan')}
-              disabled={!onSelesaiPerbaikan}
-            >
-              <ListItemIcon>
-                <CheckCircleOutlineIcon 
-                  fontSize="small" 
-                  color={onSelesaiPerbaikan ? 'success' : 'disabled'} 
-                />
-              </ListItemIcon>
-              <ListItemText>
-                {isAdmin ? 'Selesaikan Perbaikan (Admin)' : 'Selesaikan Perbaikan'}
-                {!onSelesaiPerbaikan && (
-                  <Typography variant="caption" display="block" color="text.disabled">
-                    (Fitur tidak tersedia)
-                  </Typography>
-                )}
-              </ListItemText>
-            </MenuItem>
-          )}
-
-          {/* Edit - Admin bisa edit semua, user biasa hanya bisa edit status tertentu */}
           {selectedRow && canEdit(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('edit')}>
-              <ListItemIcon>
-                <EditIcon fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>
-                {isAdmin ? 'Edit (Admin)' : 'Edit'}
-              </ListItemText>
+              <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Edit (Admin)' : 'Edit'}</ListItemText>
+            </MenuItem>
+          )}
+
+          {selectedRow && canVerifikasiPPK(selectedRow.status) && (
+            <MenuItem onClick={() => handleAction('verifikasi-ppk')}>
+              <ListItemIcon><AttachMoneyIcon fontSize="small" color="success" /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Verifikasi PPK (Admin)' : 'Verifikasi PPK'}</ListItemText>
+            </MenuItem>
+          )}
+
+          {selectedRow && canSelesaikanPerbaikan(selectedRow.status) && (
+            <MenuItem onClick={() => handleAction('selesai-perbaikan')} disabled={!onSelesaiPerbaikan}>
+              <ListItemIcon><CheckCircleOutlineIcon fontSize="small" color={onSelesaiPerbaikan ? 'success' : 'disabled'} /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Selesaikan Perbaikan (Admin)' : 'Selesaikan Perbaikan'}</ListItemText>
             </MenuItem>
           )}
 
           <Divider />
 
-          {/* Delete - Hanya Admin yang bisa hapus */}
           {selectedRow && canDelete() && (
             <MenuItem onClick={() => handleAction('delete')} sx={{ color: theme.palette.error.main }}>
-              <ListItemIcon>
-                <DeleteIcon fontSize="small" color="error" />
-              </ListItemIcon>
-              <ListItemText>
-                {isAdmin ? 'Hapus (Admin)' : 'Hapus'}
-              </ListItemText>
+              <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+              <ListItemText>Hapus (Admin)</ListItemText>
             </MenuItem>
           )}
         </Menu>
       </Paper>
 
-      {/* Snackbar untuk notifikasi */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert severity={snackbar.severity} variant="filled">
-          {snackbar.message}
-        </Alert>
+        <Alert severity={snackbar.severity} variant="filled">{snackbar.message}</Alert>
       </Snackbar>
 
-      <FotoPreviewDialog
-        open={previewOpen}
-        onClose={handleClosePreview}
-        photos={previewPhotos}
-        title="Foto Kerusakan"
-      />
+      <FotoPreviewDialog open={previewOpen} onClose={handleClosePreview} photos={previewPhotos} title="Foto Kerusakan" />
     </>
   );
 };

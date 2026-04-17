@@ -39,15 +39,36 @@ import {
   DoneAll as DoneAllIcon,
   ArrowForward as ArrowForwardIcon,
   SupervisorAccount as SupervisorAccountIcon,
-  AttachMoney as AttachMoneyIcon,
   Business as BusinessIcon,
   Star as StarIcon,
   Description as DescriptionIcon,
   ThumbUp as ThumbUpIcon,
+  MonetizationOn as MonetizationOnIcon,
 } from '@mui/icons-material';
 import LaporanRusakForm from '../LaporanRusakForm';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
+
+// ============================================
+// FUNGSI FORMAT RUPIAH
+// ============================================
+const formatRupiah = (value) => {
+  if (!value) return 'Rp 0';
+  
+  // Konversi ke number jika string
+  const number = typeof value === 'string' ? parseFloat(value) : value;
+  
+  // Cek valid number
+  if (isNaN(number)) return 'Rp 0';
+  
+  // Format dengan pemisah ribuan menggunakan titik
+  const formatted = new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(number);
+  
+  return `Rp ${formatted}`;
+};
 
 // ============================================
 // KONSTANTA STATUS - SAMA DENGAN DATABASE
@@ -586,6 +607,20 @@ const LaporanRusakModal = ({
           </Grid>
         </Grid>
 
+        {/* Kode Barang - Info Card Tambahan */}
+        {formData.aset_kode && (
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12} sm={6} md={3}>
+              <InfoCard
+                icon={<InventoryIcon />}
+                label="Kode Barang"
+                value={formData.aset_kode}
+                color="info"
+              />
+            </Grid>
+          </Grid>
+        )}
+
         {/* Detail Kerusakan */}
         <SectionCard title="Deskripsi Kerusakan" icon={<DescriptionIcon />} color="info">
           <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
@@ -607,17 +642,17 @@ const LaporanRusakModal = ({
           </SectionCard>
         )}
 
-        {/* Estimasi Biaya (jika ada) */}
+        {/* Estimasi Biaya - DENGAN FORMAT RUPIAH */}
         {formData.estimasi_biaya && (
-          <SectionCard title="Estimasi Biaya" icon={<AttachMoneyIcon />} color="success">
+          <SectionCard title="Estimasi Biaya" icon={<MonetizationOnIcon />} color="success">
             <Typography variant="body2" fontWeight="600" color="success.main">
-              Rp {formData.estimasi_biaya.toLocaleString()}
+              {formatRupiah(formData.estimasi_biaya)}
             </Typography>
           </SectionCard>
         )}
 
         {/* ============================================
-            DETAIL PERBAIKAN - DITAMBAHKAN
+            DETAIL PERBAIKAN
             ============================================ */}
         {detailPerbaikan && (
           <SectionCard 
@@ -677,14 +712,14 @@ const LaporanRusakModal = ({
               </Box>
             )}
 
-            {/* Biaya Aktual */}
+            {/* Biaya Aktual - DENGAN FORMAT RUPIAH */}
             {detailPerbaikan.biaya_aktual && (
               <Box sx={{ mb: 2 }}>
                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
                   Biaya Aktual:
                 </Typography>
                 <Typography variant="body2" fontWeight="600" color="success.main">
-                  Rp {detailPerbaikan.biaya_aktual.toLocaleString()}
+                  {formatRupiah(detailPerbaikan.biaya_aktual)}
                 </Typography>
               </Box>
             )}
@@ -716,7 +751,7 @@ const LaporanRusakModal = ({
               </Box>
             )}
 
-            {/* ===== REKOMENDASI - INI YANG DITAMBAHKAN ===== */}
+            {/* Rekomendasi */}
             {detailPerbaikan.rekomendasi && (
               <Box sx={{ mb: 2 }}>
                 <Typography variant="caption" color="text.secondary" display="block" gutterBottom>
@@ -732,8 +767,6 @@ const LaporanRusakModal = ({
                 </Paper>
               </Box>
             )}
-
-          
           </SectionCard>
         )}
       </Box>

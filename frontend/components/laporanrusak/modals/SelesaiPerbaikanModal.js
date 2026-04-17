@@ -24,18 +24,14 @@ import {
   Radio,
   InputAdornment,
   Grid,
-  Select,
-  MenuItem,
 } from '@mui/material';
 import {
   Close as CloseIcon,
-  CheckCircle as CheckCircleIcon,
   Build as BuildIcon,
   Info as InfoIcon,
   Assignment as AssignmentIcon,
   Star as StarIcon,
   Description as DescriptionIcon,
-  AttachMoney as AttachMoneyIcon,
   CalendarToday as CalendarIcon,
   Person as PersonIcon,
   Business as BusinessIcon,
@@ -47,7 +43,6 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import idLocale from 'date-fns/locale/id';
-import { format } from 'date-fns';
 
 const SelesaiPerbaikanModal = ({
   open,
@@ -59,7 +54,7 @@ const SelesaiPerbaikanModal = ({
   const theme = useTheme();
   
   // State untuk form
-  const [hasilPerbaikan, setHasilPerbaikan] = useState('internal'); // internal, eksternal, gagal
+  const [hasilPerbaikan, setHasilPerbaikan] = useState('internal');
   const [catatan, setCatatan] = useState('');
   const [rating, setRating] = useState(5);
   const [tanggalSelesai, setTanggalSelesai] = useState(new Date());
@@ -89,26 +84,23 @@ const SelesaiPerbaikanModal = ({
     }
   };
 
- // components/laporanrusak/modals/SelesaiPerbaikanModal.js
-
-const handleSubmit = () => {
-    // Data yang dikirim harus sesuai dengan yang diharapkan backend
+  const handleSubmit = () => {
     const dataToSubmit = {
-        hasil_perbaikan: hasilPerbaikan, // 'internal', 'eksternal', atau 'gagal'
-        catatan: catatan || getDefaultCatatan(),
-        tanggal_selesai: tanggalSelesai.toISOString().split('T')[0],
-        rating: (hasilPerbaikan === 'internal' || hasilPerbaikan === 'eksternal') ? rating : null,
-        biaya_aktual: biayaAktual ? parseFloat(biayaAktual) : null,
-        dokumentasi: dokumentasi || null,
-        rekomendasi: rekomendasi || null,
-        nama_vendor: hasilPerbaikan === 'eksternal' ? namaVendor : null,
-        no_kontrak: hasilPerbaikan === 'eksternal' ? noKontrak : null,
-        next_status: (hasilPerbaikan === 'internal' || hasilPerbaikan === 'eksternal') ? 'selesai' : 'dalam_perbaikan',
+      hasil_perbaikan: hasilPerbaikan,
+      catatan: catatan || getDefaultCatatan(),
+      tanggal_selesai: tanggalSelesai.toISOString().split('T')[0],
+      rating: (hasilPerbaikan === 'internal' || hasilPerbaikan === 'eksternal') ? rating : null,
+      biaya_aktual: biayaAktual ? parseFloat(biayaAktual) : null,
+      dokumentasi: dokumentasi || null,
+      rekomendasi: rekomendasi || null,
+      nama_vendor: hasilPerbaikan === 'eksternal' ? namaVendor : null,
+      no_kontrak: hasilPerbaikan === 'eksternal' ? noKontrak : null,
+      next_status: (hasilPerbaikan === 'internal' || hasilPerbaikan === 'eksternal') ? 'selesai' : 'dalam_perbaikan',
     };
     
     console.log('📤 Selesai Perbaikan - Data dikirim:', dataToSubmit);
     onConfirm(dataToSubmit);
-};
+  };
 
   const getDefaultCatatan = () => {
     switch(hasilPerbaikan) {
@@ -136,19 +128,6 @@ const handleSubmit = () => {
     }
   };
 
-  const getHasilColor = () => {
-    switch(hasilPerbaikan) {
-      case 'internal':
-        return 'success';
-      case 'eksternal':
-        return 'info';
-      case 'gagal':
-        return 'error';
-      default:
-        return 'primary';
-    }
-  };
-
   const getHasilLabel = () => {
     switch(hasilPerbaikan) {
       case 'internal':
@@ -163,6 +142,22 @@ const handleSubmit = () => {
   };
 
   if (!laporan) return null;
+
+  // Dapatkan nama PIC Ruangan yang benar
+  const picRuanganNama = laporan?.pic_ruangan || 
+                         laporan?.pic_ruangan_nama || 
+                         laporan?.pic_nama || 
+                         laporan?.pelapor_nama || 
+                         '-';
+  
+  const picRuanganId = laporan?.pic_ruangan_id || laporan?.pic_id || null;
+
+  console.log('📋 SelesaiPerbaikanModal - Data PIC Ruangan:', {
+    pic_ruangan: laporan?.pic_ruangan,
+    pic_ruangan_nama: laporan?.pic_ruangan_nama,
+    pic_ruangan_id: laporan?.pic_ruangan_id,
+    pelapor_nama: laporan?.pelapor_nama
+  });
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns} locale={idLocale}>
@@ -247,55 +242,60 @@ const handleSubmit = () => {
                 </Box>
                 
                 <Grid container spacing={2}>
+                  {/* Kolom Kiri */}
                   <Grid item xs={12} sm={6}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                      <Typography variant="body2" color="text.secondary">Nomor Laporan:</Typography>
-                      <Typography variant="body2" fontWeight="700" color="text.primary">
-                        {laporan.nomor_laporan || '-'}
-                      </Typography>
+                    <Box display="flex" flexDirection="column" gap={2}>
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Nomor Laporan:</Typography>
+                        <Typography variant="body2" fontWeight="700" color="text.primary">
+                          {laporan.nomor_laporan || '-'}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Ruangan:</Typography>
+                        <Typography variant="body2" fontWeight="600">{laporan.ruangan_nama || '-'}</Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Aset:</Typography>
+                        <Typography variant="body2" fontWeight="600">{laporan.aset_nama || '-'}</Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Estimasi Biaya:</Typography>
+                        <Typography variant="body2" fontWeight="700" color="success.main">
+                          {laporan.estimasi_biaya 
+                            ? `Rp ${laporan.estimasi_biaya.toLocaleString()}` 
+                            : '-'}
+                        </Typography>
+                      </Box>
                     </Box>
                   </Grid>
+
+                  {/* Kolom Kanan */}
                   <Grid item xs={12} sm={6}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                      <Typography variant="body2" color="text.secondary">Pelapor:</Typography>
-                      <Typography variant="body2" fontWeight="600">{laporan.pelapor_nama || '-'}</Typography>
-                    </Box>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                      <Typography variant="body2" color="text.secondary">Ruangan:</Typography>
-                      <Typography variant="body2" fontWeight="600">{laporan.ruangan_nama || '-'}</Typography>
-                    </Box>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                      <Typography variant="body2" color="text.secondary">Aset:</Typography>
-                      <Typography variant="body2" fontWeight="600">{laporan.aset_nama || '-'}</Typography>
-                    </Box>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                      <Typography variant="body2" color="text.secondary">Estimasi Biaya:</Typography>
-                      <Typography variant="body2" fontWeight="700" color="success.main">
-                        {laporan.estimasi_biaya 
-                          ? `Rp ${laporan.estimasi_biaya.toLocaleString()}` 
-                          : '-'}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                  <Grid item xs={12} sm={6}>
-                    <Box display="flex" justifyContent="space-between" alignItems="center">
-                      <Typography variant="body2" color="text.secondary">Prioritas:</Typography>
-                      <Chip 
-                        size="small" 
-                        label={laporan.prioritas || '-'} 
-                        color={
-                          laporan.prioritas === 'darurat' ? 'error' :
-                          laporan.prioritas === 'tinggi' ? 'warning' :
-                          laporan.prioritas === 'sedang' ? 'info' : 'success'
-                        }
-                        sx={{ height: 24 }}
-                      />
+                    <Box display="flex" flexDirection="column" gap={2}>
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Pelapor:</Typography>
+                        <Typography variant="body2" fontWeight="600">{laporan.pelapor_nama || '-'}</Typography>
+                      </Box>
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Prioritas:</Typography>
+                        <Chip 
+                          size="small" 
+                          label={laporan.prioritas || '-'} 
+                          color={
+                            laporan.prioritas === 'darurat' ? 'error' :
+                            laporan.prioritas === 'tinggi' ? 'warning' :
+                            laporan.prioritas === 'sedang' ? 'info' : 'success'
+                          }
+                          sx={{ height: 24 }}
+                        />
+                      </Box>
+                      <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="body2" color="text.secondary">Kode Barang:</Typography>
+                        <Typography variant="body2" fontWeight="600">
+                          {laporan.aset_kode || '-'}
+                        </Typography>
+                      </Box>
                     </Box>
                   </Grid>
                 </Grid>
@@ -321,7 +321,7 @@ const handleSubmit = () => {
                 )}
               </Paper>
 
-              {/* Informasi PIC */}
+              {/* Informasi PIC Ruangan */}
               <Paper 
                 variant="outlined" 
                 sx={{ 
@@ -345,9 +345,14 @@ const handleSubmit = () => {
                   </Avatar>
                   <Box>
                     <Typography variant="body2" fontWeight="600" color="primary.main">
-                      PIC Ruangan: {laporan.pelapor_nama}
+                      PIC Ruangan: {picRuanganNama}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    {picRuanganId && (
+                      <Typography variant="caption" color="text.secondary">
+                        ID: {picRuanganId}
+                      </Typography>
+                    )}
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
                       Anda bertanggung jawab untuk melaporkan hasil perbaikan aset ini
                     </Typography>
                   </Box>
@@ -570,11 +575,6 @@ const handleSubmit = () => {
                 placeholder="Masukkan biaya aktual yang dikeluarkan"
                 sx={{ mb: 3 }}
                 InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <AttachMoneyIcon sx={{ color: theme.palette.text.secondary }} />
-                    </InputAdornment>
-                  ),
                   sx: { borderRadius: 2 }
                 }}
                 helperText="Biaya aktual yang dikeluarkan untuk perbaikan"
@@ -615,6 +615,7 @@ const handleSubmit = () => {
                 helperText="Opsional: Rekomendasi untuk perawatan selanjutnya"
               />
 
+              {/* Catatan Perbaikan */}
               <TextField
                 fullWidth
                 label="Catatan Perbaikan"

@@ -35,13 +35,9 @@ const getBaseUrl = () => {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL;
         console.log('🔍 NEXT_PUBLIC_API_URL:', apiUrl);
         
-        if (!apiUrl) {
-            console.warn('⚠️ NEXT_PUBLIC_API_URL tidak ditemukan, menggunakan fallback http://localhost:5002/api');
-            return 'http://localhost:5002/api';
-        }
-        return apiUrl.replace(/\/$/, '');
+        
     }
-    return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    return process.env.NEXT_PUBLIC_API_URL ;
 };
 
 // ============================================
@@ -513,9 +509,6 @@ const deleteLaporanRusak = async (session, id) => {
 /**
  * POST /api/laporansrusak/:id/verifikasi
  * Untuk verifikasi laporan oleh PIC
- * - Jika keputusan = 'setuju' dan alur = 'langsung' → status 'selesai'
- * - Jika keputusan = 'setuju' dan alur = 'dengan_anggaran' → status 'menunggu_disposisi'
- * - Jika keputusan = 'tolak' → status 'ditolak'
  */
 const verifikasiLaporan = async (session, id, data) => {
     const token = getToken(session);
@@ -664,60 +657,8 @@ const verifikasiPPK = async (session, id, data) => {
 };
 
 /**
- * POST /api/laporansrusak/:id/selesai (DEPRECATED)
- * Untuk menandai laporan selesai - Gunakan selesaikanPerbaikan
- */
-const selesaikanLaporan = async (session, id, data) => {
-    console.warn('⚠️ Fungsi selesaikanLaporan sudah deprecated. Gunakan selesaikanPerbaikan');
-    
-    const token = getToken(session);
-    
-    if (!token) {
-        return { 
-            success: false, 
-            message: 'Token tidak ditemukan' 
-        };
-    }
-    
-    const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporansrusak/${id}/selesai`;
-    
-    console.log('📤 SELESAI (DEPRECATED) - URL:', url);
-    console.log('📤 SELESAI (DEPRECATED) - Payload:', data);
-    
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            return {
-                success: false,
-                message: `HTTP Error ${response.status}: ${errorText}`
-            };
-        }
-        
-        const result = await handleResponse(response);
-        console.log('📥 Response selesai (deprecated):', result);
-        return result;
-    } catch (error) {
-        console.error('Error selesaikan laporan:', error);
-        return { 
-            success: false, 
-            message: error.message 
-        };
-    }
-};
-
-/**
  * POST /api/laporansrusak/:id/selesaikan-perbaikan
- * Untuk PIC Ruangan melaporkan hasil perbaikan (internal, eksternal, gagal)
+ * Untuk PIC Ruangan melaporkan hasil perbaikan
  */
 const selesaikanPerbaikan = async (session, id, data) => {
     const token = getToken(session);
@@ -733,15 +674,6 @@ const selesaikanPerbaikan = async (session, id, data) => {
     const url = `${baseUrl}/laporansrusak/${id}/selesaikan-perbaikan`;
     
     console.log('🔧 SELESAIKAN PERBAIKAN - URL:', url);
-    console.log('🔧 SELESAIKAN PERBAIKAN - Payload:', {
-        id,
-        hasil_perbaikan: data.hasil_perbaikan,
-        tanggal_selesai: data.tanggal_selesai,
-        rating: data.rating,
-        biaya_aktual: data.biaya_aktual,
-        nama_vendor: data.nama_vendor,
-        next_status: data.next_status
-    });
     
     try {
         const response = await fetch(url, {
@@ -907,7 +839,7 @@ const fetchLaporanStatistics = async (session) => {
 // ========== OPTIONS API ==========
 
 /**
- * GET /api/ruangan?user_id=xxx&has_pic=true
+ * GET /api/ruangan
  */
 const fetchRuanganOptions = async (session, params = {}) => {
     const token = getToken(session);
@@ -929,8 +861,6 @@ const fetchRuanganOptions = async (session, params = {}) => {
         queryParams.append('user_id', params.user_id);
         console.log('📤 Mengirim user_id:', params.user_id);
     }
-    
-    queryParams.append('has_pic', 'true');
     
     if (queryParams.toString()) {
         url = `${url}?${queryParams.toString()}`;
@@ -1061,12 +991,149 @@ const fetchAsetByRuangan = async (session, ruanganId) => {
 };
 
 /**
- * GET /api/laporansrusak/options/aset (fallback)
+ * GET /api/pic-ruangan/ruangan/:ruanganId
+ * Mendapatkan PIC (Person In Charge) berdasarkan ID ruangan
  */
 // components/laporanrusak/api/laporanRusakApi.js
 
 /**
- * GET /api/laporansrusak/options/aset (fallback) - PERBAIKI
+ * GET /api/picruangan
+ * Mendapatkan semua data PIC, lalu filter berdasarkan ruangan_id
+ */
+const fetchPicByRuangan = async (session, ruanganId) => {
+    const token = getToken(session);
+    
+    console.log('🔍 fetchPicByRuangan dipanggil dengan ruanganId:', ruanganId);
+    console.log('🔍 Token tersedia:', !!token);
+    
+    if (!token) {
+        console.error('❌ Token tidak ditemukan untuk fetchPicByRuangan');
+        return {
+            success: false,
+            message: 'Token tidak ditemukan',
+            data: null
+        };
+    }
+    
+    if (!ruanganId) {
+        console.error('❌ ruanganId tidak ditemukan');
+        return {
+            success: false,
+            message: 'Ruangan ID diperlukan',
+            data: null
+        };
+    }
+    
+    const baseUrl = getBaseUrl();
+    
+    // Gunakan endpoint yang benar: /api/picruangan
+    const url = `${baseUrl}/picruangan`;
+    
+    console.log('📤 Fetching semua PIC dari:', url);
+    
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            }
+        });
+        
+        console.log('📥 Response status:', response.status);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Error response:', errorText);
+            return {
+                success: false,
+                message: `HTTP Error ${response.status}: ${errorText.substring(0, 100)}`,
+                data: null
+            };
+        }
+        
+        const result = await response.json();
+        console.log('📥 Response data dari /api/picruangan:', JSON.stringify(result, null, 2));
+        
+        // Handle berbagai format response
+        let allPics = [];
+        
+        if (result.data && Array.isArray(result.data)) {
+            allPics = result.data;
+        } else if (Array.isArray(result)) {
+            allPics = result;
+        } else if (result.success && result.data && Array.isArray(result.data)) {
+            allPics = result.data;
+        } else if (result.picruangan && Array.isArray(result.picruangan)) {
+            allPics = result.picruangan;
+        } else if (result.rows && Array.isArray(result.rows)) {
+            allPics = result.rows;
+        } else if (result.pic_ruangan && Array.isArray(result.pic_ruangan)) {
+            allPics = result.pic_ruangan;
+        }
+        
+        console.log('📋 Semua data PIC:', allPics);
+        
+        if (allPics.length === 0) {
+            console.log('⚠️ Tidak ada data PIC di database');
+            return {
+                success: true,
+                data: null,
+                message: 'Belum ada PIC yang ditugaskan'
+            };
+        }
+        
+        // Cari PIC berdasarkan ruangan_id (konversi ke number/string sesuai kebutuhan)
+        const picData = allPics.find(pic => {
+            const picRuanganId = pic.ruangan_id || pic.ruanganId || pic.ruangan;
+            return picRuanganId == ruanganId; // Gunakan == untuk compare number vs string
+        });
+        
+        if (picData) {
+            console.log('✅ PIC ditemukan untuk ruangan', ruanganId, ':', picData);
+            
+            // Format data PIC untuk konsistensi
+            const formattedPic = {
+                id: picData.id,
+                user_id: picData.user_id || picData.userId,
+                user_name: picData.user_name || picData.userName || picData.nama || picData.user,
+                ruangan_id: picData.ruangan_id || picData.ruanganId || picData.ruangan,
+                tgl_penugasan: picData.tgl_penugasan || picData.tanggal_penugasan || picData.tanggal,
+                status: picData.status,
+                nama: picData.user_name || picData.userName || picData.nama || picData.user
+            };
+            
+            return {
+                success: true,
+                data: formattedPic,
+                message: 'Data PIC berhasil dimuat'
+            };
+        } else {
+            console.log(`ℹ️ Tidak ada PIC untuk ruangan ID: ${ruanganId}`);
+            console.log('📋 Daftar ruangan yang memiliki PIC:', allPics.map(p => ({
+                id: p.ruangan_id || p.ruanganId || p.ruangan,
+                nama: p.user_name || p.userName || p.nama
+            })));
+            
+            return {
+                success: true,
+                data: null,
+                message: `Tidak ada PIC untuk ruangan ini`
+            };
+        }
+    } catch (error) {
+        console.error('❌ Error fetching PIC:', error);
+        return {
+            success: false,
+            message: error.message,
+            data: null
+        };
+    }
+};
+
+/**
+ * GET /api/laporansrusak/options/aset (fallback)
  */
 const fetchAsetOptions = async (session, params = {}) => {
     const token = getToken(session);
@@ -1083,10 +1150,10 @@ const fetchAsetOptions = async (session, params = {}) => {
     
     // Coba beberapa alternatif endpoint
     const endpoints = [
-        `${baseUrl}/master-aset`,  // Coba endpoint master-aset
-        `${baseUrl}/aset`,          // Coba endpoint aset
-        `${baseUrl}/laporansrusak/options/aset`, // Endpoint asli
-        `${baseUrl}/master_aset`,   // Dengan underscore
+        `${baseUrl}/master-aset`,
+        `${baseUrl}/aset`,
+        `${baseUrl}/laporansrusak/options/aset`,
+        `${baseUrl}/master_aset`,
     ];
     
     let lastError = null;
@@ -1106,7 +1173,6 @@ const fetchAsetOptions = async (session, params = {}) => {
             if (response.ok) {
                 const result = await response.json();
                 
-                // Handle berbagai format response
                 let asetData = [];
                 if (result.data && Array.isArray(result.data)) {
                     asetData = result.data;
@@ -1206,17 +1272,17 @@ export {
     verifikasiLaporan,
     disposisiLaporan,
     verifikasiPPK,
-    selesaikanLaporan,
     selesaikanPerbaikan,
     getDetailPerbaikan,
     fetchLaporanStatistics,
     fetchAsetOptions,
     fetchRuanganOptions,
     fetchAsetByRuangan,
+    fetchPicByRuangan,
     uploadFoto
 };
 
-// ========== ALIASES (HANYA UNTUK FUNGSI DENGAN NAMA BERBEDA) ==========
+// ========== ALIASES ==========
 export const getAll = fetchAllLaporanRusak;
 export const getById = fetchLaporanRusakById;
 export const getUserLaporan = fetchLaporanByUser;
@@ -1226,13 +1292,8 @@ export const remove = deleteLaporanRusak;
 export const getStats = fetchLaporanStatistics;
 export const verifikasi = verifikasiLaporan;
 export const disposisi = disposisiLaporan;
-export const selesai = selesaikanLaporan; // Deprecated
-
-// HAPUS SEMUA ALIAS YANG REDUNDANT - karena sudah ada di named exports dengan nama yang sama
-// export const verifikasiPPK = verifikasiPPK; // <-- HAPUS
-// export const selesaikanPerbaikan = selesaikanPerbaikan; // <-- HAPUS
-// export const getDetailPerbaikan = getDetailPerbaikan; // <-- HAPUS
-
+export const selesaiPerbaikan = selesaikanPerbaikan;
+export const getPicByRuangan = fetchPicByRuangan;
 export const getAsetOptions = fetchAsetOptions;
 export const getAsetByRuangan = fetchAsetByRuangan;
 export const getRuanganOptions = fetchRuanganOptions;
@@ -1250,15 +1311,15 @@ const laporanApi = {
     verifikasiLaporan,
     disposisiLaporan,
     verifikasiPPK,
-    selesaikanLaporan,        // Deprecated
-    selesaikanPerbaikan,       // Fungsi baru
-    getDetailPerbaikan,        // Fungsi baru
+    selesaikanPerbaikan,
+    getDetailPerbaikan,
     fetchLaporanStatistics,
     
     // Options
     fetchAsetOptions,
     fetchRuanganOptions,
     fetchAsetByRuangan,
+    fetchPicByRuangan,
     
     // Upload
     uploadFoto,
@@ -1273,10 +1334,9 @@ const laporanApi = {
     getStats: fetchLaporanStatistics,
     verifikasi: verifikasiLaporan,
     disposisi: disposisiLaporan,
-    verifikasiPPK: verifikasiPPK, // Ini property object, bukan variable terpisah, jadi aman
-    selesai: selesaikanLaporan, // Deprecated
-    selesaikanPerbaikan: selesaikanPerbaikan, // Property object
-    getDetailPerbaikan: getDetailPerbaikan, // Property object
+    verifikasiPPK: verifikasiPPK,
+    selesaiPerbaikan: selesaikanPerbaikan,
+    getPicByRuangan: fetchPicByRuangan,
     getAsetOptions: fetchAsetOptions,
     getAsetByRuangan: fetchAsetByRuangan,
     getRuanganOptions: fetchRuanganOptions,

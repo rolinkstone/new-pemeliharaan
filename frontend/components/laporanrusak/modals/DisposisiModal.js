@@ -23,6 +23,7 @@ import {
   InputAdornment,
   FormHelperText,
   Autocomplete,
+  Divider,
 } from '@mui/material';
 import {
   Close as CloseIcon,
@@ -33,10 +34,22 @@ import {
   Info as InfoIcon,
   Refresh as RefreshIcon,
   WarningAmber as WarningIcon,
+  MonetizationOn as MonetizationOnIcon,
 } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
 import axios from 'axios';
 import { useSession } from 'next-auth/react';
+
+// Format Rupiah
+const formatRupiah = (value) => {
+  if (!value) return 'Rp 0';
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+};
 
 const DisposisiModal = ({
   open,
@@ -51,7 +64,6 @@ const DisposisiModal = ({
   // State untuk form
   const [selectedPpk, setSelectedPpk] = useState(null);
   const [catatan, setCatatan] = useState('');
-  const [estimasiBiaya, setEstimasiBiaya] = useState('');
   
   // State untuk daftar PPK
   const [ppkList, setPpkList] = useState([]);
@@ -73,7 +85,6 @@ const DisposisiModal = ({
     if (open) {
       setSelectedPpk(null);
       setCatatan('');
-      setEstimasiBiaya('');
       setSearchText('');
       setFetchError('');
     }
@@ -100,7 +111,7 @@ const DisposisiModal = ({
             Authorization: `Bearer ${session.accessToken}`,
             'Content-Type': 'application/json'
           },
-          timeout: 10000 // 10 detik timeout
+          timeout: 10000
         }
       );
       
@@ -182,12 +193,13 @@ const DisposisiModal = ({
       return;
     }
 
-    if (!estimasiBiaya) {
-      alert('Estimasi biaya harus diisi');
+    // Gunakan estimasi biaya dari laporan (yang sudah diinput oleh PIC)
+    if (!laporan?.estimasi_biaya || laporan.estimasi_biaya <= 0) {
+      alert('Estimasi biaya belum diisi oleh PIC. Silakan minta PIC untuk mengisi estimasi biaya terlebih dahulu.');
       return;
     }
 
-    // Data disposisi dengan PPK yang dipilih
+    // Data disposisi dengan PPK yang dipilih dan estimasi biaya dari laporan
     const dataToSubmit = {
       tujuan: 'ppk',
       ppk_id: selectedPpk.id,
@@ -197,14 +209,18 @@ const DisposisiModal = ({
       ppk_jabatan: selectedPpk.jabatan || '',
       ppk_unitKerja: selectedPpk.unitKerja || '',
       catatan: catatan || 'Diteruskan ke PPK untuk verifikasi anggaran',
-      estimasi_biaya: parseFloat(estimasiBiaya)
+      estimasi_biaya: laporan.estimasi_biaya // Gunakan estimasi dari PIC
     };
     
     console.log('📤 Data disposisi ke PPK:', dataToSubmit);
+    console.log('💰 Estimasi biaya dari PIC:', laporan.estimasi_biaya);
     onConfirm(dataToSubmit);
   };
 
   if (!laporan) return null;
+
+  // Dapatkan estimasi biaya dari laporan
+  const estimasiBiayaDariPIC = laporan.estimasi_biaya;
 
   return (
     <Dialog
@@ -338,6 +354,58 @@ const DisposisiModal = ({
                 </Box>
               </Box>
             </Paper>
+
+            {/* Estimasi Biaya dari PIC - TAMPILKAN */}
+            <Paper 
+              variant="outlined" 
+              sx={{ 
+                p: 2.5, 
+                mb: 3, 
+                bgcolor: alpha(theme.palette.warning.main, 0.04),
+                borderRadius: 2,
+                borderColor: alpha(theme.palette.warning.main, 0.3),
+              }}
+            >
+              <Box display="flex" alignItems="center" gap={1} mb={1.5}>
+                
+                <Typography variant="subtitle2" fontWeight="600" color="warning.main">
+                  Estimasi Biaya dari PIC Ruangan
+                </Typography>
+              </Box>
+              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+                <Box 
+                  sx={{ 
+                    bgcolor: alpha(theme.palette.warning.main, 0.1),
+                    px: 3,
+                    py: 1.5,
+                    borderRadius: 2,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 1,
+                  }}
+                >
+                 
+                  <Typography variant="h6" fontWeight="700" color="warning.main">
+                    {estimasiBiayaDariPIC ? formatRupiah(estimasiBiayaDariPIC) : 'Belum diisi'}
+                  </Typography>
+                </Box>
+                {!estimasiBiayaDariPIC && (
+                  <Alert 
+                    severity="warning" 
+                    sx={{ flex: 1, borderRadius: 2 }}
+                  >
+                    Estimasi biaya belum diisi oleh PIC. Harap minta PIC untuk mengisi estimasi biaya terlebih dahulu.
+                  </Alert>
+                )}
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                Estimasi biaya ini diinput oleh PIC Ruangan saat verifikasi laporan
+              </Typography>
+            </Paper>
+
+            <Divider sx={{ my: 2 }}>
+              <Chip label="Disposisi" size="small" />
+            </Divider>
 
             {/* Error Message jika fetch gagal */}
             {fetchError && (
@@ -526,31 +594,7 @@ const DisposisiModal = ({
               </Paper>
             )}
 
-            {/* Input Estimasi Biaya */}
-            <TextField
-              fullWidth
-              label="Estimasi Biaya (Rp)"
-              value={estimasiBiaya}
-              onChange={(e) => setEstimasiBiaya(e.target.value)}
-              type="number"
-              placeholder="Masukkan estimasi biaya yang diperlukan"
-              sx={{ mb: 3 }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <AttachMoneyIcon sx={{ color: theme.palette.text.secondary }} />
-                  </InputAdornment>
-                ),
-                sx: { borderRadius: 2 }
-              }}
-              helperText="Estimasi biaya untuk verifikasi PPK (wajib diisi)"
-              required
-              inputProps={{
-                min: 0,
-                step: 1000
-              }}
-            />
-
+            {/* Catatan Disposisi */}
             <TextField
               fullWidth
               label="Catatan Disposisi"
@@ -583,7 +627,7 @@ const DisposisiModal = ({
                   Informasi Disposisi
                 </Typography>
                 <Typography variant="caption">
-                  Laporan akan diteruskan ke <strong>PPK yang dipilih</strong> untuk verifikasi anggaran.
+                  Laporan akan diteruskan ke <strong>PPK yang dipilih</strong> dengan <strong>estimasi biaya sebesar {estimasiBiayaDariPIC ? formatRupiah(estimasiBiayaDariPIC) : 'belum diisi'}</strong> untuk verifikasi anggaran.
                   PPK akan memeriksa estimasi biaya dan menyetujui atau menolak pengajuan.
                 </Typography>
               </Box>
@@ -601,6 +645,22 @@ const DisposisiModal = ({
               >
                 <Typography variant="caption">
                   Silakan pilih PPK tujuan terlebih dahulu sebelum mengirim disposisi
+                </Typography>
+              </Alert>
+            )}
+
+            {/* Warning jika estimasi biaya belum ada */}
+            {!estimasiBiayaDariPIC && (
+              <Alert 
+                severity="error"
+                icon={<WarningIcon />}
+                sx={{ 
+                  mt: 2,
+                  borderRadius: 2,
+                }}
+              >
+                <Typography variant="caption">
+                  Estimasi biaya belum diisi oleh PIC. Disposisi tidak dapat dikirim sampai PIC mengisi estimasi biaya.
                 </Typography>
               </Alert>
             )}
@@ -629,7 +689,7 @@ const DisposisiModal = ({
           variant="contained"
           color="primary"
           startIcon={<SendIcon />}
-          disabled={loading || loadingPpkList || !selectedPpk || !estimasiBiaya}
+          disabled={loading || loadingPpkList || !selectedPpk || !estimasiBiayaDariPIC}
           sx={{ 
             borderRadius: 2,
             px: 4,

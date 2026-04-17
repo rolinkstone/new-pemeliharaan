@@ -33,7 +33,6 @@ import {
   AttachMoney as AttachMoneyIcon,
   Info as InfoIcon,
   Assignment as AssignmentIcon,
-  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
 
@@ -59,13 +58,17 @@ const VerifikasiModal = ({
   const theme = useTheme();
   const [keputusan, setKeputusan] = useState('setuju');
   const [catatan, setCatatan] = useState('');
-  const [butuhAnggaran, setButuhAnggaran] = useState(false); // Untuk memilih alur
+  const [butuhAnggaran, setButuhAnggaran] = useState(false);
+  const [estimasiBiaya, setEstimasiBiaya] = useState('');
+  const [estimasiBiayaError, setEstimasiBiayaError] = useState('');
 
   useEffect(() => {
     if (open && laporan) {
       setKeputusan('setuju');
       setCatatan('');
       setButuhAnggaran(false);
+      setEstimasiBiaya('');
+      setEstimasiBiayaError('');
     }
   }, [open, laporan]);
 
@@ -75,20 +78,44 @@ const VerifikasiModal = ({
     }
   };
 
+  const formatRupiah = (value) => {
+    if (!value) return '';
+    const number = value.toString().replace(/[^,\d]/g, '');
+    return new Intl.NumberFormat('id-ID').format(number);
+  };
+
+  const handleEstimasiBiayaChange = (e) => {
+    const rawValue = e.target.value.replace(/[^0-9]/g, '');
+    setEstimasiBiaya(rawValue);
+    if (rawValue && butuhAnggaran && keputusan === 'setuju') {
+      if (parseFloat(rawValue) <= 0) {
+        setEstimasiBiayaError('Estimasi biaya harus lebih dari 0');
+      } else {
+        setEstimasiBiayaError('');
+      }
+    } else {
+      setEstimasiBiayaError('');
+    }
+  };
+
   const handleSubmit = () => {
-    // Gunakan tipe yang diterima backend: 'verifikasi_awal'
-    const tipe = 'verifikasi_awal';
+    // Validasi estimasi biaya jika butuh anggaran
+    if (butuhAnggaran && keputusan === 'setuju') {
+      if (!estimasiBiaya || parseFloat(estimasiBiaya) <= 0) {
+        setEstimasiBiayaError('Estimasi biaya wajib diisi dan harus lebih dari 0');
+        return;
+      }
+    }
     
-    // Tentukan next_status berdasarkan alur yang dipilih sesuai enum
     let nextStatus;
     if (keputusan === 'setuju') {
       if (butuhAnggaran) {
-        nextStatus = STATUS.MENUNGGU_DISPOSISI; // 'menunggu_disposisi'
+        nextStatus = STATUS.MENUNGGU_DISPOSISI;
       } else {
-        nextStatus = STATUS.SELESAI; // 'selesai'
+        nextStatus = STATUS.SELESAI;
       }
     } else {
-      nextStatus = STATUS.DITOLAK; // 'ditolak'
+      nextStatus = STATUS.DITOLAK;
     }
     
     const dataToSubmit = {
@@ -96,14 +123,14 @@ const VerifikasiModal = ({
       catatan: catatan || (keputusan === 'setuju' 
           ? (butuhAnggaran ? 'Diverifikasi, perlu anggaran' : 'Diverifikasi, perbaikan langsung') 
           : 'Ditolak'),
-      tipe: tipe,
-      // Tambahkan flag untuk membedakan alur
       alur: butuhAnggaran ? 'dengan_anggaran' : 'langsung',
-      // Status selanjutnya sesuai enum
-      next_status: nextStatus
+      next_status: nextStatus,
+      // Estimasi biaya hanya dikirim jika butuh anggaran dan keputusan setuju
+      estimasi_biaya: butuhAnggaran && keputusan === 'setuju' ? parseFloat(estimasiBiaya) : null
     };
     
     console.log('📤 Verifikasi PIC - Data dikirim:', dataToSubmit);
+    console.log('💰 Estimasi Biaya:', dataToSubmit.estimasi_biaya);
     onConfirm(dataToSubmit);
   };
 
@@ -313,6 +340,31 @@ const VerifikasiModal = ({
               </Paper>
             </FormControl>
 
+            {/* Estimasi Biaya - Hanya muncul jika butuh anggaran */}
+            {butuhAnggaran && keputusan === 'setuju' && (
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle2" fontWeight="600" mb={1}>
+                  Estimasi Biaya Perbaikan <span style={{ color: theme.palette.error.main }}>*</span>
+                </Typography>
+                <TextField
+                  fullWidth
+                  label="Estimasi Biaya"
+                  value={estimasiBiaya ? formatRupiah(estimasiBiaya) : ''}
+                  onChange={handleEstimasiBiayaChange}
+                  placeholder="Masukkan estimasi biaya perbaikan"
+                  error={!!estimasiBiayaError}
+                  helperText={estimasiBiayaError || "Masukkan perkiraan biaya yang diperlukan untuk perbaikan"}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start">Rp</InputAdornment>,
+                  }}
+                  sx={{ mb: 1 }}
+                />
+                <Typography variant="caption" color="text.secondary">
+                  ⚠️ Estimasi biaya akan disimpan dan digunakan sebagai acuan untuk proses selanjutnya
+                </Typography>
+              </Box>
+            )}
+
             <Divider sx={{ my: 2 }} />
 
             {/* Pilihan Keputusan */}
@@ -409,7 +461,7 @@ const VerifikasiModal = ({
               <Typography variant="caption">
                 {keputusan === 'setuju' 
                   ? (butuhAnggaran 
-                    ? 'Laporan akan diverifikasi dan masuk ke antrian disposisi Kabag TU.'
+                    ? `Laporan akan diverifikasi dan masuk ke antrian disposisi Kabag TU.${estimasiBiaya ? ` Estimasi biaya: Rp ${formatRupiah(estimasiBiaya)}` : ''}`
                     : 'Laporan akan langsung selesai. Perbaikan dapat segera dilakukan.')
                   : 'Laporan akan ditolak. Pengaju dapat mengajukan ulang.'}
               </Typography>
@@ -436,7 +488,7 @@ const VerifikasiModal = ({
           variant="contained"
           color={keputusan === 'setuju' ? (butuhAnggaran ? 'warning' : 'success') : 'error'}
           startIcon={getKeputusanIcon()}
-          disabled={loading}
+          disabled={loading || (butuhAnggaran && keputusan === 'setuju' && (!estimasiBiaya || parseFloat(estimasiBiaya) <= 0))}
           sx={{ 
             borderRadius: 2,
             px: 4,

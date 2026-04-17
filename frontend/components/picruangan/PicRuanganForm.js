@@ -1,3 +1,5 @@
+// components/picruangan/PicRuanganForm.js
+
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Grid,
@@ -14,11 +16,12 @@ import {
   Chip,
   CircularProgress,
   InputAdornment,
+  Alert,
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { Search as SearchIcon, Person as PersonIcon } from '@mui/icons-material';
+import { Search as SearchIcon, Person as PersonIcon, Warning as WarningIcon } from '@mui/icons-material';
 import idLocale from 'date-fns/locale/id';
 import PicRuangan from './models/PicRuangan';
 import * as picRuanganApi from './api/picRuanganApi';
@@ -28,12 +31,14 @@ const PicRuanganForm = ({
   initialData,
   onSubmit,
   loading = false,
+  readOnly = false,
 }) => {
   const { data: session } = useSession();
   
   const [formData, setFormData] = useState({
     id: null,
     user_id: '',
+    user_name: '',
     ruangan_id: '',
     tgl_penugasan: new Date().toISOString().split('T')[0],
     tgl_berakhir: null,
@@ -47,42 +52,51 @@ const PicRuanganForm = ({
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [userSearchText, setUserSearchText] = useState('');
   const [ruanganSearchText, setRuanganSearchText] = useState('');
+  const [loadError, setLoadError] = useState(null);
 
   // Load options from API
- // components/picruangan/PicRuanganForm.js
-
-// Di bagian useEffect untuk load options
-useEffect(() => {
+  useEffect(() => {
     if (!session) return;
     
     const loadOptions = async () => {
       setLoadingOptions(true);
+      setLoadError(null);
+      
       try {
-        // Gunakan fetchUserOptions yang sudah diperbaiki
+        console.log('🔄 Loading user options with role=pic_ruangan...');
+        
         const [userResult, ruanganResult] = await Promise.all([
-          picRuanganApi.fetchUserOptions(session), // Ini akan mengirim role=pic_ruangan
+          picRuanganApi.fetchUserOptions(session, 'pic_ruangan'),
           picRuanganApi.fetchRuanganOptions(session)
         ]);
 
-        if (userResult?.success) {
-          console.log('📥 User PIC options loaded:', userResult.data?.length || 0);
-          console.log('📋 Data user dengan role pic_ruangan:', userResult.data);
+        console.log('📥 User options response:', userResult);
+        console.log('📥 Ruangan options response:', ruanganResult);
+
+        if (userResult?.success && userResult.data?.length > 0) {
+          const users = userResult.data;
+          console.log(`✅ Loaded ${users.length} users with role pic_ruangan`);
           
-          // Hanya set userOptions dengan data yang benar
-          setUserOptions(userResult.data || []);
+          users.forEach((user, idx) => {
+            console.log(`   ${idx + 1}. ${user.nama} (${user.username}) - NIP: ${user.nip || '-'}`);
+          });
+          
+          setUserOptions(users);
         } else {
           console.error('Failed to load user options:', userResult?.message);
+          setLoadError(userResult?.message || 'Tidak ada user dengan role pic_ruangan');
           setUserOptions([]);
         }
 
-        if (ruanganResult?.success) {
-          console.log('📥 Ruangan options loaded:', ruanganResult.data?.length || 0);
-          setRuanganOptions(ruanganResult.data || []);
+        if (ruanganResult?.success && ruanganResult.data) {
+          console.log(`✅ Loaded ${ruanganResult.data.length} ruangan options`);
+          setRuanganOptions(ruanganResult.data);
         } else {
           console.error('Failed to load ruangan options:', ruanganResult?.message);
         }
       } catch (error) {
         console.error('Error loading options:', error);
+        setLoadError(error?.message || 'Terjadi kesalahan saat memuat data');
       } finally {
         setLoadingOptions(false);
       }
@@ -95,14 +109,18 @@ useEffect(() => {
   useEffect(() => {
     if (initialData) {
       console.log('📋 Initial data for edit:', initialData);
-      const instance = PicRuangan.fromAPI(initialData);
-      setFormData(instance.toJSON());
+      setFormData({
+        id: initialData.id || null,
+        user_id: initialData.user_id || '',
+        user_name: initialData.user_name || initialData.user_nama || '',
+        ruangan_id: initialData.ruangan_id || '',
+        tgl_penugasan: initialData.tgl_penugasan || new Date().toISOString().split('T')[0],
+        tgl_berakhir: initialData.tgl_berakhir || null,
+        status: initialData.status || 'aktif',
+      });
       
-      // Set search text for user if available
-      if (instance.user_detail) {
-        setUserSearchText(instance.user_detail.nama || '');
-      } else if (instance.user_nama) {
-        setUserSearchText(instance.user_nama);
+      if (initialData.user_name || initialData.user_nama) {
+        setUserSearchText(initialData.user_name || initialData.user_nama);
       }
     }
   }, [initialData]);
@@ -110,7 +128,7 @@ useEffect(() => {
   // Filter user options based on search text
   const filteredUserOptions = useMemo(() => {
     if (!userSearchText || userSearchText.length < 2) {
-      return userOptions.slice(0, 50); // Tampilkan 50 pertama jika tidak ada pencarian
+      return userOptions.slice(0, 50);
     }
     
     const searchLower = userSearchText.toLowerCase();
@@ -119,10 +137,9 @@ useEffect(() => {
         (user.nama && user.nama.toLowerCase().includes(searchLower)) ||
         (user.nip && user.nip.toLowerCase().includes(searchLower)) ||
         (user.username && user.username.toLowerCase().includes(searchLower)) ||
-        (user.email && user.email.toLowerCase().includes(searchLower)) ||
-        (user.user_id && user.user_id.toLowerCase().includes(searchLower))
+        (user.email && user.email.toLowerCase().includes(searchLower))
       );
-    }).slice(0, 100); // Batasi hasil pencarian
+    }).slice(0, 100);
   }, [userOptions, userSearchText]);
 
   // Filter ruangan options based on search text
@@ -142,6 +159,7 @@ useEffect(() => {
   }, [ruanganOptions, ruanganSearchText]);
 
   const handleChange = (e) => {
+    if (readOnly) return;
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     
@@ -151,6 +169,7 @@ useEffect(() => {
   };
 
   const handleDateChange = (name, date) => {
+    if (readOnly) return;
     const value = date ? date.toISOString().split('T')[0] : null;
     setFormData(prev => ({ ...prev, [name]: value }));
     
@@ -160,34 +179,75 @@ useEffect(() => {
   };
 
   const validate = () => {
-    const instance = new PicRuangan(formData);
-    const result = instance.validate();
-    setErrors(result.errors);
-    return result.isValid;
+    const newErrors = {};
+    
+    if (!formData.user_id) {
+      newErrors.user_id = 'PIC harus dipilih';
+    }
+    if (!formData.user_name) {
+      newErrors.user_name = 'Nama PIC harus diisi';
+    }
+    if (!formData.ruangan_id) {
+      newErrors.ruangan_id = 'Ruangan harus dipilih';
+    }
+    if (!formData.tgl_penugasan) {
+      newErrors.tgl_penugasan = 'Tanggal penugasan harus diisi';
+    }
+    
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
- // ========== HANDLE SUBMIT ==========
-const handleSubmit = (e) => {
-  e.preventDefault();
-  if (validate()) {
-    // Format tanggal sebelum dikirim
-    const formattedData = {
-      ...formData,
-      tgl_penugasan: formData.tgl_penugasan, // Ini sudah format YYYY-MM-DD dari DatePicker
-      tgl_berakhir: formData.tgl_berakhir ? formData.tgl_berakhir.split('T')[0] : null
-    };
-    console.log('📤 Submitting formatted data:', formattedData);
-    onSubmit(formattedData);
-  }
-};
+  const handleSubmit = (e) => {
+    if (readOnly) return;
+    e.preventDefault();
+    if (validate()) {
+      const formattedData = {
+        user_id: formData.user_id,
+        user_name: formData.user_name,
+        ruangan_id: formData.ruangan_id,
+        tgl_penugasan: formData.tgl_penugasan,
+        tgl_berakhir: formData.tgl_berakhir || null,
+        status: formData.status
+      };
+      console.log('📤 Submitting formatted data:', formattedData);
+      onSubmit(formattedData);
+    }
+  };
 
   const selectedUser = userOptions.find(u => u.user_id === formData.user_id);
+
+  // Handle user selection - set both user_id and user_name
+  const handleUserChange = (event, newValue) => {
+    if (readOnly) return;
+    setFormData(prev => ({ 
+      ...prev, 
+      user_id: newValue?.user_id || '',
+      user_name: newValue?.nama || ''  // Set nama PIC
+    }));
+    if (errors.user_id) {
+      setErrors(prev => ({ ...prev, user_id: '' }));
+    }
+    if (errors.user_name) {
+      setErrors(prev => ({ ...prev, user_name: '' }));
+    }
+  };
+
   const selectedRuangan = ruanganOptions.find(r => r.id === formData.ruangan_id);
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={idLocale}>
       <form id="pic-ruangan-form" onSubmit={handleSubmit}>
         <Grid container spacing={3}>
+          {/* Error Alert */}
+          {loadError && (
+            <Grid item xs={12}>
+              <Alert severity="warning" icon={<WarningIcon />}>
+                <Typography variant="body2">{loadError}</Typography>
+              </Alert>
+            </Grid>
+          )}
+
           {/* Pilih PIC dari Keycloak */}
           <Grid item xs={12} md={6}>
             <Autocomplete
@@ -198,24 +258,20 @@ const handleSubmit = (e) => {
                 return `${option.nama || ''}${option.nip ? ` (${option.nip})` : ''}`;
               }}
               value={selectedUser || null}
-              onChange={(event, newValue) => {
-                setFormData(prev => ({ ...prev, user_id: newValue?.user_id || '' }));
-                if (errors.user_id) {
-                  setErrors(prev => ({ ...prev, user_id: '' }));
-                }
-              }}
+              onChange={handleUserChange}
               onInputChange={(event, newInputValue) => {
+                if (readOnly) return;
                 setUserSearchText(newInputValue);
               }}
               inputValue={userSearchText}
-              disabled={loading}
+              disabled={loading || readOnly}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Pilih PIC"
+                  label="Pilih PIC *"
                   required
                   error={!!errors.user_id}
-                  helperText={errors.user_id || 'Cari berdasarkan nama, NIP, atau email'}
+                  helperText={errors.user_id || 'Cari berdasarkan nama, NIP, atau email (min. 2 karakter)'}
                   fullWidth
                   InputProps={{
                     ...params.InputProps,
@@ -238,11 +294,11 @@ const handleSubmit = (e) => {
                         </Typography>
                         <Typography variant="caption" color="textSecondary" component="div">
                           {option.nip && `NIP: ${option.nip} • `}
-                          {option.username}
+                          Username: {option.username}
                         </Typography>
                         {option.jabatan && option.jabatan !== '-' && (
                           <Typography variant="caption" color="textSecondary">
-                            {option.jabatan}
+                            Jabatan: {option.jabatan}
                           </Typography>
                         )}
                       </Box>
@@ -251,14 +307,22 @@ const handleSubmit = (e) => {
                 </li>
               )}
               noOptionsText={
-                userSearchText.length < 2 
-                  ? 'Ketik minimal 2 karakter untuk mencari' 
-                  : 'Tidak ada user ditemukan'
+                loadingOptions 
+                  ? 'Memuat data user...'
+                  : userSearchText.length < 2 
+                    ? 'Ketik minimal 2 karakter untuk mencari' 
+                    : userOptions.length === 0 && !loadingOptions
+                      ? 'Tidak ada user dengan role pic_ruangan. Periksa konfigurasi Keycloak.'
+                      : 'Tidak ada user ditemukan'
               }
               loadingText="Memuat data user..."
               isOptionEqualToValue={(option, value) => option.user_id === value?.user_id}
-              filterOptions={(x) => x} // Nonaktifkan filter internal
+              filterOptions={(x) => x}
             />
+            {/* Hidden field untuk user_name (akan terisi otomatis dari selection) */}
+            {formData.user_name && (
+              <input type="hidden" name="user_name" value={formData.user_name} />
+            )}
           </Grid>
 
           {/* Pilih Ruangan */}
@@ -272,20 +336,22 @@ const handleSubmit = (e) => {
               }}
               value={selectedRuangan || null}
               onChange={(event, newValue) => {
+                if (readOnly) return;
                 setFormData(prev => ({ ...prev, ruangan_id: newValue?.id || '' }));
                 if (errors.ruangan_id) {
                   setErrors(prev => ({ ...prev, ruangan_id: '' }));
                 }
               }}
               onInputChange={(event, newInputValue) => {
+                if (readOnly) return;
                 setRuanganSearchText(newInputValue);
               }}
               inputValue={ruanganSearchText}
-              disabled={loading}
+              disabled={loading || readOnly}
               renderInput={(params) => (
                 <TextField
                   {...params}
-                  label="Pilih Ruangan"
+                  label="Pilih Ruangan *"
                   required
                   error={!!errors.ruangan_id}
                   helperText={errors.ruangan_id || 'Cari berdasarkan kode atau nama ruangan'}
@@ -315,13 +381,15 @@ const handleSubmit = (e) => {
                 </li>
               )}
               noOptionsText={
-                ruanganSearchText.length < 2
-                  ? 'Ketik minimal 2 karakter untuk mencari'
-                  : 'Tidak ada ruangan ditemukan'
+                loadingOptions
+                  ? 'Memuat data ruangan...'
+                  : ruanganSearchText.length < 2
+                    ? 'Ketik minimal 2 karakter untuk mencari'
+                    : 'Tidak ada ruangan ditemukan'
               }
               loadingText="Memuat data ruangan..."
               isOptionEqualToValue={(option, value) => option.id === value?.id}
-              filterOptions={(x) => x} // Nonaktifkan filter internal
+              filterOptions={(x) => x}
             />
           </Grid>
 
@@ -331,13 +399,14 @@ const handleSubmit = (e) => {
               label="Tanggal Penugasan *"
               value={formData.tgl_penugasan ? new Date(formData.tgl_penugasan) : null}
               onChange={(date) => handleDateChange('tgl_penugasan', date)}
+              disabled={loading || readOnly}
               slotProps={{
                 textField: {
                   fullWidth: true,
                   required: true,
                   error: !!errors.tgl_penugasan,
                   helperText: errors.tgl_penugasan,
-                  disabled: loading
+                  disabled: loading || readOnly
                 }
               }}
             />
@@ -349,12 +418,13 @@ const handleSubmit = (e) => {
               label="Tanggal Berakhir"
               value={formData.tgl_berakhir ? new Date(formData.tgl_berakhir) : null}
               onChange={(date) => handleDateChange('tgl_berakhir', date)}
+              disabled={loading || readOnly}
               slotProps={{
                 textField: {
                   fullWidth: true,
                   error: !!errors.tgl_berakhir,
                   helperText: errors.tgl_berakhir || 'Kosongkan jika masih berlaku',
-                  disabled: loading
+                  disabled: loading || readOnly
                 }
               }}
             />
@@ -362,14 +432,13 @@ const handleSubmit = (e) => {
 
           {/* Status */}
           <Grid item xs={12} md={6}>
-            <FormControl fullWidth>
+            <FormControl fullWidth disabled={loading || readOnly}>
               <InputLabel>Status</InputLabel>
               <Select
                 name="status"
                 value={formData.status}
                 onChange={handleChange}
                 label="Status"
-                disabled={loading}
               >
                 <MenuItem value="aktif">Aktif</MenuItem>
                 <MenuItem value="nonaktif">Nonaktif</MenuItem>
@@ -388,6 +457,9 @@ const handleSubmit = (e) => {
                   <Chip size="small" label={`Nama: ${selectedUser.nama}`} />
                   {selectedUser.nip && selectedUser.nip !== '-' && (
                     <Chip size="small" label={`NIP: ${selectedUser.nip}`} />
+                  )}
+                  {selectedUser.username && (
+                    <Chip size="small" label={`Username: ${selectedUser.username}`} />
                   )}
                   {selectedUser.email && (
                     <Chip size="small" label={`Email: ${selectedUser.email}`} />
@@ -418,16 +490,6 @@ const handleSubmit = (e) => {
                   )}
                 </Box>
               </Paper>
-            </Grid>
-          )}
-
-          {/* Info Created At (untuk edit) */}
-          {initialData && formData.created_at && (
-            <Grid item xs={12}>
-              <Divider />
-              <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-                ID: {formData.id} · Dibuat pada: {new Date(formData.created_at).toLocaleString('id-ID')}
-              </Typography>
             </Grid>
           )}
         </Grid>

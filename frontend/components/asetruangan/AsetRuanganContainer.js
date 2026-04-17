@@ -17,6 +17,7 @@ import {
   Tab,
   Tabs,
   Chip,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -29,6 +30,7 @@ import {
   History as HistoryIcon,
   Timeline as TimelineIcon,
   SwapHoriz as SwapIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import * as asetRuanganApi from './api/asetRuanganApi';
@@ -94,6 +96,73 @@ const AsetRuanganContainer = () => {
     total: 0,
     totalPages: 0,
   });
+
+  // ========== IMPROVED HELPER FUNCTIONS FOR ROLE CHECK ==========
+  const getUserRoles = () => {
+    const roles = [];
+    
+    // 1. Dari realm_access (Keycloak standard)
+    if (session?.user?.realm_access?.roles) {
+      roles.push(...session.user.realm_access.roles);
+    }
+    
+    // 2. Dari field role langsung (PENTING! untuk role admin)
+    if (session?.user?.role) {
+      roles.push(session.user.role);
+    }
+    
+    // 3. Dari session.role
+    if (session?.role) {
+      roles.push(session.role);
+    }
+    
+    // 4. Dari user metadata
+    if (session?.user?.metadata?.role) {
+      roles.push(session.user.metadata.role);
+    }
+    
+    // 5. Dari access token (jika ada)
+    if (session?.accessToken) {
+      try {
+        const base64Url = session.accessToken.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(atob(base64));
+        if (payload.realm_access?.roles) {
+          roles.push(...payload.realm_access.roles);
+        }
+        if (payload.resource_access) {
+          Object.values(payload.resource_access).forEach(resource => {
+            if (resource.roles) {
+              roles.push(...resource.roles);
+            }
+          });
+        }
+      } catch (e) {
+        console.error('Error parsing access token:', e);
+      }
+    }
+    
+    // Remove duplicates
+    const uniqueRoles = [...new Set(roles)];
+    console.log('🔍 Detected user roles:', uniqueRoles);
+    
+    return uniqueRoles;
+  };
+
+  const hasRole = (allowedRoles) => {
+    const userRoles = getUserRoles();
+    const hasAccess = allowedRoles.some(role => userRoles.includes(role));
+    console.log(`🔍 Checking roles - User: ${userRoles.join(', ')}, Allowed: ${allowedRoles.join(', ')}, Has access: ${hasAccess}`);
+    return hasAccess;
+  };
+
+  const canModifyData = () => {
+    return hasRole(['admin_pemeliharaan', 'admin', 'superadmin']);
+  };
+
+  const isReadOnly = () => {
+    return !canModifyData();
+  };
 
   // ========== FETCH ASET DETAILS ==========
   const fetchAsetDetails = useCallback(async () => {
@@ -242,7 +311,6 @@ const AsetRuanganContainer = () => {
       console.log('📥 Data aset ruangan:', result);
 
       if (result?.success) {
-        // Gunakan details yang sudah ada
         const detailsToUse = asetDet || asetDetails;
         const ruanganDetToUse = ruanganDet || ruanganDetails;
         
@@ -284,6 +352,11 @@ const AsetRuanganContainer = () => {
       setInitialLoading(true);
       
       try {
+        // Log user roles for debugging
+        console.log('📋 User roles:', getUserRoles());
+        console.log('🔒 Can modify data:', canModifyData());
+        console.log('📖 Read-only mode:', isReadOnly());
+        
         // Load details first in parallel
         const [asetDet, ruanganDet] = await Promise.all([
           fetchAsetDetails(),
@@ -301,20 +374,18 @@ const AsetRuanganContainer = () => {
     };
 
     loadInitialData();
-  }, [session]); // Hanya bergantung pada session
+  }, [session]);
 
   // ========== HANDLE REFRESH ==========
   const handleRefresh = async () => {
     setLoading(true);
     
     try {
-      // Refresh details first
       const [asetDet, ruanganDet] = await Promise.all([
         fetchAsetDetails(),
         fetchRuanganDetails()
       ]);
       
-      // Then refresh data
       await fetchData(asetDet, ruanganDet);
       
       showSnackbar('Data berhasil diperbarui', 'success');
@@ -350,8 +421,12 @@ const AsetRuanganContainer = () => {
     setAsetRuanganList(prev => sortData(prev));
   };
 
-  // ========== HANDLE CREATE ==========
+  // ========== HANDLE CREATE (with role check) ==========
   const handleCreate = () => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menambah data.', 'error');
+      return;
+    }
     setSelectedItem(null);
     setModalOpen(true);
   };
@@ -362,26 +437,42 @@ const AsetRuanganContainer = () => {
     setViewModalOpen(true);
   };
 
-  // ========== HANDLE EDIT ==========
+  // ========== HANDLE EDIT (with role check) ==========
   const handleEdit = (item) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mengubah data.', 'error');
+      return;
+    }
     setSelectedItem(item);
     setModalOpen(true);
   };
 
-  // ========== HANDLE PINDAH ==========
+  // ========== HANDLE PINDAH (with role check) ==========
   const handlePindah = (item) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat memindahkan aset.', 'error');
+      return;
+    }
     setSelectedItem(item);
     setPindahModalOpen(true);
   };
 
-  // ========== HANDLE CATAT KELUAR ==========
+  // ========== HANDLE CATAT KELUAR (with role check) ==========
   const handleCatatKeluar = (item) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mencatat aset keluar.', 'error');
+      return;
+    }
     setSelectedItem(item);
     setKeluarModalOpen(true);
   };
 
-  // ========== HANDLE DELETE ==========
+  // ========== HANDLE DELETE (with role check) ==========
   const handleDelete = (item) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menghapus data.', 'error');
+      return;
+    }
     setSelectedItem(item);
     setDeleteModalOpen(true);
   };
@@ -392,10 +483,16 @@ const AsetRuanganContainer = () => {
     setFilters(prev => ({ ...prev, aset_id: item.aset_id }));
   };
 
-  // ========== HANDLE SUBMIT ==========
+  // ========== HANDLE SUBMIT (with role check) ==========
   const handleSubmit = async (formData) => {
     if (!session) {
       showSnackbar('Session tidak ditemukan', 'error');
+      return;
+    }
+
+    // Double-check role before submit
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menyimpan data.', 'error');
       return;
     }
 
@@ -419,7 +516,6 @@ const AsetRuanganContainer = () => {
         );
         setModalOpen(false);
         
-        // Refresh data with new details
         const [asetDet, ruanganDet] = await Promise.all([
           fetchAsetDetails(),
           fetchRuanganDetails()
@@ -430,15 +526,26 @@ const AsetRuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error submitting:', error);
-      showSnackbar(error?.message || 'Terjadi kesalahan saat menyimpan data', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk melakukan operasi ini.', 'error');
+      } else {
+        showSnackbar(error?.message || 'Terjadi kesalahan saat menyimpan data', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
   };
 
-  // ========== HANDLE CONFIRM PINDAH ==========
+  // ========== HANDLE CONFIRM PINDAH (with role check) ==========
   const handleConfirmPindah = async (data) => {
     if (!session || !selectedItem) return;
+
+    // Double-check role before pindah
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk memindahkan aset.', 'error');
+      return;
+    }
 
     setModalLoading(true);
 
@@ -454,7 +561,6 @@ const AsetRuanganContainer = () => {
         showSnackbar('Aset berhasil dipindahkan', 'success');
         setPindahModalOpen(false);
         
-        // Refresh data
         const [asetDet, ruanganDet] = await Promise.all([
           fetchAsetDetails(),
           fetchRuanganDetails()
@@ -465,15 +571,26 @@ const AsetRuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error:', error);
-      showSnackbar(error?.message || 'Terjadi kesalahan', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk memindahkan aset.', 'error');
+      } else {
+        showSnackbar(error?.message || 'Terjadi kesalahan', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
   };
 
-  // ========== HANDLE CONFIRM KELUAR ==========
+  // ========== HANDLE CONFIRM KELUAR (with role check) ==========
   const handleConfirmKeluar = async (data) => {
     if (!session || !selectedItem) return;
+
+    // Double-check role before keluar
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk mencatat aset keluar.', 'error');
+      return;
+    }
 
     setModalLoading(true);
 
@@ -484,7 +601,6 @@ const AsetRuanganContainer = () => {
         showSnackbar('Aset berhasil dicatat keluar', 'success');
         setKeluarModalOpen(false);
         
-        // Refresh data
         const [asetDet, ruanganDet] = await Promise.all([
           fetchAsetDetails(),
           fetchRuanganDetails()
@@ -495,15 +611,26 @@ const AsetRuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error:', error);
-      showSnackbar(error?.message || 'Terjadi kesalahan', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk mencatat aset keluar.', 'error');
+      } else {
+        showSnackbar(error?.message || 'Terjadi kesalahan', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
   };
 
-  // ========== HANDLE CONFIRM DELETE ==========
+  // ========== HANDLE CONFIRM DELETE (with role check) ==========
   const handleConfirmDelete = async () => {
     if (!session || !selectedItem) return;
+
+    // Double-check role before delete
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menghapus data.', 'error');
+      return;
+    }
 
     setModalLoading(true);
 
@@ -514,7 +641,6 @@ const AsetRuanganContainer = () => {
         showSnackbar('Data berhasil dihapus', 'success');
         setDeleteModalOpen(false);
         
-        // Refresh data
         const [asetDet, ruanganDet] = await Promise.all([
           fetchAsetDetails(),
           fetchRuanganDetails()
@@ -525,7 +651,12 @@ const AsetRuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error deleting:', error);
-      showSnackbar(error?.message || 'Terjadi kesalahan saat menghapus data', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menghapus data.', 'error');
+      } else {
+        showSnackbar(error?.message || 'Terjadi kesalahan saat menghapus data', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
@@ -687,15 +818,19 @@ const AsetRuanganContainer = () => {
           >
             Refresh
           </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-            disabled={loading}
-          >
-            Tambah Posisi
-          </Button>
+          <Tooltip title={isReadOnly() ? 'Hanya admin_pemeliharaan dan admin yang dapat menambah data' : 'Tambah posisi aset baru'}>
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
+                onClick={handleCreate}
+                disabled={loading || isReadOnly()}
+              >
+                Tambah Posisi
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
 
@@ -735,7 +870,7 @@ const AsetRuanganContainer = () => {
         </Alert>
       )}
 
-      {/* Table */}
+      {/* Table - Pass readOnly to hide action buttons */}
       <AsetRuanganTable
         data={asetRuanganList}
         loading={loading}
@@ -751,6 +886,7 @@ const AsetRuanganContainer = () => {
         onSort={handleSort}
         showAsetColumn={tabValue !== 2}
         showRuanganColumn={tabValue !== 1}
+        readOnly={isReadOnly()}
       />
 
       {/* Footer Info */}
@@ -760,7 +896,7 @@ const AsetRuanganContainer = () => {
         </Typography>
       </Box>
 
-      {/* Modals */}
+      {/* Modals - Pass readOnly to modals */}
       <AsetRuanganModal
         open={modalOpen}
         onClose={handleCloseModal}
@@ -768,6 +904,7 @@ const AsetRuanganContainer = () => {
         initialData={selectedItem}
         title={selectedItem ? 'Edit Posisi Aset' : 'Tambah Posisi Aset Baru'}
         loading={modalLoading}
+        readOnly={isReadOnly()}
       />
 
       <AsetRuanganModal
@@ -786,6 +923,7 @@ const AsetRuanganContainer = () => {
         asetInfo={selectedItem?.aset_detail}
         ruanganInfo={selectedItem?.ruangan_detail}
         loading={modalLoading}
+        readOnly={isReadOnly()}
       />
 
       <KeluarAsetModal
@@ -795,6 +933,7 @@ const AsetRuanganContainer = () => {
         asetInfo={selectedItem?.aset_detail}
         ruanganInfo={selectedItem?.ruangan_detail}
         loading={modalLoading}
+        readOnly={isReadOnly()}
       />
 
       <DeleteConfirmationModal

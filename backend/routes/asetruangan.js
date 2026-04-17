@@ -7,6 +7,105 @@ function getUsernameFromToken(user) {
     return user?.preferred_username || user?.username || 'unknown';
 }
 
+// ========== DECODE TOKEN FUNCTION ==========
+function decodeToken(token) {
+    try {
+        if (!token) return null;
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(Buffer.from(base64, 'base64').toString());
+        return payload;
+    } catch (error) {
+        console.error('Error decoding token:', error.message);
+        return null;
+    }
+}
+
+// ========== IMPROVED AUTHORIZATION HELPER ==========
+function getUserRolesFromRequest(req) {
+    const roles = new Set();
+    
+    // 1. Dari user object yang sudah diparse oleh keycloakAuth
+    if (req.user) {
+        // Dari realm_access (Keycloak standard)
+        if (req.user.realm_access && req.user.realm_access.roles) {
+            req.user.realm_access.roles.forEach(role => roles.add(role));
+        }
+        
+        // Dari resource_access (alternatif Keycloak)
+        if (req.user.resource_access) {
+            Object.values(req.user.resource_access).forEach(resource => {
+                if (resource.roles) {
+                    resource.roles.forEach(role => roles.add(role));
+                }
+            });
+        }
+        
+        // Dari field role langsung (custom)
+        if (req.user.role) {
+            roles.add(req.user.role);
+        }
+        
+        // Dari user.user.role (nested)
+        if (req.user.user && req.user.user.role) {
+            roles.add(req.user.user.role);
+        }
+    }
+    
+    // 2. Dari header Authorization (token JWT)
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.substring(7);
+        const decodedToken = decodeToken(token);
+        if (decodedToken) {
+            if (decodedToken.realm_access && decodedToken.realm_access.roles) {
+                decodedToken.realm_access.roles.forEach(role => roles.add(role));
+            }
+            if (decodedToken.resource_access) {
+                Object.values(decodedToken.resource_access).forEach(resource => {
+                    if (resource.roles) {
+                        resource.roles.forEach(role => roles.add(role));
+                    }
+                });
+            }
+        }
+    }
+    
+    // 3. Dari body request (jika ada session)
+    if (req.body && req.body.session && req.body.session.accessToken) {
+        const decodedToken = decodeToken(req.body.session.accessToken);
+        if (decodedToken) {
+            if (decodedToken.realm_access && decodedToken.realm_access.roles) {
+                decodedToken.realm_access.roles.forEach(role => roles.add(role));
+            }
+            if (decodedToken.resource_access) {
+                Object.values(decodedToken.resource_access).forEach(resource => {
+                    if (resource.roles) {
+                        resource.roles.forEach(role => roles.add(role));
+                    }
+                });
+            }
+        }
+    }
+    
+    const rolesArray = Array.from(roles);
+    console.log('🔍 AsetRuangan - User roles detected:', rolesArray);
+    
+    return rolesArray;
+}
+
+function hasRole(req, allowedRoles) {
+    const roles = getUserRolesFromRequest(req);
+    const hasAccess = allowedRoles.some(role => roles.includes(role));
+    console.log(`✅ AsetRuangan - Allowed roles: ${allowedRoles.join(', ')}`);
+    console.log(`📋 AsetRuangan - Has access: ${hasAccess}`);
+    return hasAccess;
+}
+
+function canModifyData(req) {
+    return hasRole(req, ['admin_pemeliharaan', 'admin', 'superadmin']);
+}
+
 /**
  * Helper function to format date for MySQL
  * Converts any date format to MySQL datetime (YYYY-MM-DD HH:MM:SS)
@@ -41,7 +140,7 @@ const formatDateForMySQL = (dateValue) => {
     }
 };
 
-// ========== GET STATISTICS ==========
+// ========== GET STATISTICS (Semua user bisa akses) ==========
 router.get('/statistics', keycloakAuth, async (req, res) => {
     try {
         console.log('📊 Statistics endpoint accessed');
@@ -81,7 +180,7 @@ router.get('/statistics', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET ALL ASET RUANGAN (DENGAN FILTER) ==========
+// ========== GET ALL ASET RUANGAN (DENGAN FILTER) - Semua user bisa akses ==========
 router.get('/', keycloakAuth, async (req, res) => {
     try {
         const { status, aset_id, ruangan_id, page = 1, limit = 10 } = req.query;
@@ -156,7 +255,7 @@ router.get('/', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET SINGLE ASET RUANGAN BY ID ==========
+// ========== GET SINGLE ASET RUANGAN BY ID - Semua user bisa akses ==========
 router.get('/:id', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
@@ -192,7 +291,7 @@ router.get('/:id', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET RIWAYAT LOKASI ASET ==========
+// ========== GET RIWAYAT LOKASI ASET - Semua user bisa akses ==========
 router.get('/aset/:asetId', keycloakAuth, async (req, res) => {
     try {
         const { asetId } = req.params;
@@ -227,7 +326,7 @@ router.get('/aset/:asetId', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET ASET BY RUANGAN (AKTIF) ==========
+// ========== GET ASET BY RUANGAN (AKTIF) - Semua user bisa akses ==========
 router.get('/ruangan/:ruanganId', keycloakAuth, async (req, res) => {
     try {
         const { ruanganId } = req.params;
@@ -262,7 +361,7 @@ router.get('/ruangan/:ruanganId', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET AKTIF (SEMUA ASET AKTIF) ==========
+// ========== GET AKTIF (SEMUA ASET AKTIF) - Semua user bisa akses ==========
 router.get('/status/aktif', keycloakAuth, async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -291,8 +390,17 @@ router.get('/status/aktif', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== CREATE NEW PLACEMENT (INITIAL) ==========
+// ========== CREATE NEW PLACEMENT (INITIAL) - Hanya admin_pemeliharaan dan admin ==========
 router.post('/', keycloakAuth, async (req, res) => {
+    // Check access rights
+    if (!canModifyData(req)) {
+        console.log('❌ Create placement: Access denied');
+        return res.status(403).json({
+            success: false,
+            message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menempatkan aset.'
+        });
+    }
+
     try {
         let { aset_id, ruangan_id, tgl_masuk, tgl_keluar, keterangan } = req.body;
 
@@ -331,6 +439,8 @@ router.post('/', keycloakAuth, async (req, res) => {
             [aset_id, ruangan_id, formattedTglMasuk, formattedTglKeluar, keterangan]
         );
 
+        console.log(`✅ Aset placement created by ${username}: Aset ID ${aset_id} -> Ruangan ID ${ruangan_id}`);
+
         res.status(201).json({
             success: true,
             message: 'Aset berhasil ditempatkan',
@@ -352,8 +462,17 @@ router.post('/', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== PINDAH LOKASI ASET ==========
+// ========== PINDAH LOKASI ASET - Hanya admin_pemeliharaan dan admin ==========
 router.post('/pindah', keycloakAuth, async (req, res) => {
+    // Check access rights
+    if (!canModifyData(req)) {
+        console.log('❌ Move aset: Access denied');
+        return res.status(403).json({
+            success: false,
+            message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat memindahkan aset.'
+        });
+    }
+
     try {
         let { aset_id, ruangan_baru_id, tgl_pindah, keterangan } = req.body;
 
@@ -408,6 +527,8 @@ router.post('/pindah', keycloakAuth, async (req, res) => {
 
             await connection.commit();
 
+            console.log(`✅ Aset moved by ${username}: Aset ID ${aset_id} -> Ruangan ID ${ruangan_baru_id}`);
+
             res.json({
                 success: true,
                 message: 'Aset berhasil dipindahkan',
@@ -436,12 +557,20 @@ router.post('/pindah', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== CATAT KELUAR ASET (DIHAPUSKAN) ==========
-// ========== CATAT KELUAR ASET ==========
+// ========== CATAT KELUAR ASET - Hanya admin_pemeliharaan dan admin ==========
 router.post('/:id/keluar', keycloakAuth, async (req, res) => {
+    // Check access rights
+    if (!canModifyData(req)) {
+        console.log('❌ Record exit: Access denied');
+        return res.status(403).json({
+            success: false,
+            message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mencatat aset keluar.'
+        });
+    }
+
     try {
         const { id } = req.params;
-        let { tgl_keluar, status, keterangan } = req.body; // ← Tambahkan status
+        let { tgl_keluar, status, keterangan } = req.body;
 
         if (!tgl_keluar) {
             return res.status(400).json({ 
@@ -480,6 +609,8 @@ router.post('/:id/keluar', keycloakAuth, async (req, res) => {
             [newStatus, formattedTglKeluar, keterangan || `Aset ${newStatus}`, id]
         );
 
+        console.log(`✅ Aset exit recorded by ${username}: ID ${id} -> Status ${newStatus}`);
+
         res.json({
             success: true,
             message: `Aset berhasil dicatat ${newStatus === 'dipindah' ? 'dipindah' : 'keluar (dihapuskan)'}`,
@@ -495,8 +626,17 @@ router.post('/:id/keluar', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== UPDATE DATA ASET RUANGAN ==========
+// ========== UPDATE DATA ASET RUANGAN - Hanya admin_pemeliharaan dan admin ==========
 router.put('/:id', keycloakAuth, async (req, res) => {
+    // Check access rights
+    if (!canModifyData(req)) {
+        console.log('❌ Update aset: Access denied');
+        return res.status(403).json({
+            success: false,
+            message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mengubah data.'
+        });
+    }
+
     try {
         const { id } = req.params;
         let { ruangan_id, tgl_masuk, tgl_keluar, status, keterangan } = req.body;
@@ -528,6 +668,8 @@ router.put('/:id', keycloakAuth, async (req, res) => {
             [ruangan_id, formattedTglMasuk, formattedTglKeluar, status, keterangan, id]
         );
 
+        console.log(`✅ Aset placement updated by ${username}: ID ${id}`);
+
         res.json({
             success: true,
             message: 'Data berhasil diperbarui',
@@ -543,8 +685,17 @@ router.put('/:id', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== DELETE ASET RUANGAN ==========
+// ========== DELETE ASET RUANGAN - Hanya admin_pemeliharaan dan admin ==========
 router.delete('/:id', keycloakAuth, async (req, res) => {
+    // Check access rights
+    if (!canModifyData(req)) {
+        console.log('❌ Delete aset: Access denied');
+        return res.status(403).json({
+            success: false,
+            message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menghapus data.'
+        });
+    }
+
     try {
         const { id } = req.params;
 
@@ -558,6 +709,8 @@ router.delete('/:id', keycloakAuth, async (req, res) => {
         }
 
         const username = getUsernameFromToken(req.user);
+
+        console.log(`✅ Aset placement deleted by ${username}: ID ${id}`);
 
         res.json({
             success: true,
@@ -574,12 +727,7 @@ router.delete('/:id', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET STATISTICS ==========
-// backend/routes/asetRuangan.js
-
-
-
-// ========== OPTIONS FOR DROPDOWNS ==========
+// ========== OPTIONS FOR DROPDOWNS - Semua user bisa akses ==========
 router.get('/options/aset', keycloakAuth, async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -598,7 +746,7 @@ router.get('/options/aset', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== OPTIONS FOR DROPDOWNS ==========
+// ========== OPTIONS FOR DROPDOWNS - Semua user bisa akses ==========
 router.get('/options/ruangan', keycloakAuth, async (req, res) => {
     try {
         const [rows] = await db.query(`
@@ -616,6 +764,27 @@ router.get('/options/ruangan', keycloakAuth, async (req, res) => {
             message: 'Gagal mengambil data ruangan',
             error: error.message 
         });
+    }
+});
+
+// ========== DEBUG ENDPOINT ==========
+router.get('/debug/session', keycloakAuth, async (req, res) => {
+    try {
+        const roles = getUserRolesFromRequest(req);
+        
+        res.json({
+            success: true,
+            data: {
+                username: req.user?.preferred_username || req.user?.username || 'unknown',
+                roles: roles,
+                hasAdminRole: roles.includes('admin'),
+                hasAdminPemeliharaanRole: roles.includes('admin_pemeliharaan'),
+                canModify: roles.includes('admin') || roles.includes('admin_pemeliharaan') || roles.includes('superadmin')
+            }
+        });
+    } catch (error) {
+        console.error('Error in debug endpoint:', error);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 

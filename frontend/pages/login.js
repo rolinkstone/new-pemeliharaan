@@ -6,7 +6,6 @@ import Head from 'next/head';
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -57,11 +56,11 @@ export default function LoginPage() {
       particles = [];
       const particleCount = Math.min(100, Math.floor((canvas.width * canvas.height) / 15000));
       const colors = [
-        'rgba(16, 185, 129, 0.6)', // emerald
-        'rgba(5, 150, 105, 0.6)',  // emerald dark
-        'rgba(6, 182, 212, 0.6)',  // cyan
-        'rgba(59, 130, 246, 0.6)', // blue
-        'rgba(139, 92, 246, 0.6)', // purple
+        'rgba(16, 185, 129, 0.6)',
+        'rgba(5, 150, 105, 0.6)',
+        'rgba(6, 182, 212, 0.6)',
+        'rgba(59, 130, 246, 0.6)',
+        'rgba(139, 92, 246, 0.6)',
       ];
 
       for (let i = 0; i < particleCount; i++) {
@@ -101,7 +100,6 @@ export default function LoginPage() {
     }
 
     function animate() {
-      // Create gradient background
       const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
       gradient.addColorStop(0, '#0b1f1c');
       gradient.addColorStop(0.3, '#1a4731');
@@ -111,7 +109,6 @@ export default function LoginPage() {
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Add subtle grid pattern
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
       ctx.lineWidth = 0.5;
       const gridSize = 40;
@@ -163,11 +160,28 @@ export default function LoginPage() {
     }
   };
 
-  const handleManualLogin = (e) => {
-    e.preventDefault();
-    // Implementasi manual login jika diperlukan
-    console.log('Manual login');
-  };
+  const features = [
+    {
+      title: 'Manajemen Aset',
+      description: 'Pendataan dan monitoring seluruh aset negara secara digital',
+      icon: '🏗️',
+    },
+    {
+      title: 'Laporan Kerusakan',
+      description: 'Pelaporan dan penanganan kerusakan aset secara terintegrasi',
+      icon: '🔧',
+    },
+    {
+      title: 'Verifikasi & Disposisi',
+      description: 'Alur verifikasi PIC, Kabag TU, dan PPK yang terstruktur',
+      icon: '✓',
+    },
+    {
+      title: 'Monitoring Perbaikan',
+      description: 'Tracking status perbaikan hingga selesai',
+      icon: '📈',
+    },
+  ];
 
   return (
     <>
@@ -269,94 +283,45 @@ export default function LoginPage() {
                   </p>
                 </div>
 
-                {/* Features with Staggered Animation */}
-                <div className="space-y-6 mb-8">
-                  {[
-                    {
-                      icon: (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                      ),
-                      title: "Inventarisasi Real-time",
-                      desc: "Pendataan aset secara digital dan akurat",
-                      delay: 100
-                    },
-                    {
-                      icon: (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                      ),
-                      title: "Monitoring Pemeliharaan",
-                      desc: "Jadwal dan riwayat perawatan aset",
-                      delay: 200
-                    },
-                    {
-                      icon: (
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      ),
-                      title: "Pelaporan Terintegrasi",
-                      desc: "Laporan BMN sesuai standar akuntansi",
-                      delay: 300
-                    }
-                  ].map((feature, index) => (
+                {/* Features Grid */}
+                <div className="grid grid-cols-2 gap-4 mb-8">
+                  {features.map((feature, idx) => (
                     <div
-                      key={index}
-                      className="flex items-start space-x-4 group transform hover:-translate-y-1 transition-all duration-300 animate-fade-in-up"
-                      style={{ animationDelay: `${feature.delay}ms` }}
+                      key={idx}
+                      className="bg-white/5 backdrop-blur rounded-xl p-4 border border-white/10 hover:bg-white/10 hover:scale-105 transition-all duration-300 group animate-fade-in-up"
+                      style={{ animationDelay: `${600 + idx * 100}ms` }}
                     >
-                      <div className="w-12 h-12 bg-white/10 rounded-xl flex items-center justify-center flex-shrink-0 backdrop-blur border border-white/20 group-hover:bg-white/20 group-hover:scale-110 transition-all duration-300">
-                        <svg className="w-6 h-6 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          {feature.icon}
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="font-semibold text-lg group-hover:text-emerald-300 transition-colors">
-                          {feature.title}
-                        </h3>
-                        <p className="text-emerald-100/80 text-sm">{feature.desc}</p>
-                      </div>
+                      <div className="text-3xl mb-2">{feature.icon}</div>
+                      <h3 className="font-semibold text-base text-emerald-200 group-hover:text-white transition-colors">
+                        {feature.title}
+                      </h3>
+                      <p className="text-emerald-300/70 text-xs mt-1">{feature.description}</p>
                     </div>
                   ))}
                 </div>
 
-                {/* Stats with Glow Effect */}
-                <div className="grid grid-cols-2 gap-4 mt-auto mb-6">
-                  <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/20 transform hover:scale-105 transition-all duration-300 hover:shadow-2xl hover:border-emerald-400/50 group animate-fade-in-up animation-delay-600">
-                    <div className="text-3xl font-bold text-white group-hover:text-emerald-300 transition-colors">500+</div>
-                    <div className="text-emerald-200 text-sm flex items-center">
-                      <span className="w-2 h-2 bg-emerald-400 rounded-full mr-2 animate-pulse"></span>
-                      Aset Tercatat
-                    </div>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur rounded-xl p-5 border border-white/20 transform hover:scale-105 transition-all duration-300 hover:shadow-2xl hover:border-emerald-400/50 group animate-fade-in-up animation-delay-700">
-                    <div className="text-3xl font-bold text-white group-hover:text-emerald-300 transition-colors">100%</div>
-                    <div className="text-emerald-200 text-sm flex items-center">
-                      <span className="w-2 h-2 bg-cyan-400 rounded-full mr-2 animate-pulse"></span>
-                      Terintegrasi SSO
-                    </div>
-                  </div>
-                </div>
-
                 {/* Footer with Animation */}
-                <div className="animate-fade-in animation-delay-800">
+                <div className="animate-fade-in animation-delay-1000 mt-auto">
                   <div className="flex items-center space-x-2 text-sm text-emerald-200/80">
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                       <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
                     </svg>
                     <p>Balai Besar POM di Palangka Raya</p>
                   </div>
-                  <p className="text-xs text-emerald-200/60 mt-2">© 2024 - Sistem Terpadu BMN v1.0</p>
+                  <p className="text-xs text-emerald-200/60 mt-2">© 2026 - Sistem Terpadu BMN v1.0</p>
                 </div>
               </div>
             </div>
 
-            {/* RIGHT COLUMN - Login Form */}
+            {/* RIGHT COLUMN - Login Form with Additional Info */}
             <div className="p-10 bg-white/95 backdrop-blur-xl flex items-center">
               <div className="w-full max-w-md mx-auto">
-                {/* Welcome Text with Animation */}
+                {/* Welcome Text */}
                 <div className="text-center mb-8 animate-fade-in-down">
                   <h2 className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">
-                    Selamat Datang Kembali
+                    Selamat Datang
                   </h2>
-                  <p className="text-gray-500 mt-2">Silakan masuk ke akun Anda</p>
+                  <p className="text-gray-500 mt-2">Silakan masuk menggunakan akun SSO Anda</p>
                 </div>
 
                 {/* Error Message */}
@@ -366,18 +331,18 @@ export default function LoginPage() {
                   </div>
                 )}
 
-                {/* SSO Button with Animation */}
+                {/* SSO Button */}
                 <button
                   onClick={handleSSOLogin}
                   disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold py-4 px-4 rounded-xl flex items-center justify-center space-x-3 transition-all duration-300 shadow-lg hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] mb-6 disabled:opacity-50 relative overflow-hidden group animate-fade-in-up animation-delay-100"
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-semibold py-4 px-4 rounded-xl flex items-center justify-center space-x-3 transition-all duration-300 shadow-lg hover:shadow-2xl hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 relative overflow-hidden group animate-fade-in-up animation-delay-100"
                 >
                   <div className="absolute inset-0 bg-white/20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
                   {isLoading ? (
                     <div className="w-6 h-6 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
                   ) : (
                     <>
-                      <svg className="w-5 h-5 animate-bounce-slow" fill="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 0c-6.627 0-12 5.373-12 12s5.373 12 12 12 12-5.373 12-12-5.373-12-12-12zm6 13h-5v5h-2v-5h-5v-2h5v-5h2v5h5v2z" />
                       </svg>
                       <span>Login dengan SSO BBPOM</span>
@@ -385,88 +350,43 @@ export default function LoginPage() {
                   )}
                 </button>
 
-                {/* Divider with Animation */}
-                <div className="relative my-8 animate-fade-in animation-delay-200">
-                  <div className="absolute inset-0 flex items-center">
-                    <div className="w-full border-t border-gray-200"></div>
-                  </div>
-                  <div className="relative flex justify-center text-sm">
-                    <span className="px-4 bg-white text-gray-500">atau masuk dengan</span>
+                {/* Informasi Sistem */}
+                <div className="mt-8 pt-6 border-t border-gray-200 animate-fade-in-up animation-delay-200">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-4 text-center">
+                    Informasi Sistem
+                  </h3>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Status Sistem</span>
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                        <span className="text-green-600 font-medium">Aktif</span>
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Versi Terbaru</span>
+                      <span className="text-gray-700 font-medium">v1.0.0</span>
+                    </div>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-gray-500">Terakhir Update</span>
+                      <span className="text-gray-700">Januari 2026</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* Manual Login Form */}
-                <form onSubmit={handleManualLogin} className="space-y-5">
-                  <div className="animate-fade-in-up animation-delay-300">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      NIP / Username
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all hover:border-emerald-300"
-                      placeholder="Masukkan NIP"
-                    />
-                  </div>
-
-                  <div className="animate-fade-in-up animation-delay-400">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Password
-                    </label>
-                    <input
-                      type="password"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all hover:border-emerald-300"
-                      placeholder="••••••••"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between animate-fade-in-up animation-delay-500">
-                    <label className="flex items-center cursor-pointer group">
-                      <input
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                      />
-                      <span className="ml-2 text-sm text-gray-600 group-hover:text-emerald-600 transition-colors">
-                        Ingat saya
-                      </span>
-                    </label>
-                    <button 
-                      type="button" 
-                      className="text-sm text-emerald-600 hover:text-emerald-700 hover:underline transition-all hover:scale-105"
-                    >
-                      Lupa password?
-                    </button>
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full bg-white text-emerald-600 border-2 border-emerald-600 font-semibold py-3 px-4 rounded-xl hover:bg-emerald-50 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-300 animate-fade-in-up animation-delay-600 relative overflow-hidden group"
-                  >
-                    <span className="relative z-10">Masuk</span>
-                    <div className="absolute inset-0 bg-emerald-600 transform scale-x-0 group-hover:scale-x-100 transition-transform duration-300 origin-left"></div>
-                  </button>
-                </form>
-
-                {/* App Downloads */}
-                <div className="mt-8 flex justify-center space-x-4 animate-fade-in-up animation-delay-700">
-                  <div className="flex items-center space-x-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-xs hover:bg-gray-800 hover:scale-105 transition-all duration-300 cursor-pointer group">
-                    <svg className="w-4 h-4 group-hover:animate-bounce" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.49.87 3.27.87.79 0 2.26-1.07 3.82-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-                    </svg>
-                    <span>Download di App Store</span>
-                  </div>
-                  <div className="flex items-center space-x-2 px-4 py-2 bg-gray-900 text-white rounded-xl text-xs hover:bg-gray-800 hover:scale-105 transition-all duration-300 cursor-pointer group">
-                    <svg className="w-4 h-4 group-hover:animate-bounce" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M3,20.5V3.5C3,2.91 3.34,2.39 3.84,2.15L13.69,12L3.84,21.85C3.34,21.6 3,21.09 3,20.5M16.81,15.12L6.05,21.34L14.54,12.85L16.81,15.12M20.16,10.81C20.5,11.08 20.75,11.5 20.75,12C20.75,12.5 20.53,12.9 20.18,13.18L17.89,14.5L15.39,12L17.89,9.5L20.16,10.81M6.05,2.66L16.81,8.88L14.54,11.15L6.05,2.66Z"/>
-                    </svg>
-                    <span>GET IT ON Google Play</span>
-                  </div>
+                {/* Informasi Kontak */}
+                <div className="mt-6 text-center animate-fade-in animation-delay-300">
+                  <p className="text-xs text-gray-400">
+                    Butuh bantuan? Hubungi admin di <br />
+                    <a href="mailto:suciana.istighfarah@pom.go.id" className="text-emerald-600 hover:underline">
+                      Suciana Istigfarah
+                    </a>
+                  </p>
                 </div>
 
                 {/* Version */}
-                <p className="text-center text-xs text-gray-400 mt-6 animate-fade-in animation-delay-800">
-                  © 2024 BBPOM Palangka Raya. Versi 1.0
+                <p className="text-center text-xs text-gray-400 mt-6 animate-fade-in animation-delay-400">
+                  © 2026 BBPOM Palangka Raya. All rights reserved.
                 </p>
               </div>
             </div>
@@ -542,11 +462,6 @@ export default function LoginPage() {
           20%, 40%, 60%, 80% { transform: translateX(5px); }
         }
 
-        @keyframes bounce-slow {
-          0%, 100% { transform: translateY(0); }
-          50% { transform: translateY(-5px); }
-        }
-
         .animate-float {
           animation: float 8s ease-in-out infinite;
         }
@@ -600,10 +515,6 @@ export default function LoginPage() {
           animation: shake 0.5s ease-in-out;
         }
 
-        .animate-bounce-slow {
-          animation: bounce-slow 2s ease-in-out infinite;
-        }
-
         .animation-delay-100 {
           animation-delay: 100ms;
         }
@@ -633,6 +544,9 @@ export default function LoginPage() {
         }
         .animation-delay-1000 {
           animation-delay: 1000ms;
+        }
+        .animation-delay-1400 {
+          animation-delay: 1400ms;
         }
         .animation-delay-2000 {
           animation-delay: 2000ms;

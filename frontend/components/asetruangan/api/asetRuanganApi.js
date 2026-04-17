@@ -44,7 +44,7 @@ export const fetchAllAsetRuangan = async (session, params = {}) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     
     // Build query params
     const queryParams = new URLSearchParams();
@@ -92,7 +92,7 @@ export const fetchAsetRuanganById = async (session, id) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/${id}`;
     
     try {
@@ -128,7 +128,7 @@ export const fetchRiwayatAset = async (session, asetId) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/aset/${asetId}`;
     
     try {
@@ -165,7 +165,7 @@ export const fetchAsetByRuangan = async (session, ruanganId) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/ruangan/${ruanganId}`;
     
     try {
@@ -202,7 +202,7 @@ export const fetchAsetRuanganAktif = async (session) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/status/aktif`;
     
     try {
@@ -238,7 +238,7 @@ export const createAsetRuangan = async (session, data) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan`;
     
     try {
@@ -275,7 +275,7 @@ export const pindahAset = async (session, data) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/pindah`;
     
     try {
@@ -312,7 +312,7 @@ export const catatKeluarAset = async (session, id, data) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/${id}/keluar`;
     
     try {
@@ -349,7 +349,7 @@ export const updateAsetRuangan = async (session, id, data) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL ;
     const url = `${baseUrl}/asetRuangan/${id}`;
     
     try {
@@ -386,7 +386,7 @@ export const deleteAsetRuangan = async (session, id) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/${id}`;
     
     try {
@@ -431,7 +431,7 @@ export const fetchAsetRuanganStatistics = async (session) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetruangan/statistics`;
     
     try {
@@ -476,7 +476,7 @@ export const fetchAsetOptions = async (session) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/options/aset`;
     
     try {
@@ -513,7 +513,7 @@ export const fetchRuanganOptions = async (session) => {
         };
     }
     
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL;
     const url = `${baseUrl}/asetRuangan/options/ruangan`;
     
     try {

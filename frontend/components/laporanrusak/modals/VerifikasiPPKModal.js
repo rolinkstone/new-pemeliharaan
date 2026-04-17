@@ -21,18 +21,28 @@ import {
   Paper,
   Chip,
   Avatar,
-  InputAdornment,
 } from '@mui/material';
 import {
   Close as CloseIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Build as BuildIcon,
-  AttachMoney as AttachMoneyIcon,
   Info as InfoIcon,
   Assignment as AssignmentIcon,
+  Person as PersonIcon,
 } from '@mui/icons-material';
 import { alpha, useTheme } from '@mui/material/styles';
+
+// Format Rupiah
+const formatRupiah = (value) => {
+  if (!value) return 'Rp 0';
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value);
+};
 
 const VerifikasiPPKModal = ({
   open,
@@ -42,15 +52,13 @@ const VerifikasiPPKModal = ({
   loading = false,
 }) => {
   const theme = useTheme();
-  const [hasil, setHasil] = useState('disetujui'); // Hanya disetujui atau ditolak
+  const [hasil, setHasil] = useState('disetujui');
   const [catatan, setCatatan] = useState('');
-  const [estimasiBiaya, setEstimasiBiaya] = useState('');
 
   useEffect(() => {
     if (open && laporan) {
       setHasil('disetujui');
       setCatatan('');
-      setEstimasiBiaya(laporan.estimasi_biaya || '');
     }
   }, [open, laporan]);
 
@@ -66,16 +74,12 @@ const VerifikasiPPKModal = ({
       catatan: catatan || (hasil === 'disetujui' 
         ? 'Anggaran disetujui, silakan lakukan perbaikan' 
         : 'Anggaran ditolak, silakan ajukan ulang'),
-      estimasi_biaya: hasil === 'disetujui' && estimasiBiaya 
-        ? parseFloat(estimasiBiaya) 
-        : laporan?.estimasi_biaya || null,
-      // Ketika disetujui, status akan diubah menjadi 'dalam_perbaikan'
-      // dan ditugaskan ke PIC ruangan asal
+      estimasi_biaya: laporan?.estimasi_biaya || null,
       next_status: hasil === 'disetujui' ? 'dalam_perbaikan' : 'ditolak',
-      assigned_to: hasil === 'disetujui' ? laporan?.pelapor_id : null // PIC ruangan asal
     };
     
     console.log('📤 Verifikasi PPK:', dataToSubmit);
+    console.log('💰 Estimasi biaya dari PIC:', laporan?.estimasi_biaya);
     onConfirm(dataToSubmit);
   };
 
@@ -90,18 +94,26 @@ const VerifikasiPPKModal = ({
     }
   };
 
-  const getHasilColor = (value) => {
-    switch(value) {
-      case 'disetujui':
-        return 'success';
-      case 'ditolak':
-        return 'error';
-      default:
-        return 'primary';
-    }
-  };
-
   if (!laporan) return null;
+
+  const estimasiBiayaDariPIC = laporan.estimasi_biaya;
+  
+  // Dapatkan nama PIC Ruangan yang benar (dari data pic_ruangan, bukan pelapor)
+  // Prioritas: pic_ruangan > pic_ruangan_nama > pic_nama > pelapor_nama
+  const picRuanganNama = laporan?.pic_ruangan || 
+                         laporan?.pic_ruangan_nama || 
+                         laporan?.pic_nama || 
+                         laporan?.pelapor_nama || 
+                         '-';
+  
+  const picRuanganId = laporan?.pic_ruangan_id || laporan?.pic_id || null;
+
+  console.log('📋 Data PIC Ruangan:', {
+    pic_ruangan: laporan?.pic_ruangan,
+    pic_ruangan_nama: laporan?.pic_ruangan_nama,
+    pic_ruangan_id: laporan?.pic_ruangan_id,
+    pelapor_nama: laporan?.pelapor_nama
+  });
 
   return (
     <Dialog
@@ -132,7 +144,7 @@ const VerifikasiPPKModal = ({
                 borderRadius: 2,
               }}
             >
-              <AttachMoneyIcon sx={{ fontSize: 24, color: 'white' }} />
+              <Typography variant="h6" fontWeight="bold" sx={{ color: 'white' }}>Rp</Typography>
             </Avatar>
             <Box>
               <Typography variant="h6" fontWeight="700">
@@ -213,53 +225,54 @@ const VerifikasiPPKModal = ({
                 </Box>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
                   <Typography variant="body2" color="text.secondary">Estimasi Biaya:</Typography>
-                  <Typography variant="body2" fontWeight="700" color="success.main">
-                    {laporan.estimasi_biaya 
-                      ? `Rp ${laporan.estimasi_biaya.toLocaleString()}` 
-                      : '-'}
+                  <Typography variant="body2" fontWeight="700" sx={{ color: theme.palette.warning.main, fontSize: '1rem' }}>
+                    {estimasiBiayaDariPIC ? formatRupiah(estimasiBiayaDariPIC) : 'Belum diisi'}
                   </Typography>
                 </Box>
               </Box>
             </Paper>
 
-            {/* Informasi PIC Ruangan */}
-            {laporan.pelapor_nama && (
-              <Paper 
-                variant="outlined" 
-                sx={{ 
-                  p: 2, 
-                  mb: 3, 
-                  bgcolor: alpha(theme.palette.info.main, 0.04),
-                  borderRadius: 2,
-                  borderColor: alpha(theme.palette.info.main, 0.2),
-                }}
-              >
-                <Box display="flex" alignItems="center" gap={2}>
-                  <Avatar
-                    sx={{
-                      width: 48,
-                      height: 48,
-                      bgcolor: alpha(theme.palette.info.main, 0.1),
-                      color: theme.palette.info.main,
-                    }}
-                  >
-                    <BuildIcon />
-                  </Avatar>
-                  <Box>
-                    <Typography variant="body2" fontWeight="600" color="info.main">
-                      PIC Ruangan: {laporan.pelapor_nama}
-                    </Typography>
+            {/* Informasi PIC Ruangan - MENGGUNAKAN DATA YANG BENAR */}
+            <Paper 
+              variant="outlined" 
+              sx={{ 
+                p: 2, 
+                mb: 3, 
+                bgcolor: alpha(theme.palette.info.main, 0.04),
+                borderRadius: 2,
+                borderColor: alpha(theme.palette.info.main, 0.2),
+              }}
+            >
+              <Box display="flex" alignItems="center" gap={2}>
+                <Avatar
+                  sx={{
+                    width: 48,
+                    height: 48,
+                    bgcolor: alpha(theme.palette.info.main, 0.1),
+                    color: theme.palette.info.main,
+                  }}
+                >
+                  <PersonIcon />
+                </Avatar>
+                <Box>
+                  <Typography variant="body2" fontWeight="600" color="info.main">
+                    PIC Ruangan: {picRuanganNama}
+                  </Typography>
+                  {picRuanganId && (
                     <Typography variant="caption" color="text.secondary">
-                      {hasil === 'disetujui' 
-                        ? 'Anggaran disetujui, PIC ruangan akan ditugaskan untuk melakukan perbaikan' 
-                        : 'Jika ditolak, laporan akan dikembalikan ke PIC ruangan'}
+                      ID: {picRuanganId}
                     </Typography>
-                  </Box>
+                  )}
+                  <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                    {hasil === 'disetujui' 
+                      ? '✅ Anggaran disetujui, PIC ruangan akan ditugaskan untuk melakukan perbaikan' 
+                      : '❌ Jika ditolak, laporan akan ditolak dan tidak dapat diproses lebih lanjut'}
+                  </Typography>
                 </Box>
-              </Paper>
-            )}
+              </Box>
+            </Paper>
 
-            {/* Pilihan Verifikasi - Hanya Setuju dan Tolak */}
+            {/* Pilihan Verifikasi */}
             <FormControl component="fieldset" sx={{ mb: 3, width: '100%' }}>
               <FormLabel component="legend" sx={{ mb: 1.5, fontWeight: 600 }}>
                 Hasil Verifikasi
@@ -300,7 +313,7 @@ const VerifikasiPPKModal = ({
                               Setujui Anggaran
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              Anggaran disetujui dan akan diteruskan ke PIC ruangan untuk perbaikan
+                              Anggaran sebesar {estimasiBiayaDariPIC ? formatRupiah(estimasiBiayaDariPIC) : 'yang diajukan'} disetujui
                             </Typography>
                           </Box>
                         </Box>
@@ -345,7 +358,7 @@ const VerifikasiPPKModal = ({
                               Tolak Anggaran
                             </Typography>
                             <Typography variant="caption" color="text.secondary">
-                              Anggaran ditolak, laporan akan dikembalikan dengan status ditolak
+                              Anggaran ditolak, laporan tidak dapat diproses
                             </Typography>
                           </Box>
                         </Box>
@@ -356,29 +369,6 @@ const VerifikasiPPKModal = ({
                 </Paper>
               </RadioGroup>
             </FormControl>
-
-            {/* Input Estimasi Biaya Final (jika disetujui) */}
-            {hasil === 'disetujui' && (
-              <TextField
-                fullWidth
-                label="Estimasi Biaya Final (Rp)"
-                value={estimasiBiaya}
-                onChange={(e) => setEstimasiBiaya(e.target.value)}
-                type="number"
-                placeholder="Masukkan estimasi biaya final yang disetujui"
-                sx={{ mb: 3 }}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <AttachMoneyIcon sx={{ color: theme.palette.text.secondary }} />
-                    </InputAdornment>
-                  ),
-                  sx: { borderRadius: 2 }
-                }}
-                helperText="Biaya final yang disetujui untuk pelaksanaan perbaikan"
-                required
-              />
-            )}
 
             <TextField
               fullWidth
@@ -400,9 +390,6 @@ const VerifikasiPPKModal = ({
               sx={{ 
                 mt: 2,
                 borderRadius: 2,
-                '& .MuiAlert-icon': {
-                  alignItems: 'center',
-                }
               }}
             >
               <Box>
@@ -411,13 +398,12 @@ const VerifikasiPPKModal = ({
                 </Typography>
                 <Typography variant="caption">
                   {hasil === 'disetujui' 
-                    ? '✅ Anggaran disetujui. Laporan akan diteruskan ke PIC ruangan untuk dilakukan perbaikan. Status akan berubah menjadi "Dalam Perbaikan".'
-                    : '❌ Anggaran ditolak. Laporan akan dikembalikan dengan status "Ditolak". PIC ruangan dapat mengajukan ulang dengan revisi anggaran.'}
+                    ? `✅ Anggaran sebesar ${estimasiBiayaDariPIC ? formatRupiah(estimasiBiayaDariPIC) : 'yang diajukan'} disetujui. Status akan berubah menjadi "Dalam Perbaikan".`
+                    : '❌ Anggaran ditolak. Laporan akan ditolak.'}
                 </Typography>
               </Box>
             </Alert>
 
-            {/* Informasi Alur Selanjutnya */}
             <Paper 
               variant="outlined" 
               sx={{ 
@@ -436,17 +422,17 @@ const VerifikasiPPKModal = ({
                   <>
                     <li>
                       <Typography variant="caption" color="text.secondary">
-                        Laporan akan berubah status menjadi <strong>"Dalam Perbaikan"</strong>
+                        Status berubah menjadi <strong>"Dalam Perbaikan"</strong>
                       </Typography>
                     </li>
                     <li>
                       <Typography variant="caption" color="text.secondary">
-                        PIC Ruangan (<strong>{laporan.pelapor_nama}</strong>) akan ditugaskan untuk melakukan perbaikan
+                        PIC Ruangan (<strong>{picRuanganNama}</strong>) akan melakukan perbaikan
                       </Typography>
                     </li>
                     <li>
                       <Typography variant="caption" color="text.secondary">
-                        Setelah perbaikan selesai, PIC ruangan akan mengubah status menjadi <strong>"Selesai"</strong>
+                        Setelah selesai, PIC mengubah status menjadi <strong>"Selesai"</strong>
                       </Typography>
                     </li>
                   </>
@@ -454,23 +440,29 @@ const VerifikasiPPKModal = ({
                   <>
                     <li>
                       <Typography variant="caption" color="text.secondary">
-                        Laporan akan berubah status menjadi <strong>"Ditolak"</strong>
+                        Status berubah menjadi <strong>"Ditolak"</strong>
                       </Typography>
                     </li>
                     <li>
                       <Typography variant="caption" color="text.secondary">
-                        PIC ruangan dapat mengajukan ulang dengan revisi anggaran
-                      </Typography>
-                    </li>
-                    <li>
-                      <Typography variant="caption" color="text.secondary">
-                        Jika perlu, dapat dilakukan disposisi ulang ke PPK
+                        Laporan tidak dapat diproses lebih lanjut
                       </Typography>
                     </li>
                   </>
                 )}
               </Box>
             </Paper>
+
+            {!estimasiBiayaDariPIC && (
+              <Alert 
+                severity="warning" 
+                sx={{ mt: 2, borderRadius: 2 }}
+              >
+                <Typography variant="caption">
+                  ⚠️ Estimasi biaya belum diisi oleh PIC Ruangan.
+                </Typography>
+              </Alert>
+            )}
           </>
         )}
       </DialogContent>
@@ -484,10 +476,7 @@ const VerifikasiPPKModal = ({
           onClick={handleClose} 
           disabled={loading} 
           variant="outlined"
-          sx={{ 
-            borderRadius: 2,
-            px: 3,
-          }}
+          sx={{ borderRadius: 2, px: 3 }}
         >
           Batal
         </Button>
@@ -496,17 +485,16 @@ const VerifikasiPPKModal = ({
           variant="contained"
           color={hasil === 'disetujui' ? 'success' : 'error'}
           startIcon={getHasilIcon(hasil)}
-          disabled={loading || (hasil === 'disetujui' && !estimasiBiaya)}
+          disabled={loading}
           sx={{ 
             borderRadius: 2,
             px: 4,
-            boxShadow: theme.shadows[4],
             background: hasil === 'disetujui' 
               ? `linear-gradient(45deg, ${theme.palette.success.main}, ${theme.palette.success.dark})`
               : `linear-gradient(45deg, ${theme.palette.error.main}, ${theme.palette.error.dark})`,
           }}
         >
-          {hasil === 'disetujui' ? 'Setujui & Teruskan ke PIC' : 'Tolak'}
+          {hasil === 'disetujui' ? 'Setujui Anggaran' : 'Tolak Anggaran'}
         </Button>
       </DialogActions>
     </Dialog>

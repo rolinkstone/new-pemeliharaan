@@ -16,6 +16,8 @@ import {
   alpha,
   LinearProgress,
   Fade,
+  Chip,
+  Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -25,6 +27,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Group as GroupIcon,
+  Lock as LockIcon,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import * as picRuanganApi from './api/picRuanganApi';
@@ -73,6 +76,73 @@ const PicRuanganContainer = () => {
     totalPages: 0,
   });
 
+  // ========== IMPROVED HELPER FUNCTIONS FOR ROLE CHECK ==========
+  const getUserRoles = () => {
+    const roles = [];
+    
+    // 1. Dari realm_access (Keycloak standard)
+    if (session?.user?.realm_access?.roles) {
+      roles.push(...session.user.realm_access.roles);
+    }
+    
+    // 2. Dari field role langsung (PENTING! untuk role admin)
+    if (session?.user?.role) {
+      roles.push(session.user.role);
+    }
+    
+    // 3. Dari session.role
+    if (session?.role) {
+      roles.push(session.role);
+    }
+    
+    // 4. Dari user metadata
+    if (session?.user?.metadata?.role) {
+      roles.push(session.user.metadata.role);
+    }
+    
+    // 5. Dari access token (jika ada)
+    if (session?.accessToken) {
+      try {
+        const base64Url = session.accessToken.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(atob(base64));
+        if (payload.realm_access?.roles) {
+          roles.push(...payload.realm_access.roles);
+        }
+        if (payload.resource_access) {
+          Object.values(payload.resource_access).forEach(resource => {
+            if (resource.roles) {
+              roles.push(...resource.roles);
+            }
+          });
+        }
+      } catch (e) {
+        console.error('Error parsing access token:', e);
+      }
+    }
+    
+    // Remove duplicates
+    const uniqueRoles = [...new Set(roles)];
+    console.log('🔍 PIC Ruangan - Detected user roles:', uniqueRoles);
+    
+    return uniqueRoles;
+  };
+
+  const hasRole = (allowedRoles) => {
+    const userRoles = getUserRoles();
+    const hasAccess = allowedRoles.some(role => userRoles.includes(role));
+    console.log(`🔍 PIC Ruangan - User roles: ${userRoles.join(', ')}, Allowed: ${allowedRoles.join(', ')}, Has access: ${hasAccess}`);
+    return hasAccess;
+  };
+
+  const canModifyData = () => {
+    return hasRole(['admin_pemeliharaan', 'admin', 'superadmin']);
+  };
+
+  const isReadOnly = () => {
+    return !canModifyData();
+  };
+
   // ========== FETCH STATISTICS ==========
   const fetchStatistics = useCallback(async () => {
     if (!session) return;
@@ -114,7 +184,9 @@ const PicRuanganContainer = () => {
   };
 
   // ========== FETCH DATA ==========
-  const fetchData = useCallback(async () => {
+ // components/picruangan/PicRuanganContainer.js
+
+const fetchData = useCallback(async () => {
     if (!session) {
       setError('Session tidak ditemukan');
       setInitialLoading(false);
@@ -137,7 +209,19 @@ const PicRuanganContainer = () => {
       const result = await picRuanganApi.fetchAllPicRuangan(session, params);
 
       if (result?.success) {
-        const sortedData = sortData(result.data || []);
+        // Pastikan setiap item memiliki user_nama
+        const dataWithNames = (result.data || []).map(item => ({
+          ...item,
+          user_nama: item.user_nama || item.user_detail?.nama || `User ID: ${item.user_id}`,
+          user_nip: item.user_nip || item.user_detail?.nip || '',
+          user_jabatan: item.user_jabatan || item.user_detail?.jabatan || '-',
+          user_email: item.user_email || item.user_detail?.email || '',
+          ruangan_nama: item.ruangan_nama || item.ruangan_detail?.nama_ruangan || `Ruangan ID: ${item.ruangan_id}`,
+          ruangan_kode: item.ruangan_kode || item.ruangan_detail?.kode_ruangan || '',
+          ruangan_lokasi: item.ruangan_lokasi || item.ruangan_detail?.lokasi || '',
+        }));
+        
+        const sortedData = sortData(dataWithNames);
         setDataList(sortedData);
         
         if (result.pagination) {
@@ -163,10 +247,16 @@ const PicRuanganContainer = () => {
       setInitialLoading(false);
     }
   }, [session, filters, pagination.currentPage, pagination.perPage]);
-
   // ========== INITIAL LOAD ==========
   useEffect(() => {
     if (session) {
+      // Log user roles for debugging
+      console.log('📋 PIC Ruangan - User session:', session);
+      console.log('📋 PIC Ruangan - User object:', session.user);
+      console.log('📋 PIC Ruangan - User roles:', getUserRoles());
+      console.log('🔒 PIC Ruangan - Can modify data:', canModifyData());
+      console.log('📖 PIC Ruangan - Read-only mode:', isReadOnly());
+      
       fetchData();
     } else {
       setInitialLoading(false);
@@ -203,8 +293,12 @@ const PicRuanganContainer = () => {
     showSnackbar('Data berhasil diperbarui', 'success');
   };
 
-  // ========== HANDLE CREATE ==========
+  // ========== HANDLE CREATE (with role check) ==========
   const handleCreate = () => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menambah PIC ruangan.', 'error');
+      return;
+    }
     setSelectedItem(null);
     setModalOpen(true);
   };
@@ -215,22 +309,36 @@ const PicRuanganContainer = () => {
     setViewModalOpen(true);
   };
 
-  // ========== HANDLE EDIT ==========
+  // ========== HANDLE EDIT (with role check) ==========
   const handleEdit = (item) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mengubah PIC ruangan.', 'error');
+      return;
+    }
     setSelectedItem(item);
     setModalOpen(true);
   };
 
-  // ========== HANDLE DELETE ==========
+  // ========== HANDLE DELETE (with role check) ==========
   const handleDelete = (item) => {
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menghapus PIC ruangan.', 'error');
+      return;
+    }
     setSelectedItem(item);
     setDeleteModalOpen(true);
   };
 
-  // ========== HANDLE SUBMIT ==========
+  // ========== HANDLE SUBMIT (with role check) ==========
   const handleSubmit = async (formData) => {
     if (!session) {
       showSnackbar('Session tidak ditemukan', 'error');
+      return;
+    }
+
+    // Double-check role before submit
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menyimpan data.', 'error');
       return;
     }
 
@@ -259,15 +367,26 @@ const PicRuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error submitting:', error);
-      showSnackbar(error?.message || 'Terjadi kesalahan saat menyimpan data', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk melakukan operasi ini.', 'error');
+      } else {
+        showSnackbar(error?.message || 'Terjadi kesalahan saat menyimpan data', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
   };
 
-  // ========== HANDLE CONFIRM DELETE ==========
+  // ========== HANDLE CONFIRM DELETE (with role check) ==========
   const handleConfirmDelete = async () => {
     if (!session || !selectedItem) return;
+
+    // Double-check role before delete
+    if (isReadOnly()) {
+      showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menghapus data.', 'error');
+      return;
+    }
 
     setModalLoading(true);
 
@@ -283,7 +402,12 @@ const PicRuanganContainer = () => {
       }
     } catch (error) {
       console.error('❌ Error deleting:', error);
-      showSnackbar(error?.message || 'Terjadi kesalahan saat menghapus data', 'error');
+      
+      if (error?.response?.status === 403) {
+        showSnackbar('Akses ditolak. Anda tidak memiliki izin untuk menghapus data.', 'error');
+      } else {
+        showSnackbar(error?.message || 'Terjadi kesalahan saat menghapus data', 'error');
+      }
     } finally {
       setModalLoading(false);
     }
@@ -434,15 +558,19 @@ const PicRuanganContainer = () => {
           >
             Refresh
           </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={handleCreate}
-            disabled={loading}
-          >
-            Tambah PIC
-          </Button>
+          <Tooltip title={isReadOnly() ? 'Hanya admin_pemeliharaan dan admin yang dapat menambah PIC ruangan' : 'Tambah penugasan PIC baru'}>
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
+                onClick={handleCreate}
+                disabled={loading || isReadOnly()}
+              >
+                Tambah PIC
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       </Box>
 
@@ -475,6 +603,7 @@ const PicRuanganContainer = () => {
         onPageChange={handlePageChange}
         sortConfig={sortConfig}
         onSort={handleSort}
+        readOnly={isReadOnly()}
       />
 
       <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
@@ -490,6 +619,7 @@ const PicRuanganContainer = () => {
         initialData={selectedItem}
         title={selectedItem ? 'Edit PIC Ruangan' : 'Tambah PIC Ruangan Baru'}
         loading={modalLoading}
+        readOnly={isReadOnly()}
       />
 
       <PicRuanganModal
