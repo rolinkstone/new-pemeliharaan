@@ -540,12 +540,14 @@ router.delete('/:id', keycloakAuth, async (req, res) => {
 // ============================================
 // ENDPOINT VERIFIKASI LAPORAN (PIC)
 // ============================================
+// backend/routes/laporansRusak.js - Endpoint verifikasi
+
 router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const { keputusan, catatan, alur } = req.body;
+        const { keputusan, catatan, alur, estimasi_biaya } = req.body;
 
-        console.log('📥 Verifikasi request:', { id, keputusan, catatan, alur });
+        console.log('📥 Verifikasi request:', { id, keputusan, catatan, alur, estimasi_biaya });
 
         // Cek apakah laporan ada
         const [existing] = await db.query(
@@ -580,6 +582,14 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
             } else {
                 newStatus = 'menunggu_disposisi';
                 statusMessage = 'Disetujui, menunggu disposisi Kabag TU';
+                
+                // VALIDASI ESTIMASI BIAYA UNTUK ALUR DENGAN ANGGARAN
+                if (!estimasi_biaya || parseFloat(estimasi_biaya) <= 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Estimasi biaya wajib diisi dan harus lebih dari 0 untuk alur dengan anggaran'
+                    });
+                }
             }
         } else if (keputusan === 'tolak') {
             newStatus = 'ditolak';
@@ -592,21 +602,44 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
         }
 
         const catatanLengkap = `[Verifikasi PIC - ${statusMessage}] ${catatan || ''}`.trim();
-
-        await db.query(
-            `UPDATE laporan_rusak 
-             SET status = ?, 
-                 deskripsi = CONCAT(deskripsi, '\n\n', ?),
-                 updated_at = NOW()
-             WHERE id = ?`,
-            [newStatus, catatanLengkap, id]
-        );
+        
+        // ============================================
+        // UPDATE LAPORAN DENGAN ESTIMASI BIAYA
+        // ============================================
+        if (estimasi_biaya && keputusan === 'setuju' && alur !== 'langsung') {
+            // Update dengan estimasi biaya
+            await db.query(
+                `UPDATE laporan_rusak 
+                 SET status = ?, 
+                     estimasi_biaya = ?,
+                     deskripsi = CONCAT(deskripsi, '\n\n', ?),
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [newStatus, parseFloat(estimasi_biaya), catatanLengkap, id]
+            );
+            
+            console.log('💰 Estimasi biaya disimpan:', {
+                id,
+                estimasi_biaya: parseFloat(estimasi_biaya)
+            });
+        } else {
+            // Update tanpa estimasi biaya
+            await db.query(
+                `UPDATE laporan_rusak 
+                 SET status = ?, 
+                     deskripsi = CONCAT(deskripsi, '\n\n', ?),
+                     updated_at = NOW()
+                 WHERE id = ?`,
+                [newStatus, catatanLengkap, id]
+            );
+        }
 
         console.log('✅ Verifikasi berhasil:', {
             id,
             oldStatus: currentStatus,
             newStatus,
             alur,
+            estimasi_biaya: estimasi_biaya || null,
             catatan: catatanLengkap
         });
 
@@ -617,6 +650,7 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
                 newStatus,
                 oldStatus: currentStatus,
                 alur,
+                estimasi_biaya: estimasi_biaya || null,
                 catatan: catatanLengkap
             }
         });
