@@ -375,7 +375,7 @@ const asetRoutes = require('./routes/aset');
 const ruanganRoutes = require('./routes/ruangan');
 const asetRuanganRoutes = require('./routes/asetRuangan');
 const picRuanganRoutes = require('./routes/picRuangan');
-const laporansRusakRoutes = require('./routes/laporansRusak');
+const laporansRusakRoutes = require('./routes/laporanRusak');
 
 // 🚨 TAMBAHKAN: Import route upload
 const uploadRoutes = require('./routes/upload');
