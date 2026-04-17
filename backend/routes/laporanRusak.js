@@ -279,26 +279,40 @@ router.get('/', keycloakAuth, async (req, res) => {
 });
 
 // ========== GET LAPORAN BY ID ==========
+// backend/routes/laporansRusak.js
+
+// ========== GET LAPORAN BY ID ==========
 router.get('/:id', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
         
+        // Query dengan JOIN ke pic_ruangan
         const [rows] = await db.query(`
-            SELECT lr.*, 
-                   a.kode_barang as aset_kode, a.nama_barang as aset_nama,
-                   r.kode_ruangan, r.nama_ruangan,
-                   dp.id as detail_perbaikan_id,
-                   dp.hasil_perbaikan,
-                   dp.tanggal_selesai,
-                   dp.rating,
-                   dp.biaya_aktual,
-                   dp.dokumentasi,
-                   dp.rekomendasi,
-                   dp.nama_vendor,
-                   dp.no_kontrak
+            SELECT 
+                lr.*, 
+                a.kode_barang as aset_kode, 
+                a.nama_barang as aset_nama,
+                r.kode_ruangan, 
+                r.nama_ruangan,
+                -- Ambil data PIC ruangan
+                pr.id as pic_ruangan_id,
+                pr.user_id as pic_ruangan_user_id,
+                pr.user_name as pic_ruangan_nama,
+                pr.tgl_penugasan as pic_ruangan_tgl_penugasan,
+                pr.status as pic_ruangan_status,
+                dp.id as detail_perbaikan_id,
+                dp.hasil_perbaikan,
+                dp.tanggal_selesai,
+                dp.rating,
+                dp.biaya_aktual,
+                dp.dokumentasi,
+                dp.rekomendasi,
+                dp.nama_vendor,
+                dp.no_kontrak
             FROM laporan_rusak lr
             LEFT JOIN master_aset a ON lr.aset_id = a.id
             LEFT JOIN ruangan r ON lr.ruangan_id = r.id
+            LEFT JOIN pic_ruangan pr ON lr.ruangan_id = pr.ruangan_id AND pr.status = 'aktif'
             LEFT JOIN detail_perbaikan dp ON lr.id = dp.laporan_id
             WHERE lr.id = ?
         `, [id]);
@@ -318,17 +332,36 @@ router.get('/:id', keycloakAuth, async (req, res) => {
                 fotoKerusakan = JSON.parse(row.foto_kerusakan);
             }
         } catch (e) {
-            console.warn(`Error parsing foto_kerusakan for laporan ${row.id}:`, e.message);
+            console.warn(`Error parsing foto_kerusakan:`, e.message);
             fotoKerusakan = [];
         }
         
         // Get user details from Keycloak
         let userDetail = null;
+        let picRuanganDetail = null;
         try {
             const users = await getPICUsersFromKeycloak();
             userDetail = users.find(u => u.user_id === row.pelapor_id) || null;
+            
+            // Ambil detail PIC ruangan dari Keycloak
+            if (row.pic_ruangan_user_id) {
+                picRuanganDetail = users.find(u => u.user_id === row.pic_ruangan_user_id) || null;
+            }
         } catch (error) {
             console.error('Error fetching user from Keycloak:', error);
+        }
+        
+        // Format data PIC ruangan
+        let picRuanganData = null;
+        if (row.pic_ruangan_nama || row.pic_ruangan_user_id) {
+            picRuanganData = {
+                id: row.pic_ruangan_id,
+                user_id: row.pic_ruangan_user_id,
+                user_name: row.pic_ruangan_nama,
+                nama: picRuanganDetail?.nama || row.pic_ruangan_nama,
+                tgl_penugasan: row.pic_ruangan_tgl_penugasan,
+                status: row.pic_ruangan_status
+            };
         }
         
         res.json({
@@ -355,6 +388,9 @@ router.get('/:id', keycloakAuth, async (req, res) => {
                 ruangan_kode: row.kode_ruangan,
                 pelapor_nama: userDetail?.nama || row.pelapor_id,
                 pelapor_email: userDetail?.email || '-',
+                
+                // ✅ TAMBAHKAN DATA PIC RUANGAN
+                pic_ruangan: picRuanganData,
                 
                 // Data detail perbaikan
                 detail_perbaikan: row.detail_perbaikan_id ? {

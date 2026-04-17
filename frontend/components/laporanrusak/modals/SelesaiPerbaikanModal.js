@@ -44,6 +44,14 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import idLocale from 'date-fns/locale/id';
 
+// Format Rupiah
+const formatRupiah = (value) => {
+  if (!value) return 'Rp 0';
+  const number = typeof value === 'string' ? parseFloat(value) : value;
+  if (isNaN(number)) return 'Rp 0';
+  return `Rp ${new Intl.NumberFormat('id-ID').format(number)}`;
+};
+
 const SelesaiPerbaikanModal = ({
   open,
   onClose,
@@ -143,20 +151,50 @@ const SelesaiPerbaikanModal = ({
 
   if (!laporan) return null;
 
-  // Dapatkan nama PIC Ruangan yang benar
-  const picRuanganNama = laporan?.pic_ruangan || 
-                         laporan?.pic_ruangan_nama || 
-                         laporan?.pic_nama || 
-                         laporan?.pelapor_nama || 
-                         '-';
+  // ========== PERBAIKAN: Ambil nama PIC Ruangan dengan benar ==========
+  // Data PIC bisa berupa object atau string, pastikan yang dirender adalah string
+  let picRuanganNama = '-';
+  let picRuanganId = null;
   
-  const picRuanganId = laporan?.pic_ruangan_id || laporan?.pic_id || null;
+  // Cek dari laporan.pic_ruangan (bisa object atau string)
+  if (laporan.pic_ruangan) {
+    if (typeof laporan.pic_ruangan === 'object') {
+      // Jika object, ambil properti namanya
+      picRuanganNama = laporan.pic_ruangan.user_name || 
+                       laporan.pic_ruangan.userName || 
+                       laporan.pic_ruangan.nama || 
+                       laporan.pic_ruangan.name || 
+                       '-';
+      picRuanganId = laporan.pic_ruangan.user_id || laporan.pic_ruangan.id;
+    } else if (typeof laporan.pic_ruangan === 'string') {
+      // Jika string, gunakan langsung
+      picRuanganNama = laporan.pic_ruangan;
+    }
+  }
+  
+  // Fallback ke field lain jika masih kosong
+  if (picRuanganNama === '-' || !picRuanganNama) {
+    if (laporan.pic_ruangan_nama && typeof laporan.pic_ruangan_nama === 'string') {
+      picRuanganNama = laporan.pic_ruangan_nama;
+    } else if (laporan.pic_nama && typeof laporan.pic_nama === 'string') {
+      picRuanganNama = laporan.pic_nama;
+    } else if (laporan.pelapor_nama && typeof laporan.pelapor_nama === 'string') {
+      picRuanganNama = laporan.pelapor_nama;
+    }
+  }
+
+  // Ambil ID PIC jika ada
+  if (!picRuanganId) {
+    picRuanganId = laporan?.pic_ruangan_id || laporan?.pic_id || null;
+  }
 
   console.log('📋 SelesaiPerbaikanModal - Data PIC Ruangan:', {
-    pic_ruangan: laporan?.pic_ruangan,
+    original_pic_ruangan: laporan?.pic_ruangan,
     pic_ruangan_nama: laporan?.pic_ruangan_nama,
-    pic_ruangan_id: laporan?.pic_ruangan_id,
-    pelapor_nama: laporan?.pelapor_nama
+    pic_nama: laporan?.pic_nama,
+    pelapor_nama: laporan?.pelapor_nama,
+    finalNama: picRuanganNama,
+    finalId: picRuanganId
   });
 
   return (
@@ -262,9 +300,7 @@ const SelesaiPerbaikanModal = ({
                       <Box display="flex" justifyContent="space-between" alignItems="center">
                         <Typography variant="body2" color="text.secondary">Estimasi Biaya:</Typography>
                         <Typography variant="body2" fontWeight="700" color="success.main">
-                          {laporan.estimasi_biaya 
-                            ? `Rp ${laporan.estimasi_biaya.toLocaleString()}` 
-                            : '-'}
+                          {laporan.estimasi_biaya ? formatRupiah(laporan.estimasi_biaya) : '-'}
                         </Typography>
                       </Box>
                     </Box>
@@ -321,7 +357,7 @@ const SelesaiPerbaikanModal = ({
                 )}
               </Paper>
 
-              {/* Informasi PIC Ruangan */}
+              {/* Informasi PIC Ruangan - PERBAIKAN: Tampilkan nama, bukan object */}
               <Paper 
                 variant="outlined" 
                 sx={{ 
@@ -570,8 +606,8 @@ const SelesaiPerbaikanModal = ({
                 fullWidth
                 label="Biaya Aktual (Rp)"
                 value={biayaAktual}
-                onChange={(e) => setBiayaAktual(e.target.value)}
-                type="number"
+                onChange={(e) => setBiayaAktual(e.target.value.replace(/[^0-9]/g, ''))}
+                type="text"
                 placeholder="Masukkan biaya aktual yang dikeluarkan"
                 sx={{ mb: 3 }}
                 InputProps={{
