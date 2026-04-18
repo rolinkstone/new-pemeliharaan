@@ -12,24 +12,36 @@ function getUsernameFromToken(user) {
 }
 
 // Helper function untuk generate nomor laporan
+// Helper function untuk generate nomor laporan
 async function generateNomorLaporan() {
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
+    const prefix = `LR/${year}${month}/`;
     
-    // Ambil nomor urut terakhir untuk bulan ini
+    // Ambil nomor urut TERTINGGI (bukan COUNT) untuk bulan ini
     const [rows] = await db.query(
-        `SELECT COUNT(*) as total FROM laporan_rusak 
-         WHERE nomor_laporan LIKE ?`,
-        [`LR/${year}${month}/%`]
+        `SELECT nomor_laporan FROM laporan_rusak 
+         WHERE nomor_laporan LIKE ? 
+         ORDER BY nomor_laporan DESC 
+         LIMIT 1`,
+        [`${prefix}%`]
     );
     
-    const nextNumber = (rows[0]?.total || 0) + 1;
-    const nomorUrut = String(nextNumber).padStart(3, '0');
+    let nextNumber = 1;
     
-    return `LR/${year}${month}/${nomorUrut}`;
+    if (rows.length > 0) {
+        const lastNomor = rows[0].nomor_laporan;
+        const lastNumberStr = lastNomor.split('/').pop();
+        const lastNumber = parseInt(lastNumberStr, 10);
+        if (!isNaN(lastNumber)) {
+            nextNumber = lastNumber + 1;
+        }
+    }
+    
+    const nomorUrut = String(nextNumber).padStart(3, '0');
+    return `${prefix}${nomorUrut}`;
 }
-
 // Helper function untuk format tanggal
 const formatDateForMySQL = (dateValue) => {
     if (!dateValue) return null;
