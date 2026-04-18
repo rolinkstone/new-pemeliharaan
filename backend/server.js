@@ -1,4 +1,5 @@
 // backend/server.js
+
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -7,10 +8,47 @@ const jwt = require('jsonwebtoken');
 const axios = require('axios');
 const https = require('https');
 const qs = require('qs');
+const multer = require('multer');
 
 const app = express();
 const PORT = process.env.PORT || 5002;
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
+
+// ========== KONFIGURASI MULTER UNTUK UPLOAD ==========
+// Konfigurasi storage untuk multer
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        // Pastikan folder uploads ada
+        if (!fs.existsSync(UPLOADS_DIR)) {
+            fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+        }
+        cb(null, UPLOADS_DIR);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const ext = path.extname(file.originalname);
+        cb(null, `foto-${uniqueSuffix}${ext}`);
+    }
+});
+
+// Filter file type
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+        cb(null, true);
+    } else {
+        cb(new Error('Hanya file gambar yang diperbolehkan (jpeg, jpg, png, gif, webp)'));
+    }
+};
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: fileFilter
+});
 
 // ========== KONFIGURASI DASAR ==========
 // Buat folder uploads
@@ -59,6 +97,7 @@ const authMiddleware = async (req, res, next) => {
             id: decoded.sub,
             username: decoded.preferred_username || decoded.email,
             email: decoded.email,
+            name: decoded.name,
             roles: decoded.realm_access?.roles || []
         };
         next();
@@ -122,62 +161,131 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
+// ========== ENDPOINT UPLOAD FOTO ==========
+app.post('/api/upload/foto', upload.array('foto_kerusakan', 10), (req, res) => {
+    try {
+        if (!req.files || req.files.length === 0) {
+            return res.status(400).json({ success: false, message: 'Tidak ada file yang diupload' });
+        }
+        
+        const uploadedFiles = req.files.map(file => ({
+            filename: file.filename,
+            originalName: file.originalname,
+            url: `/uploads/${file.filename}`,
+            size: file.size,
+            mimetype: file.mimetype
+        }));
+        
+        console.log(`✅ Uploaded ${uploadedFiles.length} file(s)`);
+        
+        res.json({
+            success: true,
+            message: 'Foto berhasil diupload',
+            data: uploadedFiles
+        });
+    } catch (error) {
+        console.error('Error uploading foto:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // Akses file upload (public)
 app.get('/uploads/:filename', (req, res) => {
     const filePath = path.join(UPLOADS_DIR, req.params.filename);
+    
+    // Log untuk debugging
+    console.log(`📁 Request file: ${req.params.filename}`);
+    console.log(`📁 File path: ${filePath}`);
+    console.log(`📁 File exists: ${fs.existsSync(filePath)}`);
+    
     if (!fs.existsSync(filePath)) {
         return res.status(404).json({ success: false, message: 'File not found' });
     }
     res.sendFile(filePath);
 });
 
-// ========== IMPORT ROUTES ==========
-// Hanya import route yang filenya benar-benar ada
-const routes = {
-    keycloak: './routes/keycloak',
-    dashboard: './routes/dashboard',
-    aset: './routes/aset',
-    ruangan: './routes/ruangan',
-    picRuangan: './routes/picRuangan',
-    upload: './routes/upload'
-};
-
-// Mount routes yang tersedia
-Object.entries(routes).forEach(([name, routePath]) => {
-    try {
-        const route = require(routePath);
-        app.use(`/api/${name}`, route);
-        console.log(`✅ Loaded route: /api/${name}`);
-    } catch (error) {
-        console.warn(`⚠️ Route /api/${name} not found (${routePath})`);
-    }
+// ========== ENDPOINT CHECK FILE ==========
+app.get('/api/check-file/:filename', (req, res) => {
+    const filePath = path.join(UPLOADS_DIR, req.params.filename);
+    const exists = fs.existsSync(filePath);
+    
+    res.json({
+        success: true,
+        exists: exists,
+        path: filePath,
+        filename: req.params.filename
+    });
 });
 
-// Coba load route laporanRusak (nama filenya laporanRusak, bukan laporansRusak)
+// ========== IMPORT ROUTES ==========
+// Route laporanRusak
 try {
     const laporanRoutes = require('./routes/laporanRusak');
     app.use('/api/laporansrusak', laporanRoutes);
     console.log('✅ Loaded route: /api/laporansrusak');
 } catch (error) {
-    console.warn('⚠️ Route /api/laporansrusak not found');
+    console.warn('⚠️ Route /api/laporansrusak not found:', error.message);
 }
 
-// Error handler
+// Route picruangan
+try {
+    const picRuanganRoutes = require('./routes/picRuangan');
+    app.use('/api/picruangan', picRuanganRoutes);
+    console.log('✅ Loaded route: /api/picruangan');
+} catch (error) {
+    console.warn('⚠️ Route /api/picruangan not found:', error.message);
+}
+
+// Route ruangan
+try {
+    const ruanganRoutes = require('./routes/ruangan');
+    app.use('/api/ruangan', ruanganRoutes);
+    console.log('✅ Loaded route: /api/ruangan');
+} catch (error) {
+    console.warn('⚠️ Route /api/ruangan not found:', error.message);
+}
+
+// Route keycloak
+try {
+    const keycloakRoutes = require('./routes/keycloak');
+    app.use('/api/keycloak', keycloakRoutes);
+    console.log('✅ Loaded route: /api/keycloak');
+} catch (error) {
+    console.warn('⚠️ Route /api/keycloak not found:', error.message);
+}
+
+// ========== ERROR HANDLER ==========
 app.use((err, req, res, next) => {
     console.error('Error:', err.message);
-    const status = err.type === 'entity.too.large' || err.code === 'LIMIT_FILE_SIZE' ? 413 : 500;
+    
+    if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ 
+            success: false, 
+            message: 'Ukuran file terlalu besar. Maksimal 10MB.' 
+        });
+    }
+    
+    if (err.message && err.message.includes('hanya file gambar')) {
+        return res.status(400).json({ 
+            success: false, 
+            message: err.message 
+        });
+    }
+    
+    const status = err.type === 'entity.too.large' ? 413 : 500;
     res.status(status).json({
         success: false,
-        message: status === 413 ? 'File too large (max 100MB)' : 'Internal server error'
+        message: status === 413 ? 'File too large' : 'Internal server error'
     });
 });
 
-// Start server
+// ========== START SERVER ==========
 app.listen(PORT, () => {
     console.log(`
     ════════════════════════════════════════
     🚀 Server running on port ${PORT}
-    📁 Uploads: ${UPLOADS_DIR}
+    📁 Uploads directory: ${UPLOADS_DIR}
+    📁 Uploads exists: ${fs.existsSync(UPLOADS_DIR)}
     ════════════════════════════════════════
     `);
 });
