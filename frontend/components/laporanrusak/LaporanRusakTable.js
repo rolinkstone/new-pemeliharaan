@@ -80,7 +80,7 @@ const STATUS = {
 };
 
 // Base URL
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'https://api-tabela.bbpompky.id';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'https://data-tabela.bbpompky.id';
 
 // Placeholder image
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFMEUwRTAiLz48cGF0aCBkPSJNMzUgMzBMNjUgNTBMMzUgNzBWMzBaIiBmaWxsPSIjOUU5RTlFIi8+PC9zdmc+';

@@ -54,7 +54,8 @@ const formatDateForMySQL = (dateValue) => {
     }
 };
 
-// ========== GET ALL LAPORAN RUSAK ==========
+// backend/routes/laporansRusak.js - Endpoint GET /
+
 router.get('/', keycloakAuth, async (req, res) => {
     try {
         const { 
@@ -63,7 +64,19 @@ router.get('/', keycloakAuth, async (req, res) => {
         } = req.query;
         const offset = (page - 1) * limit;
         
-        // Query dengan JOIN ke tabel pic_ruangan dan detail perbaikan
+        // Dapatkan user ID dari token
+        const userId = req.user?.id;
+        const userRoles = req.user?.roles || [];
+        
+        // Cek role user
+        const isAdmin = userRoles.includes('admin') || userRoles.includes('superadmin');
+        const isPPK = userRoles.includes('ppk');
+        const isKabagTU = userRoles.includes('kabag_tu');
+        const isPICRuangan = userRoles.includes('pic_ruangan') || userRoles.includes('pic');
+        
+        console.log('🔐 User:', { userId, isAdmin, isPPK, isKabagTU, isPICRuangan });
+        
+        // Query dasar dengan JOIN
         let query = `
             SELECT 
                 lr.*, 
@@ -73,13 +86,11 @@ router.get('/', keycloakAuth, async (req, res) => {
                 r.kode_ruangan, 
                 r.nama_ruangan, 
                 r.lokasi,
-                -- Data PIC dari tabel pic_ruangan (tambahkan user_name)
                 pr.id as pic_id,
                 pr.user_id as pic_user_id,
                 pr.user_name as pic_user_name,
                 pr.tgl_penugasan as pic_tgl_penugasan,
                 pr.status as pic_status,
-                -- Data detail perbaikan
                 dp.id as detail_perbaikan_id,
                 dp.hasil_perbaikan,
                 dp.tanggal_selesai,
@@ -88,16 +99,54 @@ router.get('/', keycloakAuth, async (req, res) => {
                 dp.dokumentasi,
                 dp.rekomendasi,
                 dp.nama_vendor,
-                dp.no_kontrak
+                dp.no_kontrak,
+                -- Data disposisi untuk filter PPK
+                d.id as disposisi_id,
+                d.kabag_id,
+                d.ppk_id
             FROM laporan_rusak lr
             LEFT JOIN master_aset a ON lr.aset_id = a.id
             LEFT JOIN ruangan r ON lr.ruangan_id = r.id
             LEFT JOIN pic_ruangan pr ON lr.ruangan_id = pr.ruangan_id AND pr.status = 'aktif'
             LEFT JOIN detail_perbaikan dp ON lr.id = dp.laporan_id
+            LEFT JOIN disposisi d ON lr.id = d.laporan_id
             WHERE 1=1
         `;
+        
         const params = [];
         
+        // ========== FILTER BERDASARKAN ROLE ==========
+        
+        // Admin: bisa melihat semua data
+        if (isAdmin) {
+            // Tidak ada filter tambahan
+            console.log('👑 Admin: melihat semua data');
+        }
+        // PPK: hanya melihat laporan yang disposisi kepadanya
+        else if (isPPK) {
+            query += ` AND d.ppk_id = ?`;
+            params.push(userId);
+            console.log('📋 PPK: hanya melihat laporan yang disposisi kepadanya');
+        }
+        // Kabag TU: hanya melihat laporan yang sudah diverifikasi PIC dan butuh disposisi
+        else if (isKabagTU) {
+            query += ` AND lr.status = 'menunggu_disposisi'`;
+            console.log('📋 Kabag TU: hanya melihat laporan menunggu disposisi');
+        }
+        // PIC Ruangan: hanya melihat laporan dari ruangan yang menjadi tanggung jawabnya
+        else if (isPICRuangan) {
+            query += ` AND pr.user_id = ?`;
+            params.push(userId);
+            console.log('📋 PIC Ruangan: hanya melihat laporan dari ruangan yang ditangani');
+        }
+        // User biasa: hanya melihat laporan yang dibuat sendiri
+        else {
+            query += ` AND lr.pelapor_id = ?`;
+            params.push(userId);
+            console.log('📋 User biasa: hanya melihat laporan sendiri');
+        }
+        
+        // Filter tambahan
         if (status) {
             query += ' AND lr.status = ?';
             params.push(status);
@@ -129,18 +178,26 @@ router.get('/', keycloakAuth, async (req, res) => {
             params.push(searchTerm, searchTerm, searchTerm);
         }
         
-        // Get total count
+        // Get total count dengan filter yang sama
         const countQuery = `
             SELECT COUNT(*) as total
             FROM laporan_rusak lr
+            LEFT JOIN disposisi d ON lr.id = d.laporan_id
             WHERE 1=1
+            ${isAdmin ? '' : isPPK ? ' AND d.ppk_id = ?' : isKabagTU ? ' AND lr.status = "menunggu_disposisi"' : isPICRuangan ? ' AND EXISTS (SELECT 1 FROM pic_ruangan pr2 WHERE pr2.ruangan_id = lr.ruangan_id AND pr2.user_id = ? AND pr2.status = "aktif")' : ' AND lr.pelapor_id = ?'}
             ${status ? ' AND lr.status = ?' : ''}
             ${prioritas ? ' AND lr.prioritas = ?' : ''}
             ${aset_id ? ' AND lr.aset_id = ?' : ''}
             ${ruangan_id ? ' AND lr.ruangan_id = ?' : ''}
             ${pelapor_id ? ' AND lr.pelapor_id = ?' : ''}
         `;
+        
         const countParams = [];
+        if (!isAdmin) {
+            if (isPPK) countParams.push(userId);
+            else if (isPICRuangan) countParams.push(userId);
+            else if (!isKabagTU) countParams.push(userId);
+        }
         if (status) countParams.push(status);
         if (prioritas) countParams.push(prioritas);
         if (aset_id) countParams.push(aset_id);
@@ -166,97 +223,68 @@ router.get('/', keycloakAuth, async (req, res) => {
             console.error('Error fetching users from Keycloak:', error);
         }
         
-        // Group by laporan untuk mengumpulkan multiple PIC
-        const laporanMap = new Map();
-        
-        rows.forEach(row => {
-            if (!laporanMap.has(row.id)) {
-                laporanMap.set(row.id, {
-                    id: row.id,
-                    nomor_laporan: row.nomor_laporan,
-                    aset_id: row.aset_id,
-                    ruangan_id: row.ruangan_id,
-                    pelapor_id: row.pelapor_id,
-                    tgl_laporan: row.tgl_laporan,
-                    deskripsi: row.deskripsi,
-                    foto_kerusakan: row.foto_kerusakan,
-                    prioritas: row.prioritas,
-                    status: row.status,
-                    is_active: row.is_active,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at,
-                    estimasi_biaya: row.estimasi_biaya,
-                    
-                    aset_nama: row.aset_nama || `Aset ID: ${row.aset_id}`,
-                    aset_kode: row.aset_kode || '',
-                    aset_merk: row.aset_merk || '',
-                    ruangan_nama: row.nama_ruangan || `Ruangan ID: ${row.ruangan_id}`,
-                    ruangan_kode: row.kode_ruangan || '',
-                    ruangan_lokasi: row.lokasi || '',
-                    
-                    // ✅ TAMBAHKAN PIC_RUANGAN_NAMA (dari user_name)
-                    pic_ruangan_nama: row.pic_user_name || null,
-                    pic_ruangan_id: row.pic_user_id || null,
-                    
-                    // Data detail perbaikan
-                    detail_perbaikan: row.detail_perbaikan_id ? {
-                        id: row.detail_perbaikan_id,
-                        hasil_perbaikan: row.hasil_perbaikan,
-                        tanggal_selesai: row.tanggal_selesai,
-                        rating: row.rating,
-                        biaya_aktual: row.biaya_aktual,
-                        dokumentasi: row.dokumentasi,
-                        rekomendasi: row.rekomendasi,
-                        nama_vendor: row.nama_vendor,
-                        no_kontrak: row.no_kontrak
-                    } : null
-                });
-            }
-            
-            // Tambahkan PIC ke array jika ada (untuk multiple PIC)
-            if (row.pic_user_id) {
-                const laporan = laporanMap.get(row.id);
-                const picExists = laporan.pic_ruangan?.some(p => p.user_id === row.pic_user_id);
-                if (!picExists) {
-                    if (!laporan.pic_ruangan) laporan.pic_ruangan = [];
-                    laporan.pic_ruangan.push({
-                        id: row.pic_id,
-                        user_id: row.pic_user_id,
-                        nama: row.pic_user_name || userMap[row.pic_user_id]?.nama || row.pic_user_id,
-                        email: userMap[row.pic_user_id]?.email || '-',
-                        tgl_penugasan: row.pic_tgl_penugasan,
-                        status: row.pic_status
-                    });
-                }
-            }
-        });
-        
-        // Konversi Map ke array dan parse foto_kerusakan
-        const laporanList = Array.from(laporanMap.values()).map(item => {
+        // Proses data
+        const laporanList = rows.map(row => {
             let fotoKerusakan = [];
             try {
-                if (item.foto_kerusakan) {
-                    if (typeof item.foto_kerusakan === 'string') {
+                if (row.foto_kerusakan) {
+                    if (typeof row.foto_kerusakan === 'string') {
                         try {
-                            const parsed = JSON.parse(item.foto_kerusakan);
+                            const parsed = JSON.parse(row.foto_kerusakan);
                             fotoKerusakan = Array.isArray(parsed) ? parsed : [parsed];
                         } catch {
-                            fotoKerusakan = [item.foto_kerusakan];
+                            fotoKerusakan = [row.foto_kerusakan];
                         }
-                    } else if (Array.isArray(item.foto_kerusakan)) {
-                        fotoKerusakan = item.foto_kerusakan;
+                    } else if (Array.isArray(row.foto_kerusakan)) {
+                        fotoKerusakan = row.foto_kerusakan;
                     }
                 }
             } catch (e) {
-                console.warn(`Error parsing foto_kerusakan for laporan ${item.id}:`, e.message);
                 fotoKerusakan = [];
             }
             
             return {
-                ...item,
+                id: row.id,
+                nomor_laporan: row.nomor_laporan,
+                aset_id: row.aset_id,
+                ruangan_id: row.ruangan_id,
+                pelapor_id: row.pelapor_id,
+                tgl_laporan: row.tgl_laporan,
+                deskripsi: row.deskripsi,
                 foto_kerusakan: fotoKerusakan,
-                pelapor_nama: userMap[item.pelapor_id]?.nama || item.pelapor_id,
-                pelapor_email: userMap[item.pelapor_id]?.email || '-'
+                prioritas: row.prioritas,
+                status: row.status,
+                is_active: row.is_active,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+                estimasi_biaya: row.estimasi_biaya,
+                
+                aset_nama: row.aset_nama,
+                aset_kode: row.aset_kode,
+                ruangan_nama: row.nama_ruangan,
+                ruangan_kode: row.kode_ruangan,
+                pelapor_nama: userMap[row.pelapor_id]?.nama || row.pelapor_id,
+                pelapor_email: userMap[row.pelapor_id]?.email || '-',
+                
+                pic_ruangan_nama: row.pic_user_name || null,
+                pic_ruangan_id: row.pic_user_id || null,
+                
+                // Data disposisi
+                disposisi_id: row.disposisi_id,
+                kabag_id: row.kabag_id,
+                ppk_id: row.ppk_id,
+                
+                detail_perbaikan: row.detail_perbaikan_id ? {
+                    id: row.detail_perbaikan_id,
+                    hasil_perbaikan: row.hasil_perbaikan,
+                    tanggal_selesai: row.tanggal_selesai,
+                    rating: row.rating,
+                    biaya_aktual: row.biaya_aktual,
+                    dokumentasi: row.dokumentasi,
+                    rekomendasi: row.rekomendasi,
+                    nama_vendor: row.nama_vendor,
+                    no_kontrak: row.no_kontrak
+                } : null
             };
         });
         
@@ -705,15 +733,18 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
 // ============================================
 // ENDPOINT DISPOSISI OLEH KABAG TU (KE PPK)
 // ============================================
+// backend/routes/laporansRusak.js - Endpoint disposisi
+
+// backend/routes/laporansRusak.js - Endpoint disposisi
+
 router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const { tujuan, catatan, estimasi_biaya } = req.body;
+        const { tujuan, catatan, estimasi_biaya, ppk_id } = req.body; // Tambahkan ppk_id
         const userId = req.user?.sub || req.user?.id;
 
-        console.log('📥 Disposisi request:', { id, tujuan, catatan, estimasi_biaya });
+        console.log('📥 Disposisi request:', { id, tujuan, catatan, estimasi_biaya, ppk_id });
 
-        // Validasi tujuan - harus 'ppk'
         if (tujuan !== 'ppk') {
             return res.status(400).json({
                 success: false,
@@ -721,7 +752,6 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
             });
         }
 
-        // Validasi estimasi biaya
         if (!estimasi_biaya || estimasi_biaya <= 0) {
             return res.status(400).json({
                 success: false,
@@ -729,7 +759,13 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
             });
         }
 
-        // Cek apakah laporan ada
+        if (!ppk_id) {
+            return res.status(400).json({
+                success: false,
+                message: 'PPK tujuan harus dipilih'
+            });
+        }
+
         const [existing] = await db.query(
             'SELECT * FROM laporan_rusak WHERE id = ?', 
             [id]
@@ -744,7 +780,6 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
 
         const laporan = existing[0];
 
-        // Validasi status
         if (laporan.status !== 'menunggu_disposisi') {
             return res.status(400).json({
                 success: false,
@@ -752,17 +787,16 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
             });
         }
 
-        // Simpan disposisi ke tabel disposisi
+        // Simpan disposisi dengan ppk_id
         await db.query(
             `INSERT INTO disposisi 
-             (laporan_id, kabag_id, tgl_disposisi, tujuan, catatan, estimasi_biaya) 
-             VALUES (?, ?, NOW(), ?, ?, ?)`,
-            [id, userId, tujuan, catatan || '', estimasi_biaya]
+             (laporan_id, kabag_id, tgl_disposisi, tujuan, catatan, estimasi_biaya, ppk_id) 
+             VALUES (?, ?, NOW(), ?, ?, ?, ?)`,
+            [id, userId, tujuan, catatan || '', estimasi_biaya, ppk_id]
         );
 
-        // Update status laporan menjadi 'menunggu_verifikasi_ppk'
         const newStatus = 'menunggu_verifikasi_ppk';
-        const statusMessage = 'Diteruskan ke PPK untuk verifikasi anggaran';
+        const statusMessage = `Diteruskan ke PPK untuk verifikasi anggaran`;
         const catatanLengkap = `[Disposisi oleh Kabag TU] ${statusMessage}. Estimasi biaya: Rp ${parseFloat(estimasi_biaya).toLocaleString()}. ${catatan || ''}`.trim();
 
         await db.query(
@@ -779,7 +813,8 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
             oldStatus: laporan.status,
             newStatus,
             tujuan,
-            estimasi_biaya
+            estimasi_biaya,
+            ppk_id
         });
 
         res.json({
@@ -788,7 +823,8 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
             data: { 
                 newStatus,
                 tujuan,
-                estimasi_biaya
+                estimasi_biaya,
+                ppk_id
             }
         });
 
@@ -801,7 +837,6 @@ router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
         });
     }
 });
-
 // ============================================
 // ENDPOINT VERIFIKASI PPK
 // ============================================

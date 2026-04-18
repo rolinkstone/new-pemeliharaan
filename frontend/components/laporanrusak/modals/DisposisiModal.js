@@ -118,46 +118,37 @@ const DisposisiModal = ({
       console.log('📥 Response PPK list:', response.data);
       
       if (response.data.success) {
-        const ppkData = Array.isArray(response.data.data) ? response.data.data : [];
-        setPpkList(ppkData);
-        console.log(`✅ Mendapatkan ${ppkData.length} PPK`);
+        let ppkData = [];
+        
+        // Handle berbagai format response
+        if (Array.isArray(response.data.data)) {
+          ppkData = response.data.data;
+        } else if (Array.isArray(response.data)) {
+          ppkData = response.data;
+        } else if (response.data.users && Array.isArray(response.data.users)) {
+          ppkData = response.data.users;
+        }
+        
+        // Format data PPK agar konsisten
+        const formattedPpkData = ppkData.map(ppk => ({
+          id: ppk.id || ppk.user_id || ppk.sub,
+          user_id: ppk.user_id || ppk.id,
+          nama: ppk.nama || ppk.name || ppk.fullName || ppk.username || 'Tidak diketahui',
+          email: ppk.email || '',
+          nip: ppk.nip || '',
+          jabatan: ppk.jabatan || ppk.role || 'PPK',
+          unitKerja: ppk.unitKerja || ppk.unit || ''
+        }));
+        
+        setPpkList(formattedPpkData);
+        console.log(`✅ Mendapatkan ${formattedPpkData.length} PPK`);
+        console.log('📋 Data PPK pertama:', formattedPpkData[0]);
       } else {
         throw new Error(response.data.message || 'Gagal mengambil daftar PPK');
       }
     } catch (error) {
       console.error('❌ Error fetching PPK list:', error);
-      
-      // Fallback: coba ambil dari route lama jika ada
-      if (error.response?.status === 404 || error.response?.status === 500) {
-        try {
-          console.log('🔄 Mencoba route alternatif...');
-          const fallbackResponse = await axios.get(
-            `${process.env.NEXT_PUBLIC_API_URL}/kegiatan/ppk/list`,
-            {
-              headers: { 
-                Authorization: `Bearer ${session.accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              timeout: 10000
-            }
-          );
-          
-          console.log('📥 Response fallback:', fallbackResponse.data);
-          
-          if (fallbackResponse.data.success) {
-            const ppkData = Array.isArray(fallbackResponse.data.data) ? fallbackResponse.data.data : [];
-            setPpkList(ppkData);
-            console.log(`✅ Mendapatkan ${ppkData.length} PPK dari route alternatif`);
-          } else {
-            throw new Error('Route alternatif juga gagal');
-          }
-        } catch (fallbackError) {
-          console.error('❌ Fallback juga gagal:', fallbackError);
-          setFetchError('Gagal mengambil daftar PPK. Pastikan server berjalan dan Anda memiliki akses.');
-        }
-      } else {
-        setFetchError('Gagal mengambil daftar PPK: ' + (error.response?.data?.message || error.message));
-      }
+      setFetchError('Gagal mengambil daftar PPK. Pastikan server berjalan dan Anda memiliki akses.');
     } finally {
       setLoadingPpkList(false);
     }
@@ -170,11 +161,11 @@ const DisposisiModal = ({
     if (searchText && searchText.length >= 2) {
       const searchLower = searchText.toLowerCase();
       return ppkList.filter(ppk => 
-        ppk.nama?.toLowerCase().includes(searchLower) ||
-        ppk.nip?.toLowerCase().includes(searchLower) ||
-        ppk.email?.toLowerCase().includes(searchLower) ||
-        ppk.jabatan?.toLowerCase().includes(searchLower) ||
-        ppk.unitKerja?.toLowerCase().includes(searchLower)
+        (ppk.nama?.toLowerCase() || '').includes(searchLower) ||
+        (ppk.nip?.toLowerCase() || '').includes(searchLower) ||
+        (ppk.email?.toLowerCase() || '').includes(searchLower) ||
+        (ppk.jabatan?.toLowerCase() || '').includes(searchLower) ||
+        (ppk.unitKerja?.toLowerCase() || '').includes(searchLower)
       );
     }
     
@@ -188,32 +179,43 @@ const DisposisiModal = ({
   };
 
   const handleSubmit = () => {
+    // Validasi PPK dipilih
     if (!selectedPpk) {
       alert('Silakan pilih PPK tujuan terlebih dahulu');
       return;
     }
 
-    // Gunakan estimasi biaya dari laporan (yang sudah diinput oleh PIC)
+    // Validasi estimasi biaya
     if (!laporan?.estimasi_biaya || laporan.estimasi_biaya <= 0) {
       alert('Estimasi biaya belum diisi oleh PIC. Silakan minta PIC untuk mengisi estimasi biaya terlebih dahulu.');
       return;
     }
 
-    // Data disposisi dengan PPK yang dipilih dan estimasi biaya dari laporan
+    // Pastikan ppk_id ada
+    const ppkId = selectedPpk.id || selectedPpk.user_id;
+    if (!ppkId) {
+      console.error('PPK ID tidak ditemukan:', selectedPpk);
+      alert('Data PPK tidak valid. Silakan pilih PPK lain.');
+      return;
+    }
+
+    // Data disposisi dengan PPK yang dipilih
     const dataToSubmit = {
       tujuan: 'ppk',
-      ppk_id: selectedPpk.id,
-      ppk_nama: selectedPpk.nama,
+      ppk_id: ppkId, // PASTIKAN INI TERISI
+      ppk_nama: selectedPpk.nama || selectedPpk.name || '',
       ppk_email: selectedPpk.email || '',
       ppk_nip: selectedPpk.nip || '',
-      ppk_jabatan: selectedPpk.jabatan || '',
+      ppk_jabatan: selectedPpk.jabatan || 'PPK',
       ppk_unitKerja: selectedPpk.unitKerja || '',
       catatan: catatan || 'Diteruskan ke PPK untuk verifikasi anggaran',
-      estimasi_biaya: laporan.estimasi_biaya // Gunakan estimasi dari PIC
+      estimasi_biaya: laporan.estimasi_biaya
     };
     
-    console.log('📤 Data disposisi ke PPK:', dataToSubmit);
+    console.log('📤 Data disposisi ke PPK:', JSON.stringify(dataToSubmit, null, 2));
     console.log('💰 Estimasi biaya dari PIC:', laporan.estimasi_biaya);
+    console.log('🎯 PPK ID yang dikirim:', ppkId);
+    
     onConfirm(dataToSubmit);
   };
 
@@ -333,10 +335,7 @@ const DisposisiModal = ({
                     size="small" 
                     label={laporan.status || '-'} 
                     color="warning"
-                    sx={{ 
-                      height: 24,
-                      fontWeight: 600,
-                    }} 
+                    sx={{ height: 24, fontWeight: 600 }} 
                   />
                 </Box>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
@@ -355,7 +354,7 @@ const DisposisiModal = ({
               </Box>
             </Paper>
 
-            {/* Estimasi Biaya dari PIC - TAMPILKAN */}
+            {/* Estimasi Biaya dari PIC */}
             <Paper 
               variant="outlined" 
               sx={{ 
@@ -367,7 +366,7 @@ const DisposisiModal = ({
               }}
             >
               <Box display="flex" alignItems="center" gap={1} mb={1.5}>
-                
+                <MonetizationOnIcon fontSize="small" color="warning" />
                 <Typography variant="subtitle2" fontWeight="600" color="warning.main">
                   Estimasi Biaya dari PIC Ruangan
                 </Typography>
@@ -384,16 +383,12 @@ const DisposisiModal = ({
                     gap: 1,
                   }}
                 >
-                 
                   <Typography variant="h6" fontWeight="700" color="warning.main">
                     {estimasiBiayaDariPIC ? formatRupiah(estimasiBiayaDariPIC) : 'Belum diisi'}
                   </Typography>
                 </Box>
                 {!estimasiBiayaDariPIC && (
-                  <Alert 
-                    severity="warning" 
-                    sx={{ flex: 1, borderRadius: 2 }}
-                  >
+                  <Alert severity="warning" sx={{ flex: 1, borderRadius: 2 }}>
                     Estimasi biaya belum diisi oleh PIC. Harap minta PIC untuk mengisi estimasi biaya terlebih dahulu.
                   </Alert>
                 )}
@@ -437,6 +432,7 @@ const DisposisiModal = ({
                 }}
                 value={selectedPpk}
                 onChange={(event, newValue) => {
+                  console.log('PPK selected:', newValue);
                   setSelectedPpk(newValue);
                 }}
                 onInputChange={(event, newInputValue) => {
@@ -445,7 +441,7 @@ const DisposisiModal = ({
                 inputValue={searchText}
                 loading={loadingPpkList}
                 filterOptions={(x) => x}
-                isOptionEqualToValue={(option, value) => option?.id === value?.id}
+                isOptionEqualToValue={(option, value) => option?.id === value?.id || option?.user_id === value?.user_id}
                 renderInput={(params) => (
                   <TextField
                     {...params}
@@ -454,9 +450,7 @@ const DisposisiModal = ({
                     required
                     InputProps={{
                       ...params.InputProps,
-                      sx: {
-                        borderRadius: 2,
-                      },
+                      sx: { borderRadius: 2 },
                       endAdornment: (
                         <>
                           <InputAdornment position="end">
@@ -539,9 +533,7 @@ const DisposisiModal = ({
                 }
                 loadingText="Memuat daftar PPK..."
                 sx={{
-                  '& .MuiAutocomplete-inputRoot': {
-                    borderRadius: 2,
-                  }
+                  '& .MuiAutocomplete-inputRoot': { borderRadius: 2 }
                 }}
               />
               <FormHelperText>
@@ -578,6 +570,9 @@ const DisposisiModal = ({
                   <Typography variant="body2" fontWeight="600" color="success.main">
                     PPK Dipilih: {selectedPpk.nama}
                   </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    ID: {selectedPpk.id || selectedPpk.user_id}
+                  </Typography>
                   <Box display="flex" flexWrap="wrap" gap={1} mt={0.5}>
                     {selectedPpk.nip && (
                       <Typography variant="caption" color="text.secondary">
@@ -604,11 +599,7 @@ const DisposisiModal = ({
               rows={4}
               placeholder="Masukkan catatan atau instruksi untuk PPK..."
               sx={{ mb: 2 }}
-              InputProps={{
-                sx: {
-                  borderRadius: 2,
-                }
-              }}
+              InputProps={{ sx: { borderRadius: 2 } }}
               helperText="Opsional: Tambahkan catatan untuk PPK"
             />
 
@@ -617,9 +608,7 @@ const DisposisiModal = ({
               sx={{ 
                 mt: 2,
                 borderRadius: 2,
-                '& .MuiAlert-icon': {
-                  alignItems: 'center',
-                }
+                '& .MuiAlert-icon': { alignItems: 'center' }
               }}
             >
               <Box>
@@ -638,10 +627,7 @@ const DisposisiModal = ({
               <Alert 
                 severity="warning"
                 icon={<WarningIcon />}
-                sx={{ 
-                  mt: 2,
-                  borderRadius: 2,
-                }}
+                sx={{ mt: 2, borderRadius: 2 }}
               >
                 <Typography variant="caption">
                   Silakan pilih PPK tujuan terlebih dahulu sebelum mengirim disposisi
@@ -654,10 +640,7 @@ const DisposisiModal = ({
               <Alert 
                 severity="error"
                 icon={<WarningIcon />}
-                sx={{ 
-                  mt: 2,
-                  borderRadius: 2,
-                }}
+                sx={{ mt: 2, borderRadius: 2 }}
               >
                 <Typography variant="caption">
                   Estimasi biaya belum diisi oleh PIC. Disposisi tidak dapat dikirim sampai PIC mengisi estimasi biaya.
@@ -677,10 +660,7 @@ const DisposisiModal = ({
           onClick={handleClose} 
           disabled={loading || loadingPpkList} 
           variant="outlined"
-          sx={{ 
-            borderRadius: 2,
-            px: 3,
-          }}
+          sx={{ borderRadius: 2, px: 3 }}
         >
           Batal
         </Button>
@@ -690,11 +670,7 @@ const DisposisiModal = ({
           color="primary"
           startIcon={<SendIcon />}
           disabled={loading || loadingPpkList || !selectedPpk || !estimasiBiayaDariPIC}
-          sx={{ 
-            borderRadius: 2,
-            px: 4,
-            boxShadow: theme.shadows[4],
-          }}
+          sx={{ borderRadius: 2, px: 4, boxShadow: theme.shadows[4] }}
         >
           Kirim ke PPK
         </Button>
