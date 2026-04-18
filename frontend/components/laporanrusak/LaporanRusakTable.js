@@ -79,65 +79,40 @@ const STATUS = {
   DITOLAK: 'ditolak'
 };
 
-// Base URL - Mengambil dari environment variable
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'https://api-tabela.bbpompky.id';
+// Base URL
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5002';
 
-// Placeholder image (base64 SVG)
+// Placeholder image
 const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiNFMEUwRTAiLz48cGF0aCBkPSJNMzUgMzBMNjUgNTBMMzUgNzBWMzBaIiBmaWxsPSIjOUU5RTlFIi8+PC9zdmc+';
 
-// ============================================
-// FUNGSI MEMBERSIHKAN URL FOTO (DIPERBAIKI)
-// ============================================
-// components/laporanrusak/LaporanRusakTable.js
-
+// Fungsi untuk membersihkan URL foto
 const cleanPhotoUrl = (photo) => {
-  // Jika photo falsy, return null
   if (!photo) return null;
   
-  // Jika photo adalah string
   if (typeof photo === 'string') {
-    let cleanUrl = photo.trim();
+    let cleanUrl = photo.replace('/api/uploads/', '/uploads/');
     
-    // Jika string kosong
-    if (cleanUrl === '') return null;
-    
-    // Jika sudah URL lengkap dengan http/https
-    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
-      // Cek apakah domainnya sudah benar
-      if (cleanUrl.includes('api-bbpompky.id') || cleanUrl.includes('api-tabela.bbpompky.id')) {
-        return cleanUrl;
-      }
-      // Jika domain berbeda, bisa tetap return atau ganti
+    if (cleanUrl.startsWith('http')) {
       return cleanUrl;
     }
     
-    // Hapus prefix yang salah
-    cleanUrl = cleanUrl.replace(/^\/-tabela\.bbpompky\.id/, '');
-    cleanUrl = cleanUrl.replace(/^\/api\/uploads\//, '/uploads/');
-    
-    // Jika dimulai dengan /uploads/
     if (cleanUrl.startsWith('/uploads/')) {
-      // Gunakan BASE_URL yang sudah didefinisikan
       return `${BASE_URL}${cleanUrl}`;
     }
     
-    // Jika dimulai dengan / (root)
     if (cleanUrl.startsWith('/')) {
       return `${BASE_URL}/uploads${cleanUrl}`;
     }
     
-    // Jika hanya nama file
     return `${BASE_URL}/uploads/${cleanUrl}`;
   }
   
-  // Jika photo adalah array, ambil yang pertama
-  if (Array.isArray(photo) && photo.length > 0) {
-    return cleanPhotoUrl(photo[0]);
+  if (photo.url) {
+    return cleanPhotoUrl(photo.url);
   }
   
-  // Jika photo adalah object dengan property url
-  if (photo && typeof photo === 'object' && photo.url) {
-    return cleanPhotoUrl(photo.url);
+  if (photo.preview) {
+    return photo.preview;
   }
   
   return null;
@@ -225,34 +200,19 @@ const FotoPreviewDialog = ({ open, onClose, photos = [], title = 'Foto Kerusakan
 };
 
 // ============================================
-// KOMPONEN THUMBNAIL FOTO (DIPERBAIKI)
+// KOMPONEN THUMBNAIL FOTO
 // ============================================
 const FotoThumbnail = ({ photos = [], onView }) => {
   const [hover, setHover] = useState(false);
   const [imageError, setImageError] = useState(false);
-  const [imageUrl, setImageUrl] = useState(null);
   
   useEffect(() => {
     setImageError(false);
-    
-    if (photos && photos.length > 0) {
-      const firstPhoto = photos[0];
-      const url = cleanPhotoUrl(firstPhoto);
-      setImageUrl(url);
-      console.log('📷 FotoThumbnail - URL:', url);
-    } else {
-      setImageUrl(null);
-    }
   }, [photos]);
   
   const handleClick = (e) => {
     e.stopPropagation();
     onView(photos);
-  };
-  
-  const handleImageError = () => {
-    console.log('❌ Gagal memuat gambar:', imageUrl);
-    setImageError(true);
   };
   
   if (!photos || photos.length === 0) {
@@ -263,6 +223,10 @@ const FotoThumbnail = ({ photos = [], onView }) => {
     );
   }
 
+  const photosArray = Array.isArray(photos) ? photos : [];
+  const firstPhoto = photosArray[0];
+  const imageUrl = cleanPhotoUrl(firstPhoto);
+
   if (imageError || !imageUrl) {
     return (
       <Box sx={{ width: 50, height: 50, bgcolor: 'grey.100', borderRadius: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid', borderColor: 'grey.200', cursor: 'pointer' }} onClick={handleClick}>
@@ -271,18 +235,9 @@ const FotoThumbnail = ({ photos = [], onView }) => {
     );
   }
 
-  const photosArray = Array.isArray(photos) ? photos : [];
-
   return (
     <Box sx={{ position: 'relative', width: 50, height: 50 }} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <Box 
-        component="img" 
-        src={imageUrl} 
-        alt="Foto" 
-        onError={handleImageError}
-        onClick={handleClick} 
-        sx={{ width: 50, height: 50, borderRadius: 1, objectFit: 'cover', cursor: 'pointer', border: '1px solid', borderColor: 'grey.200' }} 
-      />
+      <Box component="img" src={imageUrl} alt="Foto" onError={() => setImageError(true)} onClick={handleClick} sx={{ width: 50, height: 50, borderRadius: 1, objectFit: 'cover', cursor: 'pointer', border: '1px solid', borderColor: 'grey.200' }} />
       {photosArray.length > 1 && (
         <Box sx={{ position: 'absolute', bottom: -4, right: -4, bgcolor: 'primary.main', color: 'white', borderRadius: '50%', width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.625rem', fontWeight: 'bold', zIndex: 2, pointerEvents: 'none' }}>
           +{photosArray.length - 1}
@@ -371,11 +326,7 @@ const LaporanRusakTable = ({
   const [filteredData, setFilteredData] = useState([]);
   const [loadingPIC, setLoadingPIC] = useState(false);
 
-  // Debug BASE_URL
-  console.log('📍 BASE_URL:', BASE_URL);
-  console.log('📍 NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL);
-
-  // ========== DAPATKAN ROLE USER DARI SESSION ==========
+  // ========== DAPATKAN ROLE USER DARI SESSION (MENGGUNAKAN REALM_ACCESS) ==========
   const realmRoles = session?.user?.realm_access?.roles || [];
   
   const isAdmin = realmRoles.includes('admin') || realmRoles.includes('superadmin');
@@ -391,16 +342,18 @@ const LaporanRusakTable = ({
   console.log('isPICRuangan:', isPICRuangan);
   console.log('================================');
 
-  // ========== AMBIL DATA PIC DARI API ==========
+  // ========== AMBIL DATA PIC DARI BEBERAPA SUMBER ==========
   useEffect(() => {
     const fetchPicData = async () => {
       if (!session?.accessToken) return;
       
       setLoadingPIC(true);
       
+      // Coba beberapa endpoint
       const endpoints = [
         `${BASE_URL}/api/picruangan`,
         `${BASE_URL}/api/pic_ruangan`,
+        `${BASE_URL}/api/ruangan`,
       ];
       
       let pics = [];
@@ -417,11 +370,31 @@ const LaporanRusakTable = ({
           
           if (response.ok) {
             const result = await response.json();
-            let picData = result.data || result;
-            if (Array.isArray(picData)) {
-              pics = picData;
-              break;
+            console.log(`📥 Response dari ${url}:`, result);
+            
+            if (url.includes('ruangan') && !url.includes('pic')) {
+              // Data dari endpoint ruangan
+              let ruanganData = result.data || result;
+              if (Array.isArray(ruanganData)) {
+                ruanganData.forEach(ruangan => {
+                  if (ruangan.id && (ruangan.pic_user_name || ruangan.pic_user_id)) {
+                    pics.push({
+                      ruangan_id: ruangan.id,
+                      user_name: ruangan.pic_user_name,
+                      user_id: ruangan.pic_user_id,
+                    });
+                  }
+                });
+              }
+            } else {
+              // Data dari endpoint picruangan
+              let picData = result.data || result;
+              if (Array.isArray(picData)) {
+                pics = picData;
+              }
             }
+            
+            if (pics.length > 0) break;
           }
         } catch (error) {
           console.log(`❌ Error dengan ${url}:`, error.message);
@@ -429,25 +402,47 @@ const LaporanRusakTable = ({
       }
       
       if (pics.length > 0) {
+        console.log('📋 Data PIC yang ditemukan:', pics);
+        
+        // Buat mapping ruangan_id -> data PIC
         const picMapping = {};
         pics.forEach(pic => {
-          const ruanganId = pic.ruangan_id;
+          const ruanganId = pic.ruangan_id || pic.ruanganId;
           if (ruanganId) {
             picMapping[ruanganId] = {
-              user_name: pic.user_name,
-              user_id: pic.user_id,
+              user_name: pic.user_name || pic.userName || pic.nama,
+              user_id: pic.user_id || pic.userId,
             };
           }
         });
         setPicDetails(picMapping);
-        console.log('📋 Mapping PIC:', picMapping);
+        console.log('📋 Mapping PIC by ruangan:', picMapping);
+      } else {
+        console.log('⚠️ Tidak ada data PIC dari API, menggunakan fallback dari data row');
+        
+        // Fallback: Ambil PIC dari data row yang sudah ada
+        const fallbackMapping = {};
+        if (data && data.length > 0) {
+          data.forEach(row => {
+            if (row.ruangan_id) {
+              let picName = row.pic_ruangan_nama || row.pic_nama || row.pic_ruangan;
+              if (picName && typeof picName === 'string') {
+                fallbackMapping[row.ruangan_id] = {
+                  user_name: picName,
+                };
+              }
+            }
+          });
+          setPicDetails(fallbackMapping);
+          console.log('📋 Fallback PIC mapping:', fallbackMapping);
+        }
       }
       
       setLoadingPIC(false);
     };
     
     fetchPicData();
-  }, [session]);
+  }, [session, data]);
 
   // ========== FUNGSI CAN VERIFIKASI ==========
   const canVerifikasi = (status) => {
@@ -460,7 +455,7 @@ const LaporanRusakTable = ({
     return false;
   };
 
-  // Filter data berdasarkan user yang login
+  // Filter data berdasarkan user yang login (untuk PIC Ruangan)
   useEffect(() => {
     if (!data || data.length === 0) {
       setFilteredData([]);
@@ -473,13 +468,28 @@ const LaporanRusakTable = ({
     }
 
     if (isPICRuangan) {
+      // Dapatkan daftar ruangan yang menjadi tanggung jawab PIC
+      // Gunakan data dari picDetails atau dari row
       const userPicRooms = [];
       
+      // Cari dari picDetails
       Object.entries(picDetails).forEach(([ruanganId, pic]) => {
         if (pic.user_id === session?.user?.id) {
           userPicRooms.push(parseInt(ruanganId));
         }
       });
+      
+      // Juga cek dari data row
+      data.forEach(row => {
+        const picName = row.pic_ruangan_nama || row.pic_nama;
+        if (picName && picName === session?.user?.name) {
+          if (!userPicRooms.includes(row.ruangan_id)) {
+            userPicRooms.push(row.ruangan_id);
+          }
+        }
+      });
+      
+      console.log('User PIC Rooms:', userPicRooms);
       
       const filtered = data.filter(item => userPicRooms.includes(item.ruangan_id));
       setFilteredData(filtered);
@@ -508,7 +518,10 @@ const LaporanRusakTable = ({
         case 'edit': onEdit?.(selectedRow); break;
         case 'delete': onDelete?.(selectedRow); break;
         case 'verifikasi': onVerifikasi?.(selectedRow); break;
-        case 'disposisi': onDisposisi?.(selectedRow); break;
+        case 'disposisi': 
+          console.log('📤 Menjalankan disposisi untuk:', selectedRow.nomor_laporan);
+          onDisposisi?.(selectedRow); 
+          break;
         case 'verifikasi-ppk': onVerifikasiPPK?.(selectedRow); break;
         case 'selesai-perbaikan':
           if (onSelesaiPerbaikan) {
@@ -599,18 +612,25 @@ const LaporanRusakTable = ({
     }
   };
 
-  // Get PIC for room
+  // Get PIC for room - PRIORITAS dari data row terlebih dahulu
   const getPICForRoom = (row) => {
+    // Cek dari data row langsung (paling akurat karena dari backend)
     if (row.pic_ruangan_nama && typeof row.pic_ruangan_nama === 'string') {
       return { user_name: row.pic_ruangan_nama };
     }
     if (row.pic_nama && typeof row.pic_nama === 'string') {
       return { user_name: row.pic_nama };
     }
+    if (row.pic_ruangan && typeof row.pic_ruangan === 'string') {
+      return { user_name: row.pic_ruangan };
+    }
+    
+    // Fallback ke mapping dari API
     const pic = picDetails[row.ruangan_id];
     if (pic && pic.user_name) {
       return pic;
     }
+    
     return null;
   };
 
