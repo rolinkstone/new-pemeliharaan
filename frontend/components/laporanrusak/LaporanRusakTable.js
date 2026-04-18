@@ -88,52 +88,56 @@ const PLACEHOLDER_IMAGE = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWl
 // ============================================
 // FUNGSI MEMBERSIHKAN URL FOTO (DIPERBAIKI)
 // ============================================
+// components/laporanrusak/LaporanRusakTable.js
+
 const cleanPhotoUrl = (photo) => {
+  // Jika photo falsy, return null
   if (!photo) return null;
   
+  // Jika photo adalah string
   if (typeof photo === 'string') {
-    let cleanUrl = photo;
+    let cleanUrl = photo.trim();
     
-    // Hapus prefix yang salah jika ada
-    if (cleanUrl.includes('/-tabela.bbpompky.id')) {
-      cleanUrl = cleanUrl.replace('/-tabela.bbpompky.id', '');
-    }
-    
-    // Ganti /api/uploads/ menjadi /uploads/
-    cleanUrl = cleanUrl.replace('/api/uploads/', '/uploads/');
+    // Jika string kosong
+    if (cleanUrl === '') return null;
     
     // Jika sudah URL lengkap dengan http/https
-    if (cleanUrl.startsWith('http')) {
+    if (cleanUrl.startsWith('http://') || cleanUrl.startsWith('https://')) {
+      // Cek apakah domainnya sudah benar
+      if (cleanUrl.includes('api-bbpompky.id') || cleanUrl.includes('api-tabela.bbpompky.id')) {
+        return cleanUrl;
+      }
+      // Jika domain berbeda, bisa tetap return atau ganti
       return cleanUrl;
     }
     
-    // Jika dimulai dengan /uploads/ (path relatif)
+    // Hapus prefix yang salah
+    cleanUrl = cleanUrl.replace(/^\/-tabela\.bbpompky\.id/, '');
+    cleanUrl = cleanUrl.replace(/^\/api\/uploads\//, '/uploads/');
+    
+    // Jika dimulai dengan /uploads/
     if (cleanUrl.startsWith('/uploads/')) {
+      // Gunakan BASE_URL yang sudah didefinisikan
       return `${BASE_URL}${cleanUrl}`;
     }
     
-    // Jika dimulai dengan /uploads (tanpa slash)
-    if (cleanUrl.startsWith('/uploads')) {
-      return `${BASE_URL}${cleanUrl}`;
-    }
-    
-    // Jika dimulai dengan / (path root)
+    // Jika dimulai dengan / (root)
     if (cleanUrl.startsWith('/')) {
       return `${BASE_URL}/uploads${cleanUrl}`;
     }
     
-    // Jika hanya nama file (tanpa path)
+    // Jika hanya nama file
     return `${BASE_URL}/uploads/${cleanUrl}`;
   }
   
-  // Jika photo adalah object dengan property url
-  if (photo.url) {
-    return cleanPhotoUrl(photo.url);
+  // Jika photo adalah array, ambil yang pertama
+  if (Array.isArray(photo) && photo.length > 0) {
+    return cleanPhotoUrl(photo[0]);
   }
   
-  // Jika photo adalah object dengan property preview (local file)
-  if (photo.preview) {
-    return photo.preview;
+  // Jika photo adalah object dengan property url
+  if (photo && typeof photo === 'object' && photo.url) {
+    return cleanPhotoUrl(photo.url);
   }
   
   return null;
