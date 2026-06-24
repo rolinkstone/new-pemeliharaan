@@ -554,7 +554,16 @@ const LaporanRusakTable = ({
     return isPICRuangan && [STATUS.DRAFT, STATUS.MENUNGGU_VERIFIKASI_PIC].includes(status);
   };
 
-  const canDelete = () => isAdmin;
+  const canDelete = (row) => {
+    // Admin bisa hapus semua
+    if (isAdmin) return true;
+    // Pelapor bisa hapus jika masih menunggu verifikasi PIC (belum ditindaklanjuti)
+    if (!row) return false;
+    const userId = session?.user?.id || session?.user?.sub;
+    const isOwner = row.pelapor_id === userId;
+    const isWaitingPIC = row.status === STATUS.MENUNGGU_VERIFIKASI_PIC || row.status === STATUS.DRAFT;
+    return isOwner && isWaitingPIC;
+  };
 
   const canDisposisi = (status) => {
     if (isKabagTU && status === STATUS.MENUNGGU_DISPOSISI) {
@@ -672,7 +681,7 @@ const LaporanRusakTable = ({
                     direction={sortConfig.field === 'nomor_laporan' ? sortConfig.direction : 'asc'}
                     onClick={() => handleSortClick('nomor_laporan')}
                   >
-                    Nomor Laporan
+                    No. Laporan
                   </TableSortLabel>
                 </TableCell>
                 <TableCell>
@@ -684,11 +693,11 @@ const LaporanRusakTable = ({
                     Tanggal
                   </TableSortLabel>
                 </TableCell>
-                <TableCell>Pelapor</TableCell>
-                <TableCell>Ruangan</TableCell>
-                <TableCell width={200}>PIC Ruangan</TableCell>
-                <TableCell>Aset</TableCell>
-                <TableCell>Deskripsi</TableCell>
+                <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Pelapor</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Ruangan</TableCell>
+                <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }} width={200}>PIC Ruangan</TableCell>
+                <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Aset</TableCell>
+                <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>Deskripsi</TableCell>
                 <TableCell>Prioritas</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right" width={100}>Aksi</TableCell>
@@ -735,7 +744,7 @@ const LaporanRusakTable = ({
                       <TableCell>
                         <Typography variant="body2">{formatDate(row.tgl_laporan)}</Typography>
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                         <Box display="flex" alignItems="center" gap={1}>
                           <Avatar sx={{ width: 24, height: 24, bgcolor: alpha(theme.palette.primary.main, 0.1), color: theme.palette.primary.main, fontSize: '0.75rem' }}>
                             {row.pelapor_nama?.charAt(0) || 'U'}
@@ -743,22 +752,22 @@ const LaporanRusakTable = ({
                           <Typography variant="body2" noWrap sx={{ maxWidth: 120 }}>{row.pelapor_nama || '-'}</Typography>
                         </Box>
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         <Box display="flex" alignItems="center" gap={1}>
                           <RoomIcon sx={{ fontSize: 16, color: theme.palette.text.secondary }} />
                           <Typography variant="body2" noWrap sx={{ maxWidth: 100 }}>{row.ruangan_nama || '-'}</Typography>
                         </Box>
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
                         <PICAvatar pic={picRuangan} size={28} />
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
                         <Box>
                           <Typography variant="body2" fontWeight="medium">{row.aset_nama || '-'}</Typography>
                           {row.aset_kode && <Typography variant="caption" color="textSecondary">{row.aset_kode}</Typography>}
                         </Box>
                       </TableCell>
-                      <TableCell>
+                      <TableCell sx={{ display: { xs: 'none', lg: 'table-cell' } }}>
                         <Tooltip title={row.deskripsi || ''}>
                           <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {row.deskripsi || '-'}
@@ -875,7 +884,7 @@ const LaporanRusakTable = ({
 
           <Divider />
 
-          {selectedRow && canDelete() && (
+          {selectedRow && canDelete(selectedRow) && (
             <MenuItem onClick={() => handleAction('delete')} sx={{ color: theme.palette.error.main }}>
               <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
               <ListItemText>Hapus (Admin)</ListItemText>

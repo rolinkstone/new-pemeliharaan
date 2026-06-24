@@ -75,6 +75,7 @@ const STATUS = {
   DITOLAK: 'ditolak'
 };
 
+// Semua status (untuk display badge)
 const STATUS_OPTIONS = [
   { value: STATUS.DRAFT, label: 'Draft', color: 'default' },
   { value: STATUS.MENUNGGU_VERIFIKASI_PIC, label: 'Menunggu Verifikasi PIC', color: 'warning' },
@@ -86,6 +87,12 @@ const STATUS_OPTIONS = [
   { value: STATUS.DALAM_PERBAIKAN, label: 'Dalam Perbaikan', color: 'info' },
   { value: STATUS.SELESAI, label: 'Selesai', color: 'success' },
   { value: STATUS.DITOLAK, label: 'Ditolak', color: 'error' },
+];
+
+// Status awal untuk laporan baru / edit (hanya status yang bisa dipilih manual)
+const EDITABLE_STATUS_OPTIONS = [
+  { value: STATUS.DRAFT, label: 'Draft', color: 'default' },
+  { value: STATUS.MENUNGGU_VERIFIKASI_PIC, label: 'Menunggu Verifikasi PIC', color: 'warning' },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -141,7 +148,7 @@ const PriorityBadge = ({ priority }) => {
 const InfoCard = ({ icon, label, value }) => {
   const theme = useTheme();
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, bgcolor: 'grey.50', borderRadius: 2 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, bgcolor: theme.palette.action.hover, borderRadius: 2 }}>
       <Avatar sx={{ width: 40, height: 40, bgcolor: alpha(theme?.palette?.primary?.main || '#1976d2', 0.1), color: theme?.palette?.primary?.main || '#1976d2' }}>
         {icon}
       </Avatar>
@@ -579,7 +586,7 @@ const LaporanRusakForm = ({
                 size="small"
                 value={formData.pelapor_nama || session?.user?.name || '-'}
                 disabled
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 }, bgcolor: 'grey.50' }}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 }, bgcolor: theme.palette.action.hover }}
               />
             </Grid>
 
@@ -628,7 +635,7 @@ const LaporanRusakForm = ({
                   size="small"
                   value={getPicDisplayName()}
                   disabled
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 }, bgcolor: 'grey.50' }}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5 }, bgcolor: theme.palette.action.hover }}
                 />
               ) : (
                 <Box>
@@ -639,7 +646,7 @@ const LaporanRusakForm = ({
                     disabled
                     sx={{ 
                       '& .MuiOutlinedInput-root': { borderRadius: 1.5 }, 
-                      bgcolor: picRuangan ? alpha(theme.palette.info.main, 0.05) : 'grey.50',
+                      bgcolor: picRuangan ? alpha(theme.palette.info.main, 0.05) : theme.palette.action.hover,
                       '& .MuiOutlinedInput-root.Mui-disabled': {
                         '& > fieldset': { borderColor: picRuangan ? alpha(theme.palette.info.main, 0.3) : undefined }
                       }
@@ -755,7 +762,7 @@ const LaporanRusakForm = ({
                     onChange={(e) => handleChange('status', e.target.value)}
                     sx={{ borderRadius: 1.5 }}
                   >
-                    {STATUS_OPTIONS.map(opt => (
+                    {EDITABLE_STATUS_OPTIONS.map(opt => (
                       <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
                     ))}
                   </Select>
@@ -769,7 +776,7 @@ const LaporanRusakForm = ({
                 Deskripsi Kerusakan {!readOnly && <span style={{ color: theme.palette.error.main }}>*</span>}
               </Typography>
               {readOnly ? (
-                <Paper variant="outlined" sx={{ p: 2, bgcolor: 'grey.50', borderRadius: 1.5 }}>
+                <Paper variant="outlined" sx={{ p: 2, bgcolor: theme.palette.action.hover, borderRadius: 1.5 }}>
                   <Typography variant="body2" style={{ whiteSpace: 'pre-wrap' }}>{formData.deskripsi || '-'}</Typography>
                 </Paper>
               ) : (

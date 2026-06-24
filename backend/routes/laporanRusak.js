@@ -556,14 +556,30 @@ router.delete('/:id', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
 
-        const [result] = await db.query('DELETE FROM laporan_rusak WHERE id = ?', [id]);
+        // Cek status laporan — hanya bisa hapus jika masih draft/menunggu verifikasi
+        const [existing] = await db.query(
+            'SELECT status, pelapor_id FROM laporan_rusak WHERE id = ?', 
+            [id]
+        );
         
-        if (result.affectedRows === 0) {
+        if (existing.length === 0) {
             return res.status(404).json({ 
                 success: false, 
                 message: 'Laporan tidak ditemukan' 
             });
         }
+
+        const laporan = existing[0];
+        const allowedStatuses = ['draft', 'menunggu_verifikasi_pic'];
+        
+        if (!allowedStatuses.includes(laporan.status)) {
+            return res.status(400).json({
+                success: false,
+                message: `Laporan sudah ditindaklanjuti (${laporan.status}) dan tidak dapat dihapus`
+            });
+        }
+
+        const [result] = await db.query('DELETE FROM laporan_rusak WHERE id = ?', [id]);
 
         const username = getUsernameFromToken(req.user);
 

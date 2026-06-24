@@ -12,6 +12,10 @@ import {
   Grid,
   Card,
   CardContent,
+  TextField,
+  InputAdornment,
+  IconButton,
+  Chip,
   useTheme,
   alpha,
   LinearProgress,
@@ -20,6 +24,8 @@ import {
 import {
   Add as AddIcon,
   Refresh as RefreshIcon,
+  Search as SearchIcon,
+  Clear as ClearIcon,
   Assignment as AssignmentIcon,
   CheckCircle as CheckCircleIcon,
   Warning as WarningIcon,
@@ -522,59 +528,110 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
     setSnackbar({ open: true, message, severity });
   };
 
-  // Statistics Cards Component
+  // Statistics Cards Component — lebih informatif
   const StatisticsCards = () => {
     if (!statistics) return null;
     
+    const total = statistics.total || 1;
     const cards = [
       { 
         title: 'Total Laporan', 
         value: statistics.total || 0, 
         icon: <AssignmentIcon />, 
-        color: theme.palette.primary.main 
+        color: theme.palette.primary.main,
+        subtitle: 'Semua laporan',
+        bg: alpha(theme.palette.primary.main, 0.08)
       },
       { 
-        title: 'Menunggu Verifikasi', 
-        value: statistics.menunggu_verifikasi || 0, 
+        title: 'Menunggu Proses', 
+        value: (statistics.menunggu_verifikasi_pic || 0) + (statistics.menunggu_disposisi || 0) + (statistics.menunggu_verifikasi_ppk || 0), 
         icon: <WarningIcon />, 
-        color: theme.palette.warning.main 
+        color: theme.palette.warning.main,
+        subtitle: `${((statistics.menunggu_verifikasi_pic || 0) / total * 100).toFixed(0)}% dari total`,
+        bg: alpha(theme.palette.warning.main, 0.08)
       },
       { 
         title: 'Dalam Perbaikan', 
         value: statistics.dalam_perbaikan || 0, 
         icon: <BuildIcon />, 
-        color: theme.palette.info.main 
+        color: theme.palette.info.main,
+        subtitle: `${((statistics.dalam_perbaikan || 0) / total * 100).toFixed(0)}% dari total`,
+        bg: alpha(theme.palette.info.main, 0.08)
       },
       { 
         title: 'Selesai', 
         value: statistics.selesai || 0, 
         icon: <DoneAllIcon />, 
-        color: theme.palette.success.main 
+        color: theme.palette.success.main,
+        subtitle: `${((statistics.selesai || 0) / total * 100).toFixed(0)}% penyelesaian`,
+        bg: alpha(theme.palette.success.main, 0.08)
       },
     ];
 
     return (
-      <Grid container spacing={3} sx={{ mb: 3 }}>
+      <Grid container spacing={2} sx={{ mb: 3 }}>
         {cards.map((card, i) => (
-          <Grid item xs={12} sm={6} md={3} key={i}>
-            <Card sx={{ borderRadius: 2, boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}` }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Box>
-                    <Typography variant="body2" color="textSecondary">{card.title}</Typography>
-                    <Typography variant="h4" fontWeight="bold">{card.value.toLocaleString()}</Typography>
+          <Grid item xs={6} sm={6} md={3} key={i}>
+            <Fade in timeout={300 + i * 100}>
+              <Card 
+                sx={{ 
+                  borderRadius: 2, 
+                  boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}`,
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 6px 20px ${alpha(card.color, 0.25)}` }
+                }}
+              >
+                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                  <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                    <Box>
+                      <Typography variant="caption" color="textSecondary" fontWeight={500}>
+                        {card.title}
+                      </Typography>
+                      <Typography variant="h5" fontWeight="bold" sx={{ mt: 0.5, lineHeight: 1.2 }}>
+                        {card.value.toLocaleString()}
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
+                        {card.subtitle}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ bgcolor: card.bg, borderRadius: 2, p: 1, color: card.color }}>
+                      {card.icon}
+                    </Box>
                   </Box>
-                  <Box sx={{ bgcolor: alpha(card.color, 0.1), borderRadius: 2, p: 1 }}>
-                    {card.icon}
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
+                  {/* Progress bar untuk selesai */}
+                  {i === 3 && (
+                    <Box sx={{ mt: 1.5, width: '100%' }}>
+                      <LinearProgress 
+                        variant="determinate" 
+                        value={Math.min((statistics.selesai || 0) / total * 100, 100)} 
+                        sx={{
+                          height: 4,
+                          borderRadius: 2,
+                          bgcolor: alpha(theme.palette.success.main, 0.15),
+                          '& .MuiLinearProgress-bar': { bgcolor: theme.palette.success.main }
+                        }}
+                      />
+                    </Box>
+                  )}
+                </CardContent>
+              </Card>
+            </Fade>
           </Grid>
         ))}
       </Grid>
     );
   };
+
+  // Quick filter chips berdasarkan status
+  const quickFilters = [
+    { key: '', label: 'Semua', icon: null },
+    { key: 'menunggu_verifikasi_pic', label: 'Verifikasi PIC', icon: <WarningIcon sx={{ fontSize: 14 }} /> },
+    { key: 'menunggu_disposisi', label: 'Disposisi', icon: <AssignmentIcon sx={{ fontSize: 14 }} /> },
+    { key: 'menunggu_verifikasi_ppk', label: 'Verifikasi PPK', icon: <AttachMoneyIcon sx={{ fontSize: 14 }} /> },
+    { key: 'dalam_perbaikan', label: 'Perbaikan', icon: <BuildIcon sx={{ fontSize: 14 }} /> },
+    { key: 'selesai', label: 'Selesai', icon: <DoneAllIcon sx={{ fontSize: 14 }} /> },
+    { key: 'ditolak', label: 'Ditolak', icon: <ErrorIcon sx={{ fontSize: 14 }} /> },
+  ];
 
   if (status === 'loading' || initialLoading) {
     return (
@@ -594,30 +651,74 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4" fontWeight="bold" gutterBottom>
-            Laporan Kerusakan Aset
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
-            Kelola pelaporan dan perbaikan aset yang rusak
-          </Typography>
+      {/* HEADER dengan Search Bar inline */}
+      <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+        <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} gap={2}>
+          <Box>
+            <Typography variant="h5" fontWeight="bold">
+              Laporan Kerusakan Aset
+            </Typography>
+            <Typography variant="body2" color="textSecondary">
+              Kelola pelaporan dan perbaikan aset yang rusak
+            </Typography>
+          </Box>
+          <Box display="flex" gap={1.5} alignItems="center" flexWrap="wrap">
+            {/* Search bar di header — selalu visible */}
+            <TextField
+              size="small"
+              placeholder="Cari nomor/deskripsi..."
+              value={filters.search || ''}
+              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+              onKeyDown={(e) => { if (e.key === 'Enter') { handleFilterChange({ ...filters, search: e.target.value }); } }}
+              sx={{ minWidth: 220 }}
+              InputProps={{
+                startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+                endAdornment: filters.search ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" onClick={() => handleFilterChange({ ...filters, search: '' })}>
+                      <ClearIcon fontSize="small" />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null
+              }}
+            />
+            <Button variant="outlined" size="small" startIcon={<RefreshIcon />} onClick={handleRefresh} disabled={loading}>
+              Refresh
+            </Button>
+            {!['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status) && (
+              <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={handleCreate} disabled={loading}>
+                + Baru
+              </Button>
+            )}
+          </Box>
         </Box>
-        <Box display="flex" gap={2}>
-          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={handleRefresh} disabled={loading}>
-            Refresh
-          </Button>
-          <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreate} disabled={loading}>
-            Buat Laporan
-          </Button>
-        </Box>
-      </Box>
+      </Paper>
 
       <StatisticsCards />
 
+      {/* QUICK FILTER CHIPS */}
+      <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {quickFilters.map((qf) => (
+          <Chip
+            key={qf.key}
+            label={qf.label}
+            icon={qf.icon}
+            size="small"
+            variant={filters.status === qf.key ? 'filled' : 'outlined'}
+            color={filters.status === qf.key ? 'primary' : 'default'}
+            onClick={() => handleFilterChange({ ...filters, status: qf.key })}
+            sx={{
+              fontWeight: filters.status === qf.key ? 600 : 400,
+              transition: 'all 0.2s',
+              '&:hover': { transform: 'translateY(-1px)' }
+            }}
+          />
+        ))}
+      </Box>
+
       <FilterSection filters={filters} onFilterChange={handleFilterChange} />
 
-      {loading && <LinearProgress sx={{ mb: 2 }} />}
+      {loading && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
 
       {error && (
         <Fade in={!!error}>
@@ -629,28 +730,55 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
         </Fade>
       )}
 
-      <LaporanRusakTable
-        data={dataList}
-        loading={loading}
-        onView={handleView}
-        onEdit={handleEdit}
-        onDelete={handleDelete}
-        onVerifikasi={handleVerifikasi}
-        onDisposisi={handleDisposisi}
-        onVerifikasiPPK={handleVerifikasiPPK}
-        onSelesaiPerbaikan={handleSelesaiPerbaikan}
-        pagination={pagination}
-        onPageChange={handlePageChange}
-        sortConfig={sortConfig}
-        onSort={handleSort}
-        picData={picData}
-      />
+      {/* EMPTY STATE */}
+      {!loading && dataList.length === 0 && !error ? (
+        <Fade in>
+          <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 2 }}>
+            <AssignmentIcon sx={{ fontSize: 64, color: alpha(theme.palette.primary.main, 0.3), mb: 2 }} />
+            <Typography variant="h6" color="textSecondary" gutterBottom>
+              Tidak Ada Laporan
+            </Typography>
+            <Typography variant="body2" color="textSecondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
+              {['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status)
+                ? `Tidak ada laporan dengan status ini.`
+                : 'Belum ada laporan kerusakan yang tercatat.'}
+            </Typography>
+            {!['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status) && (
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreate}>
+                Buat Laporan Pertama
+              </Button>
+            )}
+          </Paper>
+        </Fade>
+      ) : (
+        <Fade in>
+          <Box>
+            <LaporanRusakTable
+              data={dataList}
+              loading={loading}
+              onView={handleView}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+              onVerifikasi={handleVerifikasi}
+              onDisposisi={handleDisposisi}
+              onVerifikasiPPK={handleVerifikasiPPK}
+              onSelesaiPerbaikan={handleSelesaiPerbaikan}
+              pagination={pagination}
+              onPageChange={handlePageChange}
+              sortConfig={sortConfig}
+              onSort={handleSort}
+              picData={picData}
+            />
 
-      <Box mt={2}>
-        <Typography variant="body2" color="textSecondary">
-          Menampilkan {dataList.length} dari {pagination.total} data
-        </Typography>
-      </Box>
+            <Box mt={2} display="flex" justifyContent="space-between" alignItems="center">
+              <Typography variant="body2" color="textSecondary">
+                Menampilkan {dataList.length} dari {pagination.total} data
+              </Typography>
+              {loading && <CircularProgress size={16} />}
+            </Box>
+          </Box>
+        </Fade>
+      )}
 
       {/* Modals */}
       <LaporanRusakModal
