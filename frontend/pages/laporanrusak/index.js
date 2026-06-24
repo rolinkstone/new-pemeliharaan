@@ -5,7 +5,7 @@ import { getSession } from 'next-auth/react';
 import DashboardLayout from '../../components/DashboardLayout';
 import LaporanRusakContainer from '../../components/laporanrusak/LaporanRusakContainer';
 
-export default function LaporanRusakPage() {
+export default function LpaoranrusakPage() {
   const { data: session, status } = useSession();
 
   return (

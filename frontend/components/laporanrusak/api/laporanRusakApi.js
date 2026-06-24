@@ -31,11 +31,13 @@ const handleResponse = async (response) => {
 };
 
 const getBaseUrl = () => {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL;
     if (typeof window !== 'undefined') {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL;
         console.log('🔍 NEXT_PUBLIC_API_URL:', apiUrl);
+        
+        
     }
-    return apiUrl;
+    return process.env.NEXT_PUBLIC_API_URL ;
 };
 
 // ============================================
@@ -73,7 +75,7 @@ const validateStatus = (status) => {
 // ========== LAPORAN RUSAK API ==========
 
 /**
- * GET /api/laporanrusak
+ * GET /api/laporansrusak
  * Mendapatkan semua data laporan rusak
  */
 const fetchAllLaporanRusak = async (session, params = {}) => {
@@ -104,7 +106,7 @@ const fetchAllLaporanRusak = async (session, params = {}) => {
     if (params.page) queryParams.append('page', params.page);
     if (params.limit) queryParams.append('limit', params.limit);
     
-    const url = `${baseUrl}/laporanrusak${queryParams.toString() ? `?${queryParams}` : ''}`;
+    const url = `${baseUrl}/laporansrusak${queryParams.toString() ? `?${queryParams}` : ''}`;
     
     console.log('📤 Final URL:', url);
     
@@ -140,7 +142,7 @@ const fetchAllLaporanRusak = async (session, params = {}) => {
                 
                 if (response.status === 404) {
                     if (errorText.includes('Cannot GET')) {
-                        errorMessage = `Endpoint tidak ditemukan: ${url}. Pastikan backend sudah memiliki route /api/laporanrusak`;
+                        errorMessage = `Endpoint tidak ditemukan: ${url}. Pastikan backend sudah memiliki route /api/laporansrusak`;
                     } else {
                         errorMessage = `Data tidak ditemukan (404)`;
                     }
@@ -190,7 +192,7 @@ const fetchAllLaporanRusak = async (session, params = {}) => {
 };
 
 /**
- * GET /api/laporanrusak/:id
+ * GET /api/laporansrusak/:id
  */
 const fetchLaporanRusakById = async (session, id) => {
     const token = getToken(session);
@@ -203,7 +205,7 @@ const fetchLaporanRusakById = async (session, id) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}`;
+    const url = `${baseUrl}/laporansrusak/${id}`;
     
     try {
         const response = await fetch(url, {
@@ -246,7 +248,7 @@ const fetchLaporanRusakById = async (session, id) => {
 };
 
 /**
- * GET /api/laporanrusak/user/:userId
+ * GET /api/laporansrusak/user/:userId
  */
 const fetchLaporanByUser = async (session, userId) => {
     const token = getToken(session);
@@ -260,7 +262,7 @@ const fetchLaporanByUser = async (session, userId) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/user/${userId}`;
+    const url = `${baseUrl}/laporansrusak/user/${userId}`;
     
     try {
         const response = await fetch(url, {
@@ -308,7 +310,7 @@ const fetchLaporanByUser = async (session, userId) => {
 };
 
 /**
- * POST /api/laporanrusak
+ * POST /api/laporansrusak
  */
 const createLaporanRusak = async (session, data) => {
     const token = getToken(session);
@@ -321,7 +323,7 @@ const createLaporanRusak = async (session, data) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak`;
+    const url = `${baseUrl}/laporansrusak`;
     
     const tgl_laporan = data.tgl_laporan instanceof Date 
         ? data.tgl_laporan.toISOString().split('T')[0]
@@ -384,7 +386,7 @@ const createLaporanRusak = async (session, data) => {
 };
 
 /**
- * PUT /api/laporanrusak/:id
+ * PUT /api/laporansrusak/:id
  */
 const updateLaporanRusak = async (session, id, data) => {
     const token = getToken(session);
@@ -397,7 +399,7 @@ const updateLaporanRusak = async (session, id, data) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}`;
+    const url = `${baseUrl}/laporansrusak/${id}`;
     
     const validStatus = validateStatus(data.status);
     console.log('📝 Update - Status original:', data.status, 'Status valid:', validStatus);
@@ -455,7 +457,7 @@ const updateLaporanRusak = async (session, id, data) => {
 };
 
 /**
- * DELETE /api/laporanrusak/:id
+ * DELETE /api/laporansrusak/:id
  */
 const deleteLaporanRusak = async (session, id) => {
     const token = getToken(session);
@@ -468,7 +470,7 @@ const deleteLaporanRusak = async (session, id) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}`;
+    const url = `${baseUrl}/laporansrusak/${id}`;
     
     try {
         const response = await fetch(url, {
@@ -505,7 +507,7 @@ const deleteLaporanRusak = async (session, id) => {
 };
 
 /**
- * POST /api/laporanrusak/:id/verifikasi
+ * POST /api/laporansrusak/:id/verifikasi
  * Untuk verifikasi laporan oleh PIC
  */
 const verifikasiLaporan = async (session, id, data) => {
@@ -519,7 +521,7 @@ const verifikasiLaporan = async (session, id, data) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}/verifikasi`;
+    const url = `${baseUrl}/laporansrusak/${id}/verifikasi`;
     
     console.log('📤 VERIFIKASI - URL:', url);
     console.log('📤 VERIFIKASI - Payload:', data);
@@ -555,7 +557,7 @@ const verifikasiLaporan = async (session, id, data) => {
 };
 
 /**
- * POST /api/laporanrusak/:id/disposisi
+ * POST /api/laporansrusak/:id/disposisi
  * Untuk disposisi oleh Kabag TU ke PPK
  */
 const disposisiLaporan = async (session, id, data) => {
@@ -569,7 +571,7 @@ const disposisiLaporan = async (session, id, data) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}/disposisi`;
+    const url = `${baseUrl}/laporansrusak/${id}/disposisi`;
     
     console.log('📤 DISPOSISI - URL:', url);
     console.log('📤 DISPOSISI - Payload:', data);
@@ -605,7 +607,7 @@ const disposisiLaporan = async (session, id, data) => {
 };
 
 /**
- * POST /api/laporanrusak/:id/verifikasi-ppk
+ * POST /api/laporansrusak/:id/verifikasi-ppk
  * Untuk verifikasi oleh PPK
  */
 const verifikasiPPK = async (session, id, data) => {
@@ -619,7 +621,7 @@ const verifikasiPPK = async (session, id, data) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}/verifikasi-ppk`;
+    const url = `${baseUrl}/laporansrusak/${id}/verifikasi-ppk`;
     
     console.log('📤 VERIFIKASI PPK - URL:', url);
     console.log('📤 VERIFIKASI PPK - Payload:', data);
@@ -655,7 +657,7 @@ const verifikasiPPK = async (session, id, data) => {
 };
 
 /**
- * POST /api/laporanrusak/:id/selesaikan-perbaikan
+ * POST /api/laporansrusak/:id/selesaikan-perbaikan
  * Untuk PIC Ruangan melaporkan hasil perbaikan
  */
 const selesaikanPerbaikan = async (session, id, data) => {
@@ -669,7 +671,7 @@ const selesaikanPerbaikan = async (session, id, data) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}/selesaikan-perbaikan`;
+    const url = `${baseUrl}/laporansrusak/${id}/selesaikan-perbaikan`;
     
     console.log('🔧 SELESAIKAN PERBAIKAN - URL:', url);
     
@@ -704,7 +706,7 @@ const selesaikanPerbaikan = async (session, id, data) => {
 };
 
 /**
- * GET /api/laporanrusak/:id/detail-perbaikan
+ * GET /api/laporansrusak/:id/detail-perbaikan
  * Untuk mendapatkan detail perbaikan yang sudah dilakukan
  */
 const getDetailPerbaikan = async (session, id) => {
@@ -718,7 +720,7 @@ const getDetailPerbaikan = async (session, id) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/${id}/detail-perbaikan`;
+    const url = `${baseUrl}/laporansrusak/${id}/detail-perbaikan`;
     
     console.log('🔍 GET DETAIL PERBAIKAN - URL:', url);
     
@@ -752,7 +754,7 @@ const getDetailPerbaikan = async (session, id) => {
 };
 
 /**
- * GET /api/laporanrusak/statistics
+ * GET /api/laporansrusak/statistics
  */
 const fetchLaporanStatistics = async (session) => {
     const token = getToken(session);
@@ -776,7 +778,7 @@ const fetchLaporanStatistics = async (session) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/statistics`;
+    const url = `${baseUrl}/laporansrusak/statistics`;
     
     try {
         const response = await fetch(url, {
@@ -916,7 +918,7 @@ const fetchRuanganOptions = async (session, params = {}) => {
 };
 
 /**
- * GET /api/laporanrusak/aset-berdasarkan-ruangan/:ruanganId
+ * GET /api/laporansrusak/aset-berdasarkan-ruangan/:ruanganId
  */
 const fetchAsetByRuangan = async (session, ruanganId) => {
     const token = getToken(session);
@@ -931,7 +933,7 @@ const fetchAsetByRuangan = async (session, ruanganId) => {
     }
     
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/aset-berdasarkan-ruangan/${ruanganId}`;
+    const url = `${baseUrl}/laporansrusak/aset-berdasarkan-ruangan/${ruanganId}`;
     
     console.log('📤 Fetching aset by ruangan from:', url);
     
@@ -1131,7 +1133,7 @@ const fetchPicByRuangan = async (session, ruanganId) => {
 };
 
 /**
- * GET /api/laporanrusak/options/aset (fallback)
+ * GET /api/laporansrusak/options/aset (fallback)
  */
 const fetchAsetOptions = async (session, params = {}) => {
     const token = getToken(session);
@@ -1150,7 +1152,7 @@ const fetchAsetOptions = async (session, params = {}) => {
     const endpoints = [
         `${baseUrl}/master-aset`,
         `${baseUrl}/aset`,
-        `${baseUrl}/laporanrusak/options/aset`,
+        `${baseUrl}/laporansrusak/options/aset`,
         `${baseUrl}/master_aset`,
     ];
     
