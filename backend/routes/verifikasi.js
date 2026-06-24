@@ -2,10 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { keycloakAuth, checkRole } = require('../middleware/keycloakAuth');
-
-function getUsernameFromToken(user) {
-    return user?.preferred_username || user?.username || 'unknown';
-}
+const { getUsernameFromToken } = require('../utils/routeHelpers');
 
 // ========== VERIFIKASI PIC RUANGAN ==========
 router.post('/pic/:laporanId', keycloakAuth, checkRole(['PIC_Ruangan']), async (req, res) => {

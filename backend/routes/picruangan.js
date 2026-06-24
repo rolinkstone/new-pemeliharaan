@@ -4,6 +4,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { keycloakAuth, getUsername } = require('../middleware/keycloakAuth');
+const { getUsernameFromToken, decodeToken, formatDateTimeForMySQL, getUserRolesFromRequest, hasRole, canModifyData } = require('../utils/routeHelpers');
 const axios = require('axios');
 
 // ========== KEYCLOAK CONFIGURATION FROM ENV ==========
@@ -14,102 +15,6 @@ const KEYCLOAK_CONFIG = {
     adminPassword: process.env.KEYCLOAK_ADMIN_PASSWORD,
     adminClientId: process.env.KEYCLOAK_ADMIN_CLIENT_ID || 'admin-cli',
 };
-
-// ========== HELPER FUNCTIONS ==========
-function getUsernameFromToken(user) {
-    return user?.preferred_username || user?.username || 'unknown';
-}
-
-function decodeToken(token) {
-    try {
-        if (!token) return null;
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const payload = JSON.parse(Buffer.from(base64, 'base64').toString());
-        return payload;
-    } catch (error) {
-        console.error('Error decoding token:', error.message);
-        return null;
-    }
-}
-
-// ========== DATE FORMATTING HELPER ==========
-function formatDateForMySQL(dateValue) {
-    if (!dateValue) return null;
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
-        return dateValue;
-    }
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        return `${dateValue} 00:00:00`;
-    }
-    try {
-        const date = new Date(dateValue);
-        if (isNaN(date.getTime())) return null;
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    } catch (error) {
-        return null;
-    }
-}
-
-// ========== IMPROVED AUTHORIZATION HELPER ==========
-function getUserRolesFromRequest(req) {
-    const roles = new Set();
-    
-    if (req.user) {
-        if (req.user.realm_access && req.user.realm_access.roles) {
-            req.user.realm_access.roles.forEach(role => roles.add(role));
-        }
-        if (req.user.resource_access) {
-            Object.values(req.user.resource_access).forEach(resource => {
-                if (resource.roles) {
-                    resource.roles.forEach(role => roles.add(role));
-                }
-            });
-        }
-        if (req.user.role) {
-            roles.add(req.user.role);
-        }
-        if (req.user.user && req.user.user.role) {
-            roles.add(req.user.user.role);
-        }
-    }
-    
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        const decodedToken = decodeToken(token);
-        if (decodedToken) {
-            if (decodedToken.realm_access && decodedToken.realm_access.roles) {
-                decodedToken.realm_access.roles.forEach(role => roles.add(role));
-            }
-            if (decodedToken.resource_access) {
-                Object.values(decodedToken.resource_access).forEach(resource => {
-                    if (resource.roles) {
-                        resource.roles.forEach(role => roles.add(role));
-                    }
-                });
-            }
-        }
-    }
-    
-    return Array.from(roles);
-}
-
-function hasRole(req, allowedRoles) {
-    const roles = getUserRolesFromRequest(req);
-    const hasAccess = allowedRoles.some(role => roles.includes(role));
-    return hasAccess;
-}
-
-function canModifyData(req) {
-    return hasRole(req, ['admin_pemeliharaan', 'admin', 'superadmin']);
-}
 
 // ========== GET ADMIN TOKEN ==========
 async function getAdminToken() {
@@ -532,8 +437,8 @@ router.post('/', keycloakAuth, async (req, res) => {
             });
         }
 
-        const formattedTglPenugasan = formatDateForMySQL(tgl_penugasan);
-        const formattedTglBerakhir = formatDateForMySQL(tgl_berakhir);
+        const formattedTglPenugasan = formatDateTimeForMySQL(tgl_penugasan);
+        const formattedTglBerakhir = formatDateTimeForMySQL(tgl_berakhir);
 
         const [ruangan] = await db.query('SELECT id FROM ruangan WHERE id = ?', [ruangan_id]);
         if (ruangan.length === 0) {
@@ -629,8 +534,8 @@ router.put('/:id', keycloakAuth, async (req, res) => {
             });
         }
 
-        const formattedTglPenugasan = formatDateForMySQL(tgl_penugasan);
-        const formattedTglBerakhir = formatDateForMySQL(tgl_berakhir);
+        const formattedTglPenugasan = formatDateTimeForMySQL(tgl_penugasan);
+        const formattedTglBerakhir = formatDateTimeForMySQL(tgl_berakhir);
 
         const username = getUsernameFromToken(req.user);
 

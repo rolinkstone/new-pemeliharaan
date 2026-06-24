@@ -1,12 +1,14 @@
 // pages/_app.js
 import '../styles/globals.css';
-import '../styles/SalesForm.css';
 import { SessionProvider } from 'next-auth/react';
+import ThemeRegistry from '../components/ThemeRegistry';
 
 function MyApp({ Component, pageProps: { session, ...pageProps } }) {
   return (
     <SessionProvider session={session}>
-      <Component {...pageProps} />
+      <ThemeRegistry>
+        <Component {...pageProps} />
+      </ThemeRegistry>
     </SessionProvider>
   );
 }

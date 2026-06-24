@@ -2,143 +2,9 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
+const { getUsernameFromToken, decodeToken, getUserRolesFromRequest, hasRole, canModifyData, formatDateTimeForMySQL } = require('../utils/routeHelpers');
 
-function getUsernameFromToken(user) {
-    return user?.preferred_username || user?.username || 'unknown';
-}
 
-// ========== DECODE TOKEN FUNCTION ==========
-function decodeToken(token) {
-    try {
-        if (!token) return null;
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const payload = JSON.parse(Buffer.from(base64, 'base64').toString());
-        return payload;
-    } catch (error) {
-        console.error('Error decoding token:', error.message);
-        return null;
-    }
-}
-
-// ========== IMPROVED AUTHORIZATION HELPER ==========
-function getUserRolesFromRequest(req) {
-    const roles = new Set();
-    
-    // 1. Dari user object yang sudah diparse oleh keycloakAuth
-    if (req.user) {
-        // Dari realm_access (Keycloak standard)
-        if (req.user.realm_access && req.user.realm_access.roles) {
-            req.user.realm_access.roles.forEach(role => roles.add(role));
-        }
-        
-        // Dari resource_access (alternatif Keycloak)
-        if (req.user.resource_access) {
-            Object.values(req.user.resource_access).forEach(resource => {
-                if (resource.roles) {
-                    resource.roles.forEach(role => roles.add(role));
-                }
-            });
-        }
-        
-        // Dari field role langsung (custom)
-        if (req.user.role) {
-            roles.add(req.user.role);
-        }
-        
-        // Dari user.user.role (nested)
-        if (req.user.user && req.user.user.role) {
-            roles.add(req.user.user.role);
-        }
-    }
-    
-    // 2. Dari header Authorization (token JWT)
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.substring(7);
-        const decodedToken = decodeToken(token);
-        if (decodedToken) {
-            if (decodedToken.realm_access && decodedToken.realm_access.roles) {
-                decodedToken.realm_access.roles.forEach(role => roles.add(role));
-            }
-            if (decodedToken.resource_access) {
-                Object.values(decodedToken.resource_access).forEach(resource => {
-                    if (resource.roles) {
-                        resource.roles.forEach(role => roles.add(role));
-                    }
-                });
-            }
-        }
-    }
-    
-    // 3. Dari body request (jika ada session)
-    if (req.body && req.body.session && req.body.session.accessToken) {
-        const decodedToken = decodeToken(req.body.session.accessToken);
-        if (decodedToken) {
-            if (decodedToken.realm_access && decodedToken.realm_access.roles) {
-                decodedToken.realm_access.roles.forEach(role => roles.add(role));
-            }
-            if (decodedToken.resource_access) {
-                Object.values(decodedToken.resource_access).forEach(resource => {
-                    if (resource.roles) {
-                        resource.roles.forEach(role => roles.add(role));
-                    }
-                });
-            }
-        }
-    }
-    
-    const rolesArray = Array.from(roles);
-    console.log('🔍 AsetRuangan - User roles detected:', rolesArray);
-    
-    return rolesArray;
-}
-
-function hasRole(req, allowedRoles) {
-    const roles = getUserRolesFromRequest(req);
-    const hasAccess = allowedRoles.some(role => roles.includes(role));
-    console.log(`✅ AsetRuangan - Allowed roles: ${allowedRoles.join(', ')}`);
-    console.log(`📋 AsetRuangan - Has access: ${hasAccess}`);
-    return hasAccess;
-}
-
-function canModifyData(req) {
-    return hasRole(req, ['admin_pemeliharaan', 'admin', 'superadmin']);
-}
-
-/**
- * Helper function to format date for MySQL
- * Converts any date format to MySQL datetime (YYYY-MM-DD HH:MM:SS)
- */
-const formatDateForMySQL = (dateValue) => {
-    if (!dateValue) return null;
-    
-    // If already in MySQL format, return as is
-    if (typeof dateValue === 'string' && dateValue.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
-        return dateValue;
-    }
-    
-    try {
-        const date = new Date(dateValue);
-        if (isNaN(date.getTime())) {
-            console.error('Invalid date:', dateValue);
-            return null;
-        }
-        
-        // Format: YYYY-MM-DD HH:MM:SS
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        const seconds = String(date.getSeconds()).padStart(2, '0');
-        
-        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    } catch (error) {
-        console.error('Error formatting date:', error);
-        return null;
-    }
-};
 
 // ========== GET STATISTICS (Semua user bisa akses) ==========
 router.get('/statistics', keycloakAuth, async (req, res) => {
@@ -427,8 +293,8 @@ router.post('/', keycloakAuth, async (req, res) => {
         const username = getUsernameFromToken(req.user);
         
         // Format tanggal untuk MySQL
-        const formattedTglMasuk = formatDateForMySQL(tgl_masuk) || formatDateForMySQL(new Date());
-        const formattedTglKeluar = formatDateForMySQL(tgl_keluar);
+        const formattedTglMasuk = formatDateTimeForMySQL(tgl_masuk) || formatDateTimeForMySQL(new Date());
+        const formattedTglKeluar = formatDateTimeForMySQL(tgl_keluar);
 
         console.log('Create - Original tgl_masuk:', tgl_masuk);
         console.log('Create - Formatted tgl_masuk:', formattedTglMasuk);
@@ -486,7 +352,7 @@ router.post('/pindah', keycloakAuth, async (req, res) => {
         const username = getUsernameFromToken(req.user);
         
         // Format tanggal untuk MySQL
-        const formattedTglPindah = formatDateForMySQL(tgl_pindah) || formatDateForMySQL(new Date());
+        const formattedTglPindah = formatDateTimeForMySQL(tgl_pindah) || formatDateTimeForMySQL(new Date());
 
         console.log('Pindah - Original tgl_pindah:', tgl_pindah);
         console.log('Pindah - Formatted tgl_pindah:', formattedTglPindah);
@@ -580,7 +446,7 @@ router.post('/:id/keluar', keycloakAuth, async (req, res) => {
         }
 
         // Format tanggal untuk MySQL
-        const formattedTglKeluar = formatDateForMySQL(tgl_keluar);
+        const formattedTglKeluar = formatDateTimeForMySQL(tgl_keluar);
         
         console.log('Keluar - Data:', { id, tgl_keluar, status, keterangan });
 
@@ -651,8 +517,8 @@ router.put('/:id', keycloakAuth, async (req, res) => {
         }
 
         // Format tanggal untuk MySQL
-        const formattedTglMasuk = formatDateForMySQL(tgl_masuk);
-        const formattedTglKeluar = formatDateForMySQL(tgl_keluar);
+        const formattedTglMasuk = formatDateTimeForMySQL(tgl_masuk);
+        const formattedTglKeluar = formatDateTimeForMySQL(tgl_keluar);
 
         console.log('Update - Original tgl_masuk:', tgl_masuk);
         console.log('Update - Formatted tgl_masuk:', formattedTglMasuk);

@@ -1,4 +1,4 @@
-// backend/routes/laporansRusak.js
+// backend/routes/laporanrusak.js
 
 const express = require('express');
 const router = express.Router();
@@ -6,10 +6,7 @@ const router = express.Router();
 const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { getPICUsersFromKeycloak } = require('../utils/keycloakHelpers');
-
-function getUsernameFromToken(user) {
-    return user?.preferred_username || user?.username || 'unknown';
-}
+const { getUsernameFromToken, formatDateForMySQL } = require('../utils/routeHelpers');
 
 // Helper function untuk generate nomor laporan
 // Helper function untuk generate nomor laporan
@@ -42,31 +39,7 @@ async function generateNomorLaporan() {
     const nomorUrut = String(nextNumber).padStart(3, '0');
     return `${prefix}${nomorUrut}`;
 }
-// Helper function untuk format tanggal
-const formatDateForMySQL = (dateValue) => {
-    if (!dateValue) return null;
-    
-    if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
-        return dateValue;
-    }
-    
-    if (typeof dateValue === 'string' && dateValue.includes('T')) {
-        return dateValue.split('T')[0];
-    }
-    
-    try {
-        const date = new Date(dateValue);
-        if (isNaN(date.getTime())) return null;
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-    } catch {
-        return null;
-    }
-};
-
-// backend/routes/laporansRusak.js - Endpoint GET /
+// backend/routes/laporanrusak.js - Endpoint GET /
 
 router.get('/', keycloakAuth, async (req, res) => {
     try {
@@ -77,14 +50,14 @@ router.get('/', keycloakAuth, async (req, res) => {
         const offset = (page - 1) * limit;
         
         // Dapatkan user ID dari token
-        const userId = req.user?.id;
-        const userRoles = req.user?.roles || [];
+        const userId = req.user?.sub || req.user?.id;
+        const extractedRoles = req.user?.extractedRoles || req.user?.role || req.user?.roles || [];
         
-        // Cek role user
-        const isAdmin = userRoles.includes('admin') || userRoles.includes('superadmin');
-        const isPPK = userRoles.includes('ppk');
-        const isKabagTU = userRoles.includes('kabag_tu');
-        const isPICRuangan = userRoles.includes('pic_ruangan') || userRoles.includes('pic');
+        // Cek role user (gunakan dari middleware keycloakAuth jika ada, fallback ke inline)
+        const isAdmin = req.user?.isAdmin || extractedRoles.some(r => ['admin', 'superadmin', 'admin_pemeliharaan'].includes(r.toLowerCase()));
+        const isPPK = req.user?.isPPK || extractedRoles.some(r => r.toLowerCase() === 'ppk');
+        const isKabagTU = extractedRoles.some(r => ['kabag_tu', 'kabagtu'].includes(r.toLowerCase()));
+        const isPICRuangan = extractedRoles.some(r => ['pic_ruangan', 'picruangan', 'pic'].includes(r.toLowerCase()));
         
         console.log('🔐 User:', { userId, isAdmin, isPPK, isKabagTU, isPICRuangan });
         
@@ -190,31 +163,26 @@ router.get('/', keycloakAuth, async (req, res) => {
             params.push(searchTerm, searchTerm, searchTerm);
         }
         
-        // Get total count dengan filter yang sama
-        const countQuery = `
-            SELECT COUNT(*) as total
-            FROM laporan_rusak lr
+        // Get total count (gunakan params yang sama dengan query utama)
+        let countQuery = `SELECT COUNT(DISTINCT lr.id) as total FROM laporan_rusak lr
             LEFT JOIN disposisi d ON lr.id = d.laporan_id
-            WHERE 1=1
-            ${isAdmin ? '' : isPPK ? ' AND d.ppk_id = ?' : isKabagTU ? ' AND lr.status = "menunggu_disposisi"' : isPICRuangan ? ' AND EXISTS (SELECT 1 FROM pic_ruangan pr2 WHERE pr2.ruangan_id = lr.ruangan_id AND pr2.user_id = ? AND pr2.status = "aktif")' : ' AND lr.pelapor_id = ?'}
-            ${status ? ' AND lr.status = ?' : ''}
-            ${prioritas ? ' AND lr.prioritas = ?' : ''}
-            ${aset_id ? ' AND lr.aset_id = ?' : ''}
-            ${ruangan_id ? ' AND lr.ruangan_id = ?' : ''}
-            ${pelapor_id ? ' AND lr.pelapor_id = ?' : ''}
-        `;
+            LEFT JOIN pic_ruangan pr2 ON lr.ruangan_id = pr2.ruangan_id AND pr2.status = 'aktif'
+            LEFT JOIN master_aset a ON lr.aset_id = a.id
+            WHERE 1=1`;
         
         const countParams = [];
         if (!isAdmin) {
-            if (isPPK) countParams.push(userId);
-            else if (isPICRuangan) countParams.push(userId);
-            else if (!isKabagTU) countParams.push(userId);
+            if (isPPK) { countQuery += ' AND d.ppk_id = ?'; countParams.push(userId); }
+            else if (isKabagTU) { countQuery += " AND lr.status = 'menunggu_disposisi'"; }
+            else if (isPICRuangan) { countQuery += ' AND pr2.user_id = ?'; countParams.push(userId); }
+            else { countQuery += ' AND lr.pelapor_id = ?'; countParams.push(userId); }
         }
-        if (status) countParams.push(status);
-        if (prioritas) countParams.push(prioritas);
-        if (aset_id) countParams.push(aset_id);
-        if (ruangan_id) countParams.push(ruangan_id);
-        if (pelapor_id) countParams.push(pelapor_id);
+        if (status) { countQuery += ' AND lr.status = ?'; countParams.push(status); }
+        if (prioritas) { countQuery += ' AND lr.prioritas = ?'; countParams.push(prioritas); }
+        if (aset_id) { countQuery += ' AND lr.aset_id = ?'; countParams.push(aset_id); }
+        if (ruangan_id) { countQuery += ' AND lr.ruangan_id = ?'; countParams.push(ruangan_id); }
+        if (pelapor_id) { countQuery += ' AND lr.pelapor_id = ?'; countParams.push(pelapor_id); }
+        if (search) { countQuery += ' AND (lr.nomor_laporan LIKE ? OR lr.deskripsi LIKE ? OR a.nama_barang LIKE ?)'; const s = `%${search}%`; countParams.push(s, s, s); }
         
         const [countResult] = await db.query(countQuery, countParams);
         const total = countResult && countResult[0] ? countResult[0].total : 0;
@@ -320,7 +288,7 @@ router.get('/', keycloakAuth, async (req, res) => {
     }
 });
 // ========== GET LAPORAN BY ID ==========
-// backend/routes/laporansRusak.js
+// backend/routes/laporanrusak.js
 
 // ========== GET LAPORAN BY ID ==========
 router.get('/:id', keycloakAuth, async (req, res) => {
@@ -466,7 +434,7 @@ router.post('/', keycloakAuth, async (req, res) => {
         } = req.body;
 
         const reqSize = JSON.stringify(req.body).length;
-        console.log(`📦 POST /laporansrusak - Body size: ${(reqSize / 1024).toFixed(2)} KB`);
+        console.log(`📦 POST /laporanrusak - Body size: ${(reqSize / 1024).toFixed(2)} KB`);
 
         if (!aset_id || !ruangan_id || !pelapor_id || !deskripsi) {
             return res.status(400).json({ 
@@ -617,7 +585,7 @@ router.delete('/:id', keycloakAuth, async (req, res) => {
 // ============================================
 // ENDPOINT VERIFIKASI LAPORAN (PIC)
 // ============================================
-// backend/routes/laporansRusak.js - Endpoint verifikasi
+// backend/routes/laporanrusak.js - Endpoint verifikasi
 
 router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
     try {
@@ -745,9 +713,7 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
 // ============================================
 // ENDPOINT DISPOSISI OLEH KABAG TU (KE PPK)
 // ============================================
-// backend/routes/laporansRusak.js - Endpoint disposisi
-
-// backend/routes/laporansRusak.js - Endpoint disposisi
+// backend/routes/laporanrusak.js - Endpoint disposisi
 
 router.post('/:id/disposisi', keycloakAuth, async (req, res) => {
     try {
@@ -1161,31 +1127,37 @@ router.post('/:id/selesaikan-perbaikan', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET STATISTICS ==========
+// ========== GET STATISTICS (OPTIMIZED: single query) ==========
 router.get('/statistics', keycloakAuth, async (req, res) => {
     try {
-        const [total] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak');
-        const [draft] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "draft"');
-        const [menungguVerifikasiPIC] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "menunggu_verifikasi_pic"');
-        const [menungguDisposisi] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "menunggu_disposisi"');
-        const [menungguVerifikasiPPK] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "menunggu_verifikasi_ppk"');
-        const [diverifikasiPPK] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "diverifikasi_ppk"');
-        const [dalamPerbaikan] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "dalam_perbaikan"');
-        const [selesai] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "selesai"');
-        const [ditolak] = await db.query('SELECT COUNT(*) as total FROM laporan_rusak WHERE status = "ditolak"');
+        const [rows] = await db.query(`
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft,
+                SUM(CASE WHEN status = 'menunggu_verifikasi_pic' THEN 1 ELSE 0 END) as menunggu_verifikasi_pic,
+                SUM(CASE WHEN status = 'menunggu_disposisi' THEN 1 ELSE 0 END) as menunggu_disposisi,
+                SUM(CASE WHEN status = 'menunggu_verifikasi_ppk' THEN 1 ELSE 0 END) as menunggu_verifikasi_ppk,
+                SUM(CASE WHEN status = 'diverifikasi_ppk' THEN 1 ELSE 0 END) as diverifikasi_ppk,
+                SUM(CASE WHEN status = 'dalam_perbaikan' THEN 1 ELSE 0 END) as dalam_perbaikan,
+                SUM(CASE WHEN status = 'selesai' THEN 1 ELSE 0 END) as selesai,
+                SUM(CASE WHEN status = 'ditolak' THEN 1 ELSE 0 END) as ditolak
+            FROM laporan_rusak
+        `);
+        
+        const stats = rows[0] || {};
         
         res.json({
             success: true,
             data: {
-                total: total[0]?.total || 0,
-                draft: draft[0]?.total || 0,
-                menunggu_verifikasi_pic: menungguVerifikasiPIC[0]?.total || 0,
-                menunggu_disposisi: menungguDisposisi[0]?.total || 0,
-                menunggu_verifikasi_ppk: menungguVerifikasiPPK[0]?.total || 0,
-                diverifikasi_ppk: diverifikasiPPK[0]?.total || 0,
-                dalam_perbaikan: dalamPerbaikan[0]?.total || 0,
-                selesai: selesai[0]?.total || 0,
-                ditolak: ditolak[0]?.total || 0
+                total: stats.total || 0,
+                draft: stats.draft || 0,
+                menunggu_verifikasi_pic: stats.menunggu_verifikasi_pic || 0,
+                menunggu_disposisi: stats.menunggu_disposisi || 0,
+                menunggu_verifikasi_ppk: stats.menunggu_verifikasi_ppk || 0,
+                diverifikasi_ppk: stats.diverifikasi_ppk || 0,
+                dalam_perbaikan: stats.dalam_perbaikan || 0,
+                selesai: stats.selesai || 0,
+                ditolak: stats.ditolak || 0
             }
         });
     } catch (error) {

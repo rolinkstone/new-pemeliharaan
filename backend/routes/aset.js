@@ -2,106 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { keycloakAuth, getUsername } = require('../middleware/keycloakAuth');
-
-// ========== HELPER FUNCTIONS ==========
-function getUsernameFromToken(user) {
-    return user?.preferred_username || user?.username || 'unknown';
-}
-
-// ========== DECODE TOKEN FUNCTION ==========
-function decodeToken(token) {
-    try {
-        if (!token) return null;
-        const base64Url = token.split('.')[1];
-        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const payload = JSON.parse(Buffer.from(base64, 'base64').toString());
-        return payload;
-    } catch (error) {
-        console.error('Error decoding token:', error.message);
-        return null;
-    }
-}
-
-// ========== AUTHORIZATION HELPER YANG LEBIH FLEKSIBEL ==========
-function hasRole(user, allowedRoles) {
-    if (!user) {
-        console.log('❌ User is null or undefined');
-        return false;
-    }
-    
-    // Kumpulkan semua roles dari berbagai sumber
-    const roles = new Set(); // Gunakan Set untuk menghindari duplikasi
-    
-    // 1. Dari realm_access (Keycloak standard) - SUDAH ADA DI USER OBJECT
-    if (user.realm_access && user.realm_access.roles) {
-        user.realm_access.roles.forEach(role => roles.add(role));
-    }
-    
-    // 2. Dari resource_access (alternatif Keycloak)
-    if (user.resource_access) {
-        Object.values(user.resource_access).forEach(resource => {
-            if (resource.roles) {
-                resource.roles.forEach(role => roles.add(role));
-            }
-        });
-    }
-    
-    // 3. Dari field role langsung (custom)
-    if (user.role) {
-        roles.add(user.role);
-    }
-    
-    // 4. Dari user.role (nested)
-    if (user.user && user.user.role) {
-        roles.add(user.user.role);
-    }
-    
-    // 5. Dari user.roles (array)
-    if (user.roles && Array.isArray(user.roles)) {
-        user.roles.forEach(role => roles.add(role));
-    }
-    
-    // 6. BACA DARI ACCESS TOKEN (PENTING!)
-    if (user.accessToken) {
-        const decodedToken = decodeToken(user.accessToken);
-        if (decodedToken) {
-            // Dari realm_access dalam token
-            if (decodedToken.realm_access && decodedToken.realm_access.roles) {
-                decodedToken.realm_access.roles.forEach(role => roles.add(role));
-            }
-            // Dari resource_access dalam token
-            if (decodedToken.resource_access) {
-                Object.values(decodedToken.resource_access).forEach(resource => {
-                    if (resource.roles) {
-                        resource.roles.forEach(role => roles.add(role));
-                    }
-                });
-            }
-        }
-    }
-    
-    const rolesArray = Array.from(roles);
-    console.log('🔍 User roles detected:', rolesArray);
-    console.log('👤 User info:', {
-        username: user.preferred_username || user.username || user.email || 'unknown',
-        hasRealmAccess: !!user.realm_access,
-        hasResourceAccess: !!user.resource_access,
-        directRole: user.role,
-        hasAccessToken: !!user.accessToken,
-        rolesCount: rolesArray.length
-    });
-    
-    // Cek apakah user memiliki salah satu role yang diizinkan
-    const hasAccess = allowedRoles.some(role => rolesArray.includes(role));
-    console.log(`✅ Allowed roles: ${allowedRoles.join(', ')}`);
-    console.log(`📋 Has access: ${hasAccess}`);
-    
-    if (!hasAccess) {
-        console.log(`❌ Access denied. User roles: ${rolesArray.join(', ')}`);
-    }
-    
-    return hasAccess;
-}
+const { getUsernameFromToken, decodeToken, getUserRolesFromRequest, hasRole } = require('../utils/routeHelpers');
 
 // ========== GET ALL ASET ==========
 router.get('/', keycloakAuth, async (req, res) => {
@@ -154,7 +55,7 @@ router.get('/:id', keycloakAuth, async (req, res) => {
 // ========== CREATE NEW ASET ==========
 router.post('/', keycloakAuth, async (req, res) => {
     // Check if user has admin_pemeliharaan or admin role
-    if (!hasRole(req.user, ['admin_pemeliharaan', 'admin', 'superadmin'])) {
+    if (!hasRole(req, ['admin_pemeliharaan', 'admin', 'superadmin'])) {
         return res.status(403).json({ 
             success: false, 
             message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menambah barang.' 
@@ -228,7 +129,7 @@ router.post('/', keycloakAuth, async (req, res) => {
 // ========== UPDATE ASET ==========
 router.put('/:id', keycloakAuth, async (req, res) => {
     // Check if user has admin_pemeliharaan or admin role
-    if (!hasRole(req.user, ['admin_pemeliharaan', 'admin', 'superadmin'])) {
+    if (!hasRole(req, ['admin_pemeliharaan', 'admin', 'superadmin'])) {
         return res.status(403).json({ 
             success: false, 
             message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat mengubah barang.' 
@@ -304,7 +205,7 @@ router.put('/:id', keycloakAuth, async (req, res) => {
 // ========== DELETE ASET ==========
 router.delete('/:id', keycloakAuth, async (req, res) => {
     // Check if user has admin_pemeliharaan or admin role
-    if (!hasRole(req.user, ['admin_pemeliharaan', 'admin', 'superadmin'])) {
+    if (!hasRole(req, ['admin_pemeliharaan', 'admin', 'superadmin'])) {
         return res.status(403).json({ 
             success: false, 
             message: 'Akses ditolak. Hanya admin_pemeliharaan dan admin yang dapat menghapus barang.' 

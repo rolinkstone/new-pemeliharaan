@@ -188,14 +188,22 @@ app.get('/api/check-file/:filename', (req, res) => {
 // ========== DATABASE ==========
 const db = require('./db');
 
-// ========== ROUTES (SEDERHANA) ==========
+// ========== ROUTES ==========
 const routes = [
-    { name: 'laporanRusak', path: '/api/laporansrusak', file: './routes/laporanRusak' },
+    { name: 'laporanRusak', path: '/api/laporanrusak', file: './routes/laporanrusak' },
     { name: 'picRuangan', path: '/api/picruangan', file: './routes/picRuangan' },
     { name: 'ruangan', path: '/api/ruangan', file: './routes/ruangan' },
     { name: 'keycloak', path: '/api/keycloak', file: './routes/keycloak' },
     { name: 'asetRuangan', path: '/api/asetRuangan', file: './routes/asetRuangan' },
-    { name: 'aset', path: '/api/aset', file: './routes/aset' }
+    { name: 'aset', path: '/api/aset', file: './routes/aset' },
+    { name: 'dashboard', path: '/api/dashboard', file: './routes/dashboard' },
+    { name: 'vendor', path: '/api/vendor', file: './routes/vendor' },
+    { name: 'disposisi', path: '/api/disposisi', file: './routes/disposisi' },
+    { name: 'perbaikan', path: '/api/perbaikan', file: './routes/perbaikan' },
+    { name: 'verifikasi', path: '/api/verifikasi', file: './routes/verifikasi' },
+    { name: 'monitoring', path: '/api/monitoring', file: './routes/monitoring' },
+    { name: 'export', path: '/api/export', file: './routes/export' },
+    { name: 'upload', path: '/api/upload', file: './routes/upload' }
 ];
 
 routes.forEach(route => {

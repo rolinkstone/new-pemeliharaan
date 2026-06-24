@@ -69,7 +69,24 @@ export default function DashboardLayout({ children }) {
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      await signOut({ callbackUrl: '/login' });
+      // Hancurkan NextAuth session + Keycloak SSO session
+      await signOut({ 
+        callbackUrl: '/login',
+        redirect: false
+      });
+      
+      // Redirect ke Keycloak logout untuk hancurkan SSO session
+      const idToken = session?.idToken;
+      const issuer = process.env.NEXT_PUBLIC_KEYCLOAK_ISSUER;
+      const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'nextjs-local';
+      const origin = window.location.origin;
+      
+      if (idToken && issuer) {
+        const keycloakLogoutUrl = `${issuer}/protocol/openid-connect/logout?id_token_hint=${idToken}&post_logout_redirect_uri=${origin}/login&client_id=${clientId}`;
+        window.location.href = keycloakLogoutUrl;
+      } else {
+        window.location.href = '/login';
+      }
     } catch (error) {
       console.error('Logout error:', error);
       window.location.href = '/login';

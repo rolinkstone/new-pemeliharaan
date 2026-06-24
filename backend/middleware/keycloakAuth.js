@@ -52,8 +52,34 @@ const keycloakAuth = (req, res, next) => {
     next();
 };
 
+/**
+ * Middleware untuk mengecek role user (case-insensitive)
+ * @param {string[]} allowedRoles - Daftar role yang diizinkan (lowercase)
+ */
+const checkRole = (allowedRoles) => {
+    return (req, res, next) => {
+        const userRoles = req.user?.extractedRoles || req.user?.role || req.user?.roles || [];
+        const userRolesLower = userRoles.map(r => r.toLowerCase());
+        const allowedLower = allowedRoles.map(r => r.toLowerCase());
+        
+        const hasAccess = allowedLower.some(role => userRolesLower.includes(role));
+        
+        if (!hasAccess) {
+            console.log(`⛔ Access denied. Required roles: ${allowedRoles.join(', ')}. User roles: ${userRolesLower.join(', ')}`);
+            return res.status(403).json({
+                success: false,
+                message: `Akses ditolak. Required roles: ${allowedRoles.join(', ')}`,
+                code: 'FORBIDDEN'
+            });
+        }
+        
+        next();
+    };
+};
+
 module.exports = {
     keycloakAuth,
+    checkRole,
     getUserId,
     getUsername
 };
