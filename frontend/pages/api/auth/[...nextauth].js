@@ -17,7 +17,7 @@ export const authOptions = {
 
       profile(profile) {
         const realmRoles = profile.realm_access?.roles || [];
-        const recognizedRoles = ['admin', 'superadmin', 'ppk', 'pic_ruangan', 'pic', 'kabag_tu', 'kabalai', 'bendahara'];
+        const recognizedRoles = ['admin', 'superadmin', 'ppk', 'pic_ruangan', 'pic', 'kabag_tu', 'kabalai', 'bendahara', 'pic_persediaan', 'pic_gudang', 'katim'];
         const roles = realmRoles.filter(r => recognizedRoles.includes(r));
         const primaryRole = roles.length > 0 ? roles[0] : 'user';
 

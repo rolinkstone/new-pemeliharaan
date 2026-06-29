@@ -66,7 +66,7 @@ const KEYCLOAK_CONFIG = {
 const httpsAgent = new https.Agent({ rejectUnauthorized: true });
 
 // ========== PUBLIC ROUTES ==========
-const publicRoutes = ['/api/login', '/api/health', '/uploads'];
+const publicRoutes = ['/api/login', '/api/health', '/uploads', '/api/persediaan/barang/template-xlsx'];
 
 // ========== AUTH MIDDLEWARE ==========
 const authMiddleware = async (req, res, next) => {
@@ -203,7 +203,9 @@ const routes = [
     { name: 'verifikasi', path: '/api/verifikasi', file: './routes/verifikasi' },
     { name: 'monitoring', path: '/api/monitoring', file: './routes/monitoring' },
     { name: 'export', path: '/api/export', file: './routes/export' },
-    { name: 'upload', path: '/api/upload', file: './routes/upload' }
+    { name: 'upload', path: '/api/upload', file: './routes/upload' },
+    { name: 'persediaan', path: '/api/persediaan', file: './routes/persediaan' },
+    { name: 'notifications', path: '/api/notifications', file: './routes/notifications' }
 ];
 
 routes.forEach(route => {

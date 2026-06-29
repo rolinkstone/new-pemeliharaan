@@ -8,16 +8,8 @@ import {
   Alert,
   Snackbar,
   CircularProgress,
-  Paper,
-  Grid,
-  Card,
-  CardContent,
-  useTheme,
-  alpha,
   LinearProgress,
   Fade,
-  Container,
-  Chip,
   Tooltip,
 } from '@mui/material';
 import {
@@ -26,7 +18,6 @@ import {
   MeetingRoom as RoomIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
-  Dashboard as DashboardIcon,
   Lock as LockIcon,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
@@ -35,10 +26,9 @@ import RuanganTable from './RuanganTable';
 import FilterSection from './FilterSection';
 import RuanganModal from './modals/RuanganModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
-import Ruangan from './models/Ruangan';
+import PolishedPageShell from '../common/PolishedPageShell';
 
 const RuanganContainer = () => {
-  const theme = useTheme();
   const { data: session, status } = useSession();
   
   // State untuk data
@@ -411,67 +401,32 @@ const RuanganContainer = () => {
     setSnackbar(prev => ({ ...prev, open: false }));
   };
 
-  // ========== STATISTICS CARDS ==========
-  const StatisticsCards = () => {
+  // ========== BUILD STATISTICS DATA ==========
+  const getStatCards = () => {
     if (!statistics) return null;
-    
-    const cards = [
+    return [
       {
-        title: 'Total Ruangan',
+        label: 'Total Ruangan',
         value: statistics.total || 0,
-        icon: <RoomIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.primary.main,
+        icon: <RoomIcon sx={{ fontSize: 22 }} />,
+        color: '#3b82f6',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'Ruangan Aktif',
+        label: 'Ruangan Aktif',
         value: statistics.aktif || 0,
-        icon: <CheckCircleIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.success.main,
+        icon: <CheckCircleIcon sx={{ fontSize: 22 }} />,
+        color: '#10b981',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'Ruangan Tidak Aktif',
+        label: 'Ruangan Tidak Aktif',
         value: statistics.tidak_aktif || 0,
-        icon: <CancelIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.error.main,
+        icon: <CancelIcon sx={{ fontSize: 22 }} />,
+        color: '#ef4444',
+        maxValue: statistics.total || 100,
       },
     ];
-
-    return (
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        {cards.map((card, index) => (
-          <Grid item xs={12} sm={6} md={4} key={index}>
-            <Card sx={{ 
-              borderRadius: 2,
-              boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}`,
-              border: `1px solid ${alpha(card.color, 0.2)}`,
-            }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Box>
-                    <Typography variant="body2" color="textSecondary" gutterBottom>
-                      {card.title}
-                    </Typography>
-                    <Typography variant="h4" component="div" fontWeight="bold">
-                      {card.value.toLocaleString()}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    bgcolor: alpha(card.color, 0.1),
-                    borderRadius: 2,
-                    p: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {card.icon}
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-    );
   };
 
   // ========== RENDER ==========
@@ -501,19 +456,12 @@ const RuanganContainer = () => {
   }
 
   return (
-    <Box>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
-            Manajemen Ruangan
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
-            Kelola data ruangan dan lokasi BMN
-          </Typography>
-        </Box>
-        
-        <Box display="flex" gap={2}>
+    <PolishedPageShell
+      title="Manajemen Ruangan"
+      subtitle="Kelola data ruangan dan lokasi BMN"
+      statistics={getStatCards()}
+      actions={
+        <>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
@@ -526,21 +474,22 @@ const RuanganContainer = () => {
             <span>
               <Button
                 variant="contained"
-                color="primary"
                 startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
                 onClick={handleCreate}
                 disabled={loading || isReadOnly()}
+                sx={{
+                  bgcolor: '#fff',
+                  color: 'primary.main',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
+                }}
               >
                 Tambah Ruangan
               </Button>
             </span>
           </Tooltip>
-        </Box>
-      </Box>
-
-      {/* Statistics Cards */}
-      <StatisticsCards />
-
+        </>
+      }
+    >
       {/* Filter Section */}
       <FilterSection
         filters={filters}
@@ -577,7 +526,7 @@ const RuanganContainer = () => {
 
       {/* Footer Info */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
-        <Typography variant="body2" color="textSecondary">
+        <Typography variant="body2" color="text.secondary">
           Menampilkan {ruanganList.length} dari {pagination.total} data
         </Typography>
       </Box>
@@ -627,7 +576,7 @@ const RuanganContainer = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </PolishedPageShell>
   );
 };
 

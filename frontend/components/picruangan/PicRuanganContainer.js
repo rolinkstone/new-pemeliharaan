@@ -8,22 +8,14 @@ import {
   Alert,
   Snackbar,
   CircularProgress,
-  Paper,
-  Grid,
-  Card,
-  CardContent,
-  useTheme,
-  alpha,
   LinearProgress,
   Fade,
-  Chip,
   Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Refresh as RefreshIcon,
   Person as PersonIcon,
-  MeetingRoom as RoomIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Group as GroupIcon,
@@ -35,9 +27,9 @@ import PicRuanganTable from './PicRuanganTable';
 import FilterSection from './FilterSection';
 import PicRuanganModal from './modals/PicRuanganModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
+import PolishedPageShell from '../common/PolishedPageShell';
 
 const PicRuanganContainer = () => {
-  const theme = useTheme();
   const { data: session, status } = useSession();
   
   const [dataList, setDataList] = useState([]);
@@ -442,73 +434,39 @@ const fetchData = useCallback(async () => {
     setSnackbar(prev => ({ ...prev, open: false }));
   };
 
-  // ========== STATISTICS CARDS ==========
-  const StatisticsCards = () => {
+  // ========== BUILD STATISTICS DATA ==========
+  const getStatCards = () => {
     if (!statistics) return null;
-    
-    const cards = [
+    return [
       {
-        title: 'Total Penugasan',
+        label: 'Total Penugasan',
         value: statistics.total || 0,
-        icon: <GroupIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.primary.main,
+        icon: <GroupIcon sx={{ fontSize: 22 }} />,
+        color: '#3b82f6',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'Aktif',
+        label: 'Aktif',
         value: statistics.aktif || 0,
-        icon: <CheckCircleIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.success.main,
+        icon: <CheckCircleIcon sx={{ fontSize: 22 }} />,
+        color: '#10b981',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'Nonaktif',
+        label: 'Nonaktif',
         value: statistics.nonaktif || 0,
-        icon: <CancelIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.error.main,
+        icon: <CancelIcon sx={{ fontSize: 22 }} />,
+        color: '#ef4444',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'PIC Unik',
+        label: 'PIC Unik',
         value: statistics.unique_users || 0,
-        icon: <PersonIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.info.main,
+        icon: <PersonIcon sx={{ fontSize: 22 }} />,
+        color: '#06b6d4',
+        maxValue: statistics.total || 100,
       },
     ];
-
-    return (
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        {cards.map((card, index) => (
-          <Grid item xs={12} sm={6} md={3} key={index}>
-            <Card sx={{ 
-              borderRadius: 2,
-              boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}`,
-              border: `1px solid ${alpha(card.color, 0.2)}`,
-            }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Box>
-                    <Typography variant="body2" color="textSecondary" gutterBottom>
-                      {card.title}
-                    </Typography>
-                    <Typography variant="h4" component="div" fontWeight="bold">
-                      {card.value.toLocaleString()}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    bgcolor: alpha(card.color, 0.1),
-                    borderRadius: 2,
-                    p: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {card.icon}
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-    );
   };
 
   // ========== RENDER ==========
@@ -538,18 +496,12 @@ const fetchData = useCallback(async () => {
   }
 
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
-            Penanggung Jawab Ruangan
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
-            Kelola personil yang bertanggung jawab atas setiap ruangan
-          </Typography>
-        </Box>
-        
-        <Box display="flex" gap={2}>
+    <PolishedPageShell
+      title="Penanggung Jawab Ruangan"
+      subtitle="Kelola personil yang bertanggung jawab atas setiap ruangan"
+      statistics={getStatCards()}
+      actions={
+        <>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
@@ -562,19 +514,22 @@ const fetchData = useCallback(async () => {
             <span>
               <Button
                 variant="contained"
-                color="primary"
                 startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
                 onClick={handleCreate}
                 disabled={loading || isReadOnly()}
+                sx={{
+                  bgcolor: '#fff',
+                  color: 'primary.main',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
+                }}
               >
                 Tambah PIC
               </Button>
             </span>
           </Tooltip>
-        </Box>
-      </Box>
-
-      <StatisticsCards />
+        </>
+      }
+    >
 
       <FilterSection
         filters={filters}
@@ -654,7 +609,7 @@ const fetchData = useCallback(async () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </PolishedPageShell>
   );
 };
 

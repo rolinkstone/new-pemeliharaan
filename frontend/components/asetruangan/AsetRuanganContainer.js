@@ -7,30 +7,22 @@ import {
   Snackbar,
   CircularProgress,
   Paper,
-  Grid,
-  Card,
-  CardContent,
-  useTheme,
-  alpha,
   LinearProgress,
   Fade,
   Tab,
   Tabs,
-  Chip,
   Tooltip,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Refresh as RefreshIcon,
-  Inventory as AsetIcon,
-  MeetingRoom as RoomIcon,
   CheckCircle as CheckCircleIcon,
   Warning as WarningIcon,
   Error as ErrorIcon,
   History as HistoryIcon,
   Timeline as TimelineIcon,
-  SwapHoriz as SwapIcon,
   Lock as LockIcon,
+  MeetingRoom as RoomIcon,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import * as asetRuanganApi from './api/asetRuanganApi';
@@ -40,9 +32,9 @@ import AsetRuanganModal from './modals/AsetRuanganModal';
 import KeluarAsetModal from './modals/KeluarAsetModal';
 import PindahAsetModal from './modals/PindahAsetModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
+import PolishedPageShell from '../common/PolishedPageShell';
 
 const AsetRuanganContainer = () => {
-  const theme = useTheme();
   const { data: session, status } = useSession();
   
   // State untuk tab
@@ -701,73 +693,39 @@ const AsetRuanganContainer = () => {
     setSnackbar(prev => ({ ...prev, open: false }));
   };
 
-  // ========== STATISTICS CARDS ==========
-  const StatisticsCards = () => {
+  // ========== BUILD STATISTICS DATA ==========
+  const getStatCards = () => {
     if (!statistics) return null;
-    
-    const cards = [
+    return [
       {
-        title: 'Total Posisi',
+        label: 'Total Posisi',
         value: statistics.total || 0,
-        icon: <TimelineIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.primary.main,
+        icon: <TimelineIcon sx={{ fontSize: 22 }} />,
+        color: '#3b82f6',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'Aktif',
+        label: 'Aktif',
         value: statistics.aktif || 0,
-        icon: <CheckCircleIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.success.main,
+        icon: <CheckCircleIcon sx={{ fontSize: 22 }} />,
+        color: '#10b981',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'Dipindah',
+        label: 'Dipindah',
         value: statistics.dipindah || 0,
-        icon: <WarningIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.warning.main,
+        icon: <WarningIcon sx={{ fontSize: 22 }} />,
+        color: '#f59e0b',
+        maxValue: statistics.total || 100,
       },
       {
-        title: 'Dihapuskan',
+        label: 'Dihapuskan',
         value: statistics.dihapuskan || 0,
-        icon: <ErrorIcon sx={{ fontSize: 32 }} />,
-        color: theme.palette.error.main,
+        icon: <ErrorIcon sx={{ fontSize: 22 }} />,
+        color: '#ef4444',
+        maxValue: statistics.total || 100,
       },
     ];
-
-    return (
-      <Grid container spacing={3} sx={{ mb: 3 }}>
-        {cards.map((card, index) => (
-          <Grid item xs={12} sm={6} md={3} key={index}>
-            <Card sx={{ 
-              borderRadius: 2,
-              boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}`,
-              border: `1px solid ${alpha(card.color, 0.2)}`,
-            }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Box>
-                    <Typography variant="body2" color="textSecondary" gutterBottom>
-                      {card.title}
-                    </Typography>
-                    <Typography variant="h4" component="div" fontWeight="bold">
-                      {card.value.toLocaleString()}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    bgcolor: alpha(card.color, 0.1),
-                    borderRadius: 2,
-                    p: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {card.icon}
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-    );
   };
 
   // ========== RENDER ==========
@@ -797,19 +755,12 @@ const AsetRuanganContainer = () => {
   }
 
   return (
-    <Box>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
-            Posisi Aset di Ruangan
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
-            Lacak lokasi dan riwayat perpindahan aset BMN
-          </Typography>
-        </Box>
-        
-        <Box display="flex" gap={2}>
+    <PolishedPageShell
+      title="Posisi Aset di Ruangan"
+      subtitle="Lacak lokasi dan riwayat perpindahan aset BMN"
+      statistics={getStatCards()}
+      actions={
+        <>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
@@ -822,20 +773,22 @@ const AsetRuanganContainer = () => {
             <span>
               <Button
                 variant="contained"
-                color="primary"
                 startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
                 onClick={handleCreate}
                 disabled={loading || isReadOnly()}
+                sx={{
+                  bgcolor: '#fff',
+                  color: 'primary.main',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
+                }}
               >
                 Tambah Posisi
               </Button>
             </span>
           </Tooltip>
-        </Box>
-      </Box>
-
-      {/* Statistics Cards */}
-      <StatisticsCards />
+        </>
+      }
+    >
 
       {/* Tabs */}
       <Paper sx={{ mb: 3 }}>
@@ -864,11 +817,15 @@ const AsetRuanganContainer = () => {
       {loading && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
 
       {/* Error Alert */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+      <Fade in={!!error}>
+        <Box sx={{ mb: 2 }}>
+          {error && (
+            <Alert severity="error" onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
+        </Box>
+      </Fade>
 
       {/* Table - Pass readOnly to hide action buttons */}
       <AsetRuanganTable
@@ -959,7 +916,7 @@ const AsetRuanganContainer = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </PolishedPageShell>
   );
 };
 

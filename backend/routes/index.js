@@ -20,7 +20,9 @@ const routeModules = [
     { name: 'monitoring', path: '/monitoring', file: './monitoring' },
     { name: 'export', path: '/export', file: './export' },
     { name: 'auth', path: '/auth', file: './auth' },
-    { name: 'upload', path: '/upload', file: './upload' }
+    { name: 'upload', path: '/upload', file: './upload' },
+    { name: 'persediaan', path: '/persediaan', file: './persediaan' },
+    { name: 'notifications', path: '/notifications', file: './notifications' }
 ];
 
 routeModules.forEach(route => {

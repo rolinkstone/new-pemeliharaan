@@ -7,13 +7,6 @@ import {
   Snackbar,
   CircularProgress,
   Chip,
-  Paper,
-  Grid,
-  Card,
-  CardContent,
-  Divider,
-  useTheme,
-  alpha,
   LinearProgress,
   Fade,
   Tooltip,
@@ -32,9 +25,9 @@ import AsetTable from './AsetTable';
 import FilterSection from './FilterSection';
 import AsetModal from './modals/AsetModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
+import PolishedPageShell from '../common/PolishedPageShell';
 
 const AsetContainer = () => {
-  const theme = useTheme();
   const { data: session, status } = useSession();
   
   // State untuk data
@@ -505,115 +498,73 @@ const AsetContainer = () => {
   };
 
   // ========== ROLE BADGE COMPONENT ==========
+  // ========== ROLE BADGE COMPONENT ==========
   const RoleBadge = () => {
     const roles = getUserRoles();
-    
     if (!roles.length) return null;
     
     return (
-      <Box sx={{ mb: 2, display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Typography variant="caption" color="textSecondary">
-          Role Anda:
-        </Typography>
+      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
         {roles.map((role, index) => (
           <Chip
             key={index}
             label={role}
             size="small"
-            color={role === 'admin_pemeliharaan' || role === 'admin' ? 'primary' : 'default'}
-            variant={role === 'admin_pemeliharaan' || role === 'admin' ? 'filled' : 'outlined'}
-            sx={{ fontSize: '0.7rem' }}
+            sx={{
+              fontSize: '0.65rem', height: 22,
+              bgcolor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)',
+              fontWeight: 500, '& .MuiChip-label': { px: 1 },
+            }}
           />
         ))}
         {isReadOnly() && (
           <Chip
-            label="Read Only Mode"
-            size="small"
-            color="warning"
-            icon={<LockIcon />}
-            sx={{ ml: 1 }}
-          />
-        )}
-        {canModifyData() && (
-          <Chip
-            label="Full Access (Can Add/Edit/Delete)"
-            size="small"
-            color="success"
-            icon={<AddIcon />}
-            sx={{ ml: 1 }}
+            label="Read Only" size="small"
+            icon={<LockIcon sx={{ fontSize: 12 }} />}
+            sx={{
+              fontSize: '0.65rem', height: 22,
+              bgcolor: 'rgba(255,152,0,0.25)', color: 'rgba(255,255,255,0.9)',
+              '& .MuiChip-label': { px: 1 }, '& .MuiChip-icon': { fontSize: 12, ml: 0.5 },
+            }}
           />
         )}
       </Box>
     );
   };
 
-  // ========== STATISTICS CARD COMPONENT ==========
-  const StatisticsCards = () => {
+  // ========== BUILD STATISTICS DATA ==========
+  const getStatCards = () => {
     if (!statistics) return null;
-    
-    const cards = [
+    return [
       {
-        title: 'Total Aset',
+        label: 'Total Aset',
         value: statistics.total_aset || 0,
-        icon: <InventoryIcon />,
-        color: theme.palette.primary.main,
+        icon: <InventoryIcon sx={{ fontSize: 22 }} />,
+        color: '#3b82f6',
+        maxValue: statistics.total_aset || 100,
       },
       {
-        title: 'Kondisi Baik',
+        label: 'Kondisi Baik',
         value: statistics.per_kondisi?.find(k => k.kondisi === 'Baik')?.total || 0,
-        icon: <InventoryIcon />,
-        color: theme.palette.success.main,
+        icon: <InventoryIcon sx={{ fontSize: 22 }} />,
+        color: '#10b981',
+        maxValue: statistics.total_aset || 100,
       },
       {
-        title: 'Rusak Ringan',
+        label: 'Rusak Ringan',
         value: statistics.per_kondisi?.find(k => k.kondisi === 'Rusak Ringan')?.total || 0,
-        icon: <InventoryIcon />,
-        color: theme.palette.warning.main,
+        icon: <InventoryIcon sx={{ fontSize: 22 }} />,
+        color: '#f59e0b',
+        maxValue: statistics.total_aset || 100,
       },
       {
-        title: 'Rusak Berat',
+        label: 'Rusak Berat',
         value: statistics.per_kondisi?.find(k => k.kondisi === 'Rusak Berat')?.total || 0,
-        icon: <InventoryIcon />,
-        color: theme.palette.error.main,
+        icon: <InventoryIcon sx={{ fontSize: 22 }} />,
+        color: '#ef4444',
+        maxValue: statistics.total_aset || 100,
       },
     ];
-
-    return (
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {cards.map((card, index) => (
-          <Grid item xs={12} sm={6} md={3} key={index}>
-            <Card sx={{ 
-              borderRadius: 2,
-              boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}`,
-              border: `1px solid ${alpha(card.color, 0.2)}`,
-            }}>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center">
-                  <Box>
-                    <Typography variant="body2" color="textSecondary" gutterBottom>
-                      {card.title}
-                    </Typography>
-                    <Typography variant="h4" component="div" fontWeight="bold">
-                      {card.value.toLocaleString()}
-                    </Typography>
-                  </Box>
-                  <Box sx={{
-                    bgcolor: alpha(card.color, 0.1),
-                    borderRadius: 2,
-                    p: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <InventoryIcon sx={{ color: card.color, fontSize: 32 }} />
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-    );
   };
 
   // ========== RENDER LOADING STATE ==========
@@ -637,19 +588,13 @@ const AsetContainer = () => {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
-            Inventaris Aset BPOM
-          </Typography>
-          <Typography variant="body2" color="textSecondary">
-            Kelola dan pantau Barang Milik Negara dengan mudah
-          </Typography>
-        </Box>
-        
-        <Box display="flex" gap={2}>
+    <PolishedPageShell
+      title="Inventaris Aset BPOM"
+      subtitle="Kelola dan pantau Barang Milik Negara dengan mudah"
+      statistics={getStatCards()}
+      roleBadge={<RoleBadge />}
+      actions={
+        <>
           <Button
             variant="outlined"
             startIcon={<RefreshIcon />}
@@ -682,20 +627,19 @@ const AsetContainer = () => {
                 startIcon={isReadOnly() ? <LockIcon /> : <AddIcon />}
                 onClick={handleCreate}
                 disabled={loading || isReadOnly()}
+                sx={{
+                  bgcolor: '#fff',
+                  color: 'primary.main',
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
+                }}
               >
-                Tambah Aset
+                {isReadOnly() ? 'Tambah Aset' : 'Tambah Aset'}
               </Button>
             </span>
           </Tooltip>
-        </Box>
-      </Box>
-
-      {/* Role Badge for Info */}
-      <RoleBadge />
-
-      {/* Statistics Cards */}
-      <StatisticsCards />
-
+        </>
+      }
+    >
       {/* Filter Section */}
       <FilterSection
         filters={filters}
@@ -717,7 +661,7 @@ const AsetContainer = () => {
         </Box>
       </Fade>
 
-      {/* Table with Sorting - Pass readOnly mode to table */}
+      {/* Table with Sorting */}
       <AsetTable
         data={asetList}
         loading={loading}
@@ -732,10 +676,10 @@ const AsetContainer = () => {
 
       {/* Footer Info */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
-        <Typography variant="body2" color="textSecondary">
+        <Typography variant="body2" color="text.secondary">
           Menampilkan {asetList.length} dari {pagination.total} data
         </Typography>
-        <Typography variant="body2" color="textSecondary">
+        <Typography variant="body2" color="text.secondary">
           Sorting: {sortConfig.field} ({sortConfig.direction === 'asc' ? 'A-Z' : 'Z-A'})
         </Typography>
       </Box>
@@ -777,7 +721,7 @@ const AsetContainer = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </PolishedPageShell>
   );
 };
 

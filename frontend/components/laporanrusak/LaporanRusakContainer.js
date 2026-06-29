@@ -9,15 +9,10 @@ import {
   Snackbar,
   CircularProgress,
   Paper,
-  Grid,
-  Card,
-  CardContent,
   TextField,
   InputAdornment,
   IconButton,
   Chip,
-  useTheme,
-  alpha,
   LinearProgress,
   Fade,
 } from '@mui/material';
@@ -27,7 +22,6 @@ import {
   Search as SearchIcon,
   Clear as ClearIcon,
   Assignment as AssignmentIcon,
-  CheckCircle as CheckCircleIcon,
   Warning as WarningIcon,
   Error as ErrorIcon,
   Build as BuildIcon,
@@ -44,9 +38,9 @@ import DisposisiModal from './modals/DisposisiModal';
 import VerifikasiPPKModal from './modals/VerifikasiPPKModal';
 import SelesaiPerbaikanModal from './modals/SelesaiPerbaikanModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
+import PolishedPageShell from '../common/PolishedPageShell';
 
 const LaporanRusakContainer = () => {
-  const theme = useTheme();
   const { data: session, status } = useSession();
   
   // Use ref to track if initial fetch has been done
@@ -528,98 +522,39 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
     setSnackbar({ open: true, message, severity });
   };
 
-  // Statistics Cards Component — lebih informatif
-  const StatisticsCards = () => {
+  // ========== BUILD STATISTICS DATA ==========
+  const getStatCards = () => {
     if (!statistics) return null;
-    
-    const total = statistics.total || 1;
-    const cards = [
-      { 
-        title: 'Total Laporan', 
-        value: statistics.total || 0, 
-        icon: <AssignmentIcon />, 
-        color: theme.palette.primary.main,
-        subtitle: 'Semua laporan',
-        bg: alpha(theme.palette.primary.main, 0.08)
+    return [
+      {
+        label: 'Total Laporan',
+        value: statistics.total || 0,
+        icon: <AssignmentIcon sx={{ fontSize: 22 }} />,
+        color: '#3b82f6',
+        maxValue: statistics.total || 100,
       },
-      { 
-        title: 'Menunggu Proses', 
-        value: (statistics.menunggu_verifikasi_pic || 0) + (statistics.menunggu_disposisi || 0) + (statistics.menunggu_verifikasi_ppk || 0), 
-        icon: <WarningIcon />, 
-        color: theme.palette.warning.main,
-        subtitle: `${((statistics.menunggu_verifikasi_pic || 0) / total * 100).toFixed(0)}% dari total`,
-        bg: alpha(theme.palette.warning.main, 0.08)
+      {
+        label: 'Menunggu Proses',
+        value: (statistics.menunggu_verifikasi_pic || 0) + (statistics.menunggu_disposisi || 0) + (statistics.menunggu_verifikasi_ppk || 0),
+        icon: <WarningIcon sx={{ fontSize: 22 }} />,
+        color: '#f59e0b',
+        maxValue: statistics.total || 100,
       },
-      { 
-        title: 'Dalam Perbaikan', 
-        value: statistics.dalam_perbaikan || 0, 
-        icon: <BuildIcon />, 
-        color: theme.palette.info.main,
-        subtitle: `${((statistics.dalam_perbaikan || 0) / total * 100).toFixed(0)}% dari total`,
-        bg: alpha(theme.palette.info.main, 0.08)
+      {
+        label: 'Dalam Perbaikan',
+        value: statistics.dalam_perbaikan || 0,
+        icon: <BuildIcon sx={{ fontSize: 22 }} />,
+        color: '#06b6d4',
+        maxValue: statistics.total || 100,
       },
-      { 
-        title: 'Selesai', 
-        value: statistics.selesai || 0, 
-        icon: <DoneAllIcon />, 
-        color: theme.palette.success.main,
-        subtitle: `${((statistics.selesai || 0) / total * 100).toFixed(0)}% penyelesaian`,
-        bg: alpha(theme.palette.success.main, 0.08)
+      {
+        label: 'Selesai',
+        value: statistics.selesai || 0,
+        icon: <DoneAllIcon sx={{ fontSize: 22 }} />,
+        color: '#10b981',
+        maxValue: statistics.total || 100,
       },
     ];
-
-    return (
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {cards.map((card, i) => (
-          <Grid item xs={6} sm={6} md={3} key={i}>
-            <Fade in timeout={300 + i * 100}>
-              <Card 
-                sx={{ 
-                  borderRadius: 2, 
-                  boxShadow: `0 4px 12px ${alpha(card.color, 0.15)}`,
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 6px 20px ${alpha(card.color, 0.25)}` }
-                }}
-              >
-                <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-                  <Box display="flex" justifyContent="space-between" alignItems="flex-start">
-                    <Box>
-                      <Typography variant="caption" color="textSecondary" fontWeight={500}>
-                        {card.title}
-                      </Typography>
-                      <Typography variant="h5" fontWeight="bold" sx={{ mt: 0.5, lineHeight: 1.2 }}>
-                        {card.value.toLocaleString()}
-                      </Typography>
-                      <Typography variant="caption" color="textSecondary" sx={{ mt: 0.5, display: 'block' }}>
-                        {card.subtitle}
-                      </Typography>
-                    </Box>
-                    <Box sx={{ bgcolor: card.bg, borderRadius: 2, p: 1, color: card.color }}>
-                      {card.icon}
-                    </Box>
-                  </Box>
-                  {/* Progress bar untuk selesai */}
-                  {i === 3 && (
-                    <Box sx={{ mt: 1.5, width: '100%' }}>
-                      <LinearProgress 
-                        variant="determinate" 
-                        value={Math.min((statistics.selesai || 0) / total * 100, 100)} 
-                        sx={{
-                          height: 4,
-                          borderRadius: 2,
-                          bgcolor: alpha(theme.palette.success.main, 0.15),
-                          '& .MuiLinearProgress-bar': { bgcolor: theme.palette.success.main }
-                        }}
-                      />
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-            </Fade>
-          </Grid>
-        ))}
-      </Grid>
-    );
   };
 
   // Quick filter chips berdasarkan status
@@ -650,54 +585,74 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
   }
 
   return (
-    <Box>
-      {/* HEADER dengan Search Bar inline */}
-      <Paper sx={{ p: 2, mb: 3, borderRadius: 2 }}>
-        <Box display="flex" flexDirection={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} gap={2}>
-          <Box>
-            <Typography variant="h5" fontWeight="bold">
-              Laporan Kerusakan Aset
-            </Typography>
-            <Typography variant="body2" color="textSecondary">
-              Kelola pelaporan dan perbaikan aset yang rusak
-            </Typography>
-          </Box>
-          <Box display="flex" gap={1.5} alignItems="center" flexWrap="wrap">
-            {/* Search bar di header — selalu visible */}
-            <TextField
-              size="small"
-              placeholder="Cari nomor/deskripsi..."
-              value={filters.search || ''}
-              onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-              onKeyDown={(e) => { if (e.key === 'Enter') { handleFilterChange({ ...filters, search: e.target.value }); } }}
-              sx={{ minWidth: 220 }}
-              InputProps={{
-                startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
-                endAdornment: filters.search ? (
-                  <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => handleFilterChange({ ...filters, search: '' })}>
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
-                  </InputAdornment>
-                ) : null
+    <PolishedPageShell
+      title="Laporan Kerusakan Aset"
+      subtitle="Kelola pelaporan dan perbaikan aset yang rusak"
+      statistics={getStatCards()}
+      actions={
+        <>
+          {/* Search bar inline */}
+          <TextField
+            size="small"
+            placeholder="Cari nomor/deskripsi..."
+            value={filters.search || ''}
+            onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleFilterChange({ ...filters, search: e.target.value }); }}
+            sx={{
+              minWidth: 200,
+              bgcolor: 'rgba(255,255,255,0.12)',
+              borderRadius: 2,
+              '& .MuiOutlinedInput-root': {
+                color: '#fff',
+                '& fieldset': { borderColor: 'rgba(255,255,255,0.2)' },
+                '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.4)' },
+                '&.Mui-focused fieldset': { borderColor: 'rgba(255,255,255,0.6)' },
+              },
+              '& .MuiInputAdornment-root': { color: 'rgba(255,255,255,0.5)' },
+              '& .MuiSvgIcon-root': { color: 'rgba(255,255,255,0.5)' },
+            }}
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+              endAdornment: filters.search ? (
+                <InputAdornment position="end">
+                  <IconButton size="small" onClick={() => handleFilterChange({ ...filters, search: '' })} sx={{ color: 'rgba(255,255,255,0.5)' }}>
+                    <ClearIcon fontSize="small" />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+            }}
+          />
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={handleRefresh}
+            disabled={loading}
+            sx={{
+              borderColor: 'rgba(255,255,255,0.3)', color: '#fff',
+              '&:hover': { borderColor: 'rgba(255,255,255,0.6)', bgcolor: 'rgba(255,255,255,0.08)' },
+            }}
+          >
+            Refresh
+          </Button>
+          {!['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status) && (
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={handleCreate}
+              disabled={loading}
+              sx={{
+                bgcolor: '#fff', color: 'primary.main',
+                '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' },
               }}
-            />
-            <Button variant="outlined" size="small" startIcon={<RefreshIcon />} onClick={handleRefresh} disabled={loading}>
-              Refresh
+            >
+              + Baru
             </Button>
-            {!['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status) && (
-              <Button variant="contained" size="small" startIcon={<AddIcon />} onClick={handleCreate} disabled={loading}>
-                + Baru
-              </Button>
-            )}
-          </Box>
-        </Box>
-      </Paper>
-
-      <StatisticsCards />
-
+          )}
+        </>
+      }
+    >
       {/* QUICK FILTER CHIPS */}
-      <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+      <Box sx={{ mb: 2.5, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         {quickFilters.map((qf) => (
           <Chip
             key={qf.key}
@@ -733,14 +688,14 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
       {/* EMPTY STATE */}
       {!loading && dataList.length === 0 && !error ? (
         <Fade in>
-          <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 2 }}>
-            <AssignmentIcon sx={{ fontSize: 64, color: alpha(theme.palette.primary.main, 0.3), mb: 2 }} />
-            <Typography variant="h6" color="textSecondary" gutterBottom>
+          <Paper sx={{ p: 6, textAlign: 'center', borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+            <AssignmentIcon sx={{ fontSize: 64, color: 'text.disabled', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary" gutterBottom>
               Tidak Ada Laporan
             </Typography>
-            <Typography variant="body2" color="textSecondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
               {['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status)
-                ? `Tidak ada laporan dengan status ini.`
+                ? 'Tidak ada laporan dengan status ini.'
                 : 'Belum ada laporan kerusakan yang tercatat.'}
             </Typography>
             {!['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status) && (
@@ -849,7 +804,7 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </PolishedPageShell>
   );
 };
 

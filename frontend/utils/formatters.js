@@ -4,18 +4,18 @@ export const formatRupiah = (value) => {
     return Number(value || 0).toLocaleString("id-ID");
 };
 
-// utils/formatters.js
-export const formatDateForDisplay = (dateString) => {
-  if (!dateString) return '-';
+export const formatDateForDisplay = (dateValue) => {
+  if (!dateValue) return '-';
   try {
-    const date = new Date(dateString);
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (isNaN(date.getTime())) return String(dateValue);
     return date.toLocaleDateString('id-ID', {
       day: '2-digit',
-      month: '2-digit',
+      month: 'short',
       year: 'numeric'
     });
   } catch (error) {
-    return dateString;
+    return String(dateValue);
   }
 };
 

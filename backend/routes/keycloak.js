@@ -418,4 +418,73 @@ router.get('/users/all-simple', keycloakAuth, async (req, res) => {
     }
 });
 
+// ========== KATIM MANAGEMENT ==========
+router.get('/katim/list', keycloakAuth, async (req, res) => {
+    const username = getUsername(req.user);
+    console.log(`📋 ${username} mengakses daftar Katim`);
+
+    try {
+        const axios = require('axios');
+        const { getAdminCliToken } = require('../utils/keycloakHelpers');
+        const adminToken = await getAdminCliToken();
+        if (!adminToken) return res.json({ success: true, data: [], count: 0 });
+
+        // Langsung ambil user dengan role "katim" — 1 API call, cepat
+        const rolesRes = await axios.get(
+            `${process.env.KEYCLOAK_SERVER_URL}/admin/realms/${process.env.KEYCLOAK_REALM}/roles/katim/users`,
+            { headers: { Authorization: `Bearer ${adminToken}` }, params: { max: 100 }, timeout: 15000 }
+        );
+
+        const getAttr = (u, a) => u.attributes?.[a] ? (Array.isArray(u.attributes[a]) ? u.attributes[a][0] : String(u.attributes[a])) : '';
+
+        const katimUsers = rolesRes.data
+            .filter(user => user.enabled !== false)
+            .map(user => {
+                const nama = [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || getAttr(user, 'nama') || user.username || '';
+                return {
+                    id: user.id, user_id: user.id, username: user.username, email: user.email,
+                    nama, nip: getAttr(user, 'nip') || '', jabatan: getAttr(user, 'jabatan') || 'Katim',
+                    role: 'katim',
+                };
+            });
+
+        console.log(`✅ ${katimUsers.length} Katim ditemukan`);
+        res.json({ success: true, data: katimUsers, count: katimUsers.length });
+    } catch (error) {
+        // Fallback: jika role endpoint 404, coba cari manual dari semua user
+        if (error.response?.status === 404) {
+            console.log('⚠️ Role "katim" tidak ditemukan, coba fallback...');
+            try {
+                const axios = require('axios');
+                const { getAdminCliToken } = require('../utils/keycloakHelpers');
+                const adminToken = await getAdminCliToken();
+                const usersRes = await axios.get(
+                    `${process.env.KEYCLOAK_SERVER_URL}/admin/realms/${process.env.KEYCLOAK_REALM}/users`,
+                    { headers: { Authorization: `Bearer ${adminToken}` }, params: { max: 200 }, timeout: 15000 }
+                );
+                const katimUsers = [];
+                const getAttr = (u, a) => u.attributes?.[a] ? (Array.isArray(u.attributes[a]) ? u.attributes[a][0] : String(u.attributes[a])) : '';
+                for (const user of usersRes.data) {
+                    if (!user.enabled) continue;
+                    try {
+                        const rRes = await axios.get(
+                            `${process.env.KEYCLOAK_SERVER_URL}/admin/realms/${process.env.KEYCLOAK_REALM}/users/${user.id}/role-mappings/realm`,
+                            { headers: { Authorization: `Bearer ${adminToken}` }, timeout: 5000 }
+                        );
+                        if (rRes.data.map(r => r.name).includes('katim')) {
+                            const nama = [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || getAttr(user, 'nama') || user.username;
+                            katimUsers.push({ id: user.id, user_id: user.id, username: user.username, email: user.email, nama, nip: getAttr(user, 'nip') || '', jabatan: getAttr(user, 'jabatan') || 'Katim', role: 'katim' });
+                        }
+                    } catch (e) { /* skip */ }
+                }
+                return res.json({ success: true, data: katimUsers, count: katimUsers.length });
+            } catch (fallbackErr) {
+                return res.json({ success: true, data: [], count: 0 });
+            }
+        }
+        console.error('Error fetch katim:', error.message);
+        res.json({ success: true, data: [], count: 0, error: error.message });
+    }
+});
+
 module.exports = router;
