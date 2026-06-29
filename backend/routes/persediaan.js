@@ -6,7 +6,9 @@ const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { getUsernameFromToken, hasRole } = require('../utils/routeHelpers');
 let XLSX = null;
-try { XLSX = require('xlsx'); } catch (e) { console.log('⚠️ xlsx not installed, upload disabled'); }
+try { XLSX = require('xlsx-js-style'); } catch (e) {
+    try { XLSX = require('xlsx'); } catch (e2) { console.log('⚠️ xlsx not installed, upload disabled'); }
+}
 
 // ========== HELPERS ==========
 const getUsername = (req) => req.user?.name || req.user?.username || req.user?.preferred_username || req.user?.email || 'system';
@@ -156,20 +158,31 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
             };
         };
 
-        // Build header
-        const headerRow = ['Nama Barang', 'Jenis', 'Kategori', 'Satuan'];
+        // --- Build merged header (2 rows) ---
+        // Row 0: bulan names (merged across 3 sub-columns) + 4 static columns
+        // Row 1: sub-column headers (Pembelian, Pemakaian, Saldo)
+        const headerRow1 = ['Nama Barang', 'Jenis', 'Kategori', 'Satuan'];
+        const headerRow2 = ['', '', '', ''];
+        const merges = [];
+
         for (let m = 1; m <= 12; m++) {
-            const bln = bulanNama[m-1];
-            headerRow.push(`${bln}-Pembelian`, `${bln}-Pemakaian`, `${bln}-Saldo`);
+            const bln = bulanNama[m - 1];
+            const idx = headerRow1.length; // current length before push
+            headerRow1.push(bln, '', '');   // will be merged
+            headerRow2.push('Pembelian', 'Pemakaian', 'Saldo');
+            // Merge: row 0, columns idx to idx+2
+            merges.push({
+                s: { r: 0, c: idx },
+                e: { r: 0, c: idx + 2 }
+            });
         }
 
-        const wsData = [headerRow];
+        const wsData = [headerRow1, headerRow2];
 
+        // --- Data rows ---
         for (const b of semuaBarang) {
             const row = [b.nama_barang, b.jenis || '', b.kategori || '', b.satuan];
-            // Track cumulative saldo
             let saldoKumulatif = 0;
-            // Hitung saldo awal tahun (sebelum Jan)
             const [mskThn] = await db.query(
                 "SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status='disetujui' AND tanggal_pembelian < ?",
                 [b.id, `${thn}-01-01`]
@@ -178,11 +191,8 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
                 "SELECT COALESCE(SUM(jumlah),0) as total FROM permintaan_barang WHERE barang_id=? AND status='diserahkan' AND DATE(delivered_at) < ?",
                 [b.id, `${thn}-01-01`]
             );
-            // Saldo akhir tahun sebelumnya = stok saat ini - mutasi tahun ini
-            // Lebih sederhana: gunakan saldo dari tabel
             const [stokInfo] = await db.query('SELECT saldo FROM barang_persediaan WHERE id=?', [b.id]);
             const stokSekarang = Number(stokInfo[0]?.saldo || 0);
-            // Hitung total masuk & keluar tahun ini
             const [mskThnIni] = await db.query(
                 "SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status='disetujui' AND tanggal_pembelian >= ?",
                 [b.id, `${thn}-01-01`]
@@ -196,7 +206,6 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
             for (let m = 1; m <= 12; m++) {
                 const startDate = `${thn}-${String(m).padStart(2,'0')}-01`;
                 const endDate = new Date(thn, m, 0).toISOString().split('T')[0];
-
                 const [beli] = await db.query(
                     'SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status="disetujui" AND tanggal_pembelian >= ? AND tanggal_pembelian <= ?',
                     [b.id, startDate, endDate]
@@ -207,7 +216,6 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
                 );
                 const pembelian = Number(beli[0].total);
                 const pemakaian = Number(pakai[0].total);
-                // Saldo = saldo_kumulatif + pembelian - pemakaian
                 const saldoAkhir = saldoKumulatif + pembelian - pemakaian;
                 row.push(pembelian, pemakaian, Math.max(0, saldoAkhir));
                 saldoKumulatif = saldoAkhir;
@@ -215,12 +223,82 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
             wsData.push(row);
         }
 
+        // --- Create sheet & apply styles ---
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(wsData);
 
+        // Style definitions
+        const headerStyle = {
+            fill: { fgColor: { rgb: 'B4D6E4' } },
+            font: { bold: true, sz: 10, color: { rgb: '1F4E79' } },
+            alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+            border: {
+                top: { style: 'medium', color: { rgb: '1F4E79' } },
+                bottom: { style: 'thin', color: { rgb: '1F4E79' } },
+                left: { style: 'thin', color: { rgb: '1F4E79' } },
+                right: { style: 'thin', color: { rgb: '1F4E79' } },
+            }
+        };
+        const subHeaderStyle = {
+            fill: { fgColor: { rgb: 'D6E4F0' } },
+            font: { bold: true, sz: 9, color: { rgb: '1F4E79' } },
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+                top: { style: 'thin', color: { rgb: '1F4E79' } },
+                bottom: { style: 'thin', color: { rgb: '1F4E79' } },
+                left: { style: 'thin', color: { rgb: '1F4E79' } },
+                right: { style: 'thin', color: { rgb: '1F4E79' } },
+            }
+        };
+        const dataCenter = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            border: {
+                top: { style: 'thin', color: { rgb: 'D0D0D0' } },
+                bottom: { style: 'thin', color: { rgb: 'D0D0D0' } },
+                left: { style: 'thin', color: { rgb: 'D0D0D0' } },
+                right: { style: 'thin', color: { rgb: 'D0D0D0' } },
+            }
+        };
+        const dataLeft = {
+            ...dataCenter,
+            alignment: { horizontal: 'left', vertical: 'center' }
+        };
+
+        // Apply header row 1 styles (r=0)
+        for (let c = 0; c < headerRow1.length; c++) {
+            const ref = XLSX.utils.encode_cell({ r: 0, c });
+            if (!ws[ref]) ws[ref] = { t: 's', v: wsData[0][c] ?? '' };
+            ws[ref].s = headerStyle;
+        }
+
+        // Apply header row 2 styles (r=1)
+        for (let c = 0; c < headerRow2.length; c++) {
+            const ref = XLSX.utils.encode_cell({ r: 1, c });
+            if (!ws[ref]) ws[ref] = { t: 's', v: wsData[1][c] ?? '' };
+            ws[ref].s = subHeaderStyle;
+        }
+
+        // Apply data row styles (r >= 2)
+        for (let r = 2; r < wsData.length; r++) {
+            for (let c = 0; c < wsData[r].length; c++) {
+                const ref = XLSX.utils.encode_cell({ r, c });
+                if (!ws[ref]) ws[ref] = { t: 's', v: wsData[r][c] ?? '' };
+                ws[ref].s = c < 4 ? dataLeft : dataCenter;
+            }
+        }
+
+        // Merges for month headers
+        ws['!merges'] = merges;
+
+        // Row heights
+        ws['!rows'] = [
+            { hpx: 30 }, // header row 1
+            { hpx: 22 }, // header row 2
+        ];
+
         // Column widths
-        const colWidths = [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 }];
-        for (let m = 0; m < 12; m++) colWidths.push({ wch: 16 }, { wch: 14 }, { wch: 10 });
+        const colWidths = [{ wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 10 }];
+        for (let m = 0; m < 12; m++) colWidths.push({ wch: 14 }, { wch: 12 }, { wch: 10 });
         ws['!cols'] = colWidths;
 
         XLSX.utils.book_append_sheet(wb, ws, 'Mutasi Stok');
