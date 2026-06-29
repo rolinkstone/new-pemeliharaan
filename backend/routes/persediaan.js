@@ -126,37 +126,33 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
 
         const bulanNama = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 
-        // Helper: get mutasi for a specific month
-        const getMutasiBulan = async (barangId, month) => {
-            const startDate = `${thn}-${String(month).padStart(2,'0')}-01`;
-            const endDate = new Date(thn, month, 0).toISOString().split('T')[0]; // last day of month
+        // --- Bulk pre-fetch all mutasi data for the year (2 queries total instead of ~27N) ---
+        const thnStart = `${thn}-01-01`;
+        const thnEnd = `${thn}-12-31`;
 
-            // Pembelian (barang masuk)
-            const [beli] = await db.query(
-                'SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status="disetujui" AND tanggal_pembelian >= ? AND tanggal_pembelian <= ?',
-                [barangId, startDate, endDate]
-            );
-            // Pemakaian (permintaan diserahkan)
-            const [pakai] = await db.query(
-                'SELECT COALESCE(SUM(jumlah),0) as total FROM permintaan_barang WHERE barang_id=? AND status="diserahkan" AND DATE(delivered_at) >= ? AND DATE(delivered_at) <= ?',
-                [barangId, startDate, endDate]
-            );
-            // Saldo awal bulan ini: stok sebelum startDate
-            const [masukSebelum] = await db.query(
-                'SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status="disetujui" AND tanggal_pembelian < ?', [barangId, startDate]
-            );
-            const [keluarSebelum] = await db.query(
-                'SELECT COALESCE(SUM(jumlah),0) as total FROM permintaan_barang WHERE barang_id=? AND status="diserahkan" AND DATE(delivered_at) < ?', [barangId, startDate]
-            );
-            // Saldo awal = stok terakhir sebelum bulan ini
-            // Ambil saldo dari tabel barang_persediaan lalu kurangi mutasi bulan ini
-            const stokSaatIni = 0; // fallback — akan dihitung per kolom
-            return {
-                pembelian: Number(beli[0].total),
-                pemakaian: Number(pakai[0].total),
-                saldo_awal: Number(masukSebelum[0].total) - Number(keluarSebelum[0].total),
-            };
-        };
+        const [semuaMasuk] = await db.query(
+            `SELECT barang_id, MONTH(tanggal_pembelian) as bulan, COALESCE(SUM(jumlah),0) as total
+             FROM barang_masuk WHERE status="disetujui" AND tanggal_pembelian >= ? AND tanggal_pembelian <= ?
+             GROUP BY barang_id, MONTH(tanggal_pembelian)`,
+            [thnStart, thnEnd]
+        );
+        const [semuaKeluar] = await db.query(
+            `SELECT barang_id, MONTH(delivered_at) as bulan, COALESCE(SUM(jumlah),0) as total
+             FROM permintaan_barang WHERE status="diserahkan" AND DATE(delivered_at) >= ? AND DATE(delivered_at) <= ?
+             GROUP BY barang_id, MONTH(delivered_at)`,
+            [thnStart, thnEnd]
+        );
+        // Build lookup maps: { barangId: { month: total } }
+        const masukMap = {};
+        for (const r of semuaMasuk) {
+            if (!masukMap[r.barang_id]) masukMap[r.barang_id] = {};
+            masukMap[r.barang_id][r.bulan] = Number(r.total);
+        }
+        const keluarMap = {};
+        for (const r of semuaKeluar) {
+            if (!keluarMap[r.barang_id]) keluarMap[r.barang_id] = {};
+            keluarMap[r.barang_id][r.bulan] = Number(r.total);
+        }
 
         // --- Build merged header (2 rows) ---
         // Row 0: bulan names (merged across 3 sub-columns) + 4 static columns
@@ -179,43 +175,17 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
 
         const wsData = [headerRow1, headerRow2];
 
-        // --- Data rows ---
+        // --- Data rows (using pre-fetched maps) ---
         for (const b of semuaBarang) {
             const row = [b.nama_barang, b.jenis || '', b.kategori || '', b.satuan];
-            let saldoKumulatif = 0;
-            const [mskThn] = await db.query(
-                "SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status='disetujui' AND tanggal_pembelian < ?",
-                [b.id, `${thn}-01-01`]
-            );
-            const [klrThn] = await db.query(
-                "SELECT COALESCE(SUM(jumlah),0) as total FROM permintaan_barang WHERE barang_id=? AND status='diserahkan' AND DATE(delivered_at) < ?",
-                [b.id, `${thn}-01-01`]
-            );
-            const [stokInfo] = await db.query('SELECT saldo FROM barang_persediaan WHERE id=?', [b.id]);
-            const stokSekarang = Number(stokInfo[0]?.saldo || 0);
-            const [mskThnIni] = await db.query(
-                "SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status='disetujui' AND tanggal_pembelian >= ?",
-                [b.id, `${thn}-01-01`]
-            );
-            const [klrThnIni] = await db.query(
-                "SELECT COALESCE(SUM(jumlah),0) as total FROM permintaan_barang WHERE barang_id=? AND status='diserahkan' AND DATE(delivered_at) >= ?",
-                [b.id, `${thn}-01-01`]
-            );
-            saldoKumulatif = stokSekarang - Number(mskThnIni[0].total) + Number(klrThnIni[0].total);
+            const stokSekarang = Number(b.saldo || 0);
+            const totalMasukThnIni = Object.values(masukMap[b.id] || {}).reduce((s, v) => s + v, 0);
+            const totalKeluarThnIni = Object.values(keluarMap[b.id] || {}).reduce((s, v) => s + v, 0);
+            let saldoKumulatif = stokSekarang - totalMasukThnIni + totalKeluarThnIni;
 
             for (let m = 1; m <= 12; m++) {
-                const startDate = `${thn}-${String(m).padStart(2,'0')}-01`;
-                const endDate = new Date(thn, m, 0).toISOString().split('T')[0];
-                const [beli] = await db.query(
-                    'SELECT COALESCE(SUM(jumlah),0) as total FROM barang_masuk WHERE barang_id=? AND status="disetujui" AND tanggal_pembelian >= ? AND tanggal_pembelian <= ?',
-                    [b.id, startDate, endDate]
-                );
-                const [pakai] = await db.query(
-                    'SELECT COALESCE(SUM(jumlah),0) as total FROM permintaan_barang WHERE barang_id=? AND status="diserahkan" AND DATE(delivered_at) >= ? AND DATE(delivered_at) <= ?',
-                    [b.id, startDate, endDate]
-                );
-                const pembelian = Number(beli[0].total);
-                const pemakaian = Number(pakai[0].total);
+                const pembelian = masukMap[b.id]?.[m] || 0;
+                const pemakaian = keluarMap[b.id]?.[m] || 0;
                 const saldoAkhir = saldoKumulatif + pembelian - pemakaian;
                 row.push(pembelian, pemakaian, Math.max(0, saldoAkhir));
                 saldoKumulatif = saldoAkhir;

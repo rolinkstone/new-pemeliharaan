@@ -20,6 +20,8 @@ export default function ProsesSerahkanModal({ open, onClose, group, session, onS
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [reasonDialog, setReasonDialog] = useState({ open: false, itemId: null });
+  const [reasonText, setReasonText] = useState('');
   const initializedRef = useRef(false);
 
   useEffect(() => {
@@ -91,6 +93,7 @@ export default function ProsesSerahkanModal({ open, onClose, group, session, onS
   const anyProcessed = items.some(i => !i.ditolak && Number(i.jumlah_serahkan) > 0);
 
   return (
+    <>
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ fontWeight: 600 }}>
         Proses Penyerahan Barang
@@ -148,9 +151,15 @@ export default function ProsesSerahkanModal({ open, onClose, group, session, onS
                       <IconButton
                         size="small"
                         onClick={() => {
-                          const baru = !item.ditolak;
-                          updateItem(item.id, 'ditolak', baru);
-                          if (baru) updateItem(item.id, 'alasan', prompt('Alasan ditolak:') || 'Stok tidak mencukupi');
+                          if (item.ditolak) {
+                            // Un-tolak — langsung tanpa dialog
+                            updateItem(item.id, 'ditolak', false);
+                            updateItem(item.id, 'alasan', '');
+                          } else {
+                            // Tolak — buka dialog alasan dulu
+                            setReasonText('');
+                            setReasonDialog({ open: true, itemId: item.id });
+                          }
                         }}
                         sx={{ color: item.ditolak ? '#ef4444' : '#94a3b8' }}
                       >
@@ -173,5 +182,41 @@ export default function ProsesSerahkanModal({ open, onClose, group, session, onS
         </Button>
       </DialogActions>
     </Dialog>
+
+      {/* Dialog Alasan Tolak */}
+      <Dialog open={reasonDialog.open} onClose={() => setReasonDialog({ open: false, itemId: null })} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>Alasan Ditolak</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Masukkan alasan mengapa barang ini ditolak:
+          </Typography>
+          <TextField
+            autoFocus
+            label="Alasan"
+            multiline
+            rows={3}
+            fullWidth
+            value={reasonText}
+            onChange={(e) => setReasonText(e.target.value)}
+            placeholder="Isi alasan penolakan..."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setReasonDialog({ open: false, itemId: null });
+          }}>Batal</Button>
+          <Button onClick={() => {
+            const id = reasonDialog.itemId;
+            if (id) {
+              updateItem(id, 'ditolak', true);
+              updateItem(id, 'alasan', reasonText || 'Stok tidak mencukupi');
+            }
+            setReasonDialog({ open: false, itemId: null });
+          }} color="error" variant="contained" disabled={!reasonText.trim()}>
+            Tolak
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }

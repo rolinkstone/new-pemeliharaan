@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS barang_masuk (
     jumlah INT NOT NULL,
     kuitansi_url VARCHAR(500) DEFAULT NULL,
     catatan TEXT DEFAULT NULL,
+    tanggal_pembelian DATE DEFAULT NULL,
     status ENUM('diajukan', 'disetujui', 'ditolak') DEFAULT 'diajukan',
     created_by VARCHAR(100) DEFAULT NULL,
     approved_by_kabag_tu VARCHAR(100) DEFAULT NULL,
@@ -34,11 +35,15 @@ CREATE TABLE IF NOT EXISTS barang_masuk (
 -- 3. PERMINTAAN BARANG (PIC Persediaan request -> Katim -> Kabag -> PIC Gudang deliver)
 CREATE TABLE IF NOT EXISTS permintaan_barang (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    group_id VARCHAR(36) DEFAULT NULL,
+    tanggal_permintaan DATE DEFAULT NULL,
     barang_id INT NOT NULL,
     jumlah INT NOT NULL,
     catatan TEXT DEFAULT NULL,
-    status ENUM('diajukan', 'disetujui_katim', 'disetujui_kabag', 'diserahkan', 'ditolak') DEFAULT 'diajukan',
+    status ENUM('draft', 'diajukan', 'menunggu_katim', 'disetujui_katim', 'disetujui_kabag', 'diserahkan', 'diserahkan_sebagian', 'ditolak') DEFAULT 'draft',
     requested_by VARCHAR(100) DEFAULT NULL,
+    katim_id VARCHAR(100) DEFAULT NULL,
+    katim_nama VARCHAR(255) DEFAULT NULL,
     approved_katim_by VARCHAR(100) DEFAULT NULL,
     approved_katim_at DATETIME DEFAULT NULL,
     approved_kabag_by VARCHAR(100) DEFAULT NULL,
@@ -46,7 +51,8 @@ CREATE TABLE IF NOT EXISTS permintaan_barang (
     delivered_by VARCHAR(100) DEFAULT NULL,
     delivered_at DATETIME DEFAULT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (barang_id) REFERENCES barang_persediaan(id) ON DELETE CASCADE
+    FOREIGN KEY (barang_id) REFERENCES barang_persediaan(id) ON DELETE CASCADE,
+    INDEX idx_group_id (group_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 4. STOK OPNAME

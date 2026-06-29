@@ -20,6 +20,8 @@ import PolishedPageShell from '../common/PolishedPageShell';
 import FilterSection from './FilterSection';
 import KirimKeKatimModal from './modals/KirimKeKatimModal';
 import ProsesSerahkanModal from './modals/ProsesSerahkanModal';
+import ConfirmDialog from '../common/ConfirmDialog';
+import RejectDialog from '../common/RejectDialog';
 import { formatDateForDisplay } from '../../utils/formatters';
 
 const statusColors = {
@@ -169,11 +171,18 @@ const PersediaanContainer = ({ session }) => {
   };
 
   const handleDeleteBarang = async (id) => {
-    if (!confirm('Hapus barang ini?')) return;
-    try {
-      const res = await api.deleteBarang(session, id);
-      if (res.success) { showSnackbar(res.message); fetchAll(); }
-    } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+    setConfirmDialog({
+      open: true,
+      message: 'Apakah Anda yakin ingin menghapus barang ini?',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, loading: true }));
+        try {
+          const res = await api.deleteBarang(session, id);
+          if (res.success) { showSnackbar(res.message); fetchAll(); }
+        } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+        finally { setConfirmDialog({ open: false, message: '', onConfirm: null }); }
+      }
+    });
   };
 
   // ========== BARANG MASUK ==========
@@ -239,6 +248,10 @@ const PersediaanContainer = ({ session }) => {
 
 
 
+  // ========== DIALOG ==========
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, message: '', onConfirm: null });
+  const [rejectDialog, setRejectDialog] = useState({ open: false, groupId: null, onConfirm: null });
+
   // ========== PERMINTAAN ==========
   const [permintaanModalOpen, setPermintaanModalOpen] = useState(false);
   const [permintaanItems, setPermintaanItems] = useState([{ barang_id: '', jumlah: '', catatan: '' }]);
@@ -284,12 +297,19 @@ const PersediaanContainer = ({ session }) => {
   const [expandedPermintaan, setExpandedPermintaan] = useState({});
 
   const handleDeletePermintaan = async (groupId) => {
-    if (!confirm('Hapus permintaan ini?')) return;
-    try {
-      const res = await api.deletePermintaan(session, groupId);
-      if (res.success) { showSnackbar('Permintaan dihapus'); fetchAll(); }
-      else showSnackbar(res.message || 'Gagal hapus', 'error');
-    } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+    setConfirmDialog({
+      open: true,
+      message: 'Apakah Anda yakin ingin menghapus permintaan ini?',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, loading: true }));
+        try {
+          const res = await api.deletePermintaan(session, groupId);
+          if (res.success) { showSnackbar('Permintaan dihapus'); fetchAll(); }
+          else showSnackbar(res.message || 'Gagal hapus', 'error');
+        } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+        finally { setConfirmDialog({ open: false, message: '', onConfirm: null }); }
+      }
+    });
   };
 
   // ========== OPNAME ==========
@@ -310,6 +330,18 @@ const PersediaanContainer = ({ session }) => {
       if (res.success) { showSnackbar(res.message); fetchAll(); setOpnameModalOpen(false); setOpnameForm({ barang_id: '', stok_nyata: '', tanggal: today || new Date().toISOString().split('T')[0], catatan: '' }); }
       else showSnackbar(res.message, 'error');
     } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+  };
+
+  const handleReject = (groupId, defaultAlasan = '') => {
+    setRejectDialog({
+      open: true,
+      groupId,
+      onConfirm: async (alasan) => {
+        const r = await api.tolakPermintaan(session, groupId, alasan || defaultAlasan);
+        if (r.success) { showSnackbar(r.message); fetchAll(); }
+        setRejectDialog({ open: false, groupId: null, onConfirm: null });
+      }
+    });
   };
 
   if (!session) {
@@ -730,13 +762,13 @@ const PersediaanContainer = ({ session }) => {
                           {(group.status === 'diajukan' || group.status === 'menunggu_katim') && isKatim && (
                             <>
                               <Tooltip title="Setujui"><IconButton size="small" onClick={async () => { const r = await api.approvePermintaanKatim(session, group.group_id); if (r.success) { showSnackbar(r.message); fetchAll(); } }} sx={{ color: '#10b981' }}><CheckCircleIcon fontSize="small" /></IconButton></Tooltip>
-                              <Tooltip title="Tolak"><IconButton size="small" onClick={async () => { const a = prompt('Alasan ditolak:'); if (a === null) return; const r = await api.tolakPermintaan(session, group.group_id, a || ''); if (r.success) { showSnackbar(r.message); fetchAll(); } }} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
+                              <Tooltip title="Tolak"><IconButton size="small" onClick={() => handleReject(group.group_id)} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                             </>
                           )}
                           {group.status === 'disetujui_katim' && isKabagTu && (
                             <>
                               <Tooltip title="Setujui"><IconButton size="small" onClick={async () => { const r = await api.approvePermintaanKabag(session, group.group_id); if (r.success) { showSnackbar(r.message); fetchAll(); } }} sx={{ color: '#10b981' }}><CheckCircleIcon fontSize="small" /></IconButton></Tooltip>
-                              <Tooltip title="Tolak"><IconButton size="small" onClick={async () => { const a = prompt('Alasan ditolak:'); if (a === null) return; const r = await api.tolakPermintaan(session, group.group_id, a || ''); if (r.success) { showSnackbar(r.message); fetchAll(); } }} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
+                              <Tooltip title="Tolak"><IconButton size="small" onClick={() => handleReject(group.group_id)} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                             </>
                           )}
                           {group.status === 'disetujui_kabag' && isPicGudang && (
@@ -746,7 +778,7 @@ const PersediaanContainer = ({ session }) => {
                                   sx={{ color: '#3b82f6' }}><AssignmentIcon fontSize="small" /></IconButton>
                               </Tooltip>
                               <Tooltip title="Tolak Semua">
-                                <IconButton size="small" onClick={async () => { const a = prompt('Alasan ditolak:'); if (a === null) return; const r = await api.tolakPermintaan(session, group.group_id, a || 'Stok tidak mencukupi'); if (r.success) { showSnackbar(r.message); fetchAll(); } }}
+                                <IconButton size="small" onClick={() => handleReject(group.group_id, 'Stok tidak mencukupi')}
                                   sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton>
                               </Tooltip>
                             </>
@@ -1164,6 +1196,26 @@ const PersediaanContainer = ({ session }) => {
           <Button variant="contained" onClick={handleSubmitOpname}>Simpan Opname</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Dialog Konfirmasi Hapus */}
+      <ConfirmDialog
+        open={confirmDialog.open}
+        title="Konfirmasi Hapus"
+        message={confirmDialog.message}
+        confirmLabel="Hapus"
+        onClose={() => setConfirmDialog({ open: false, message: '', onConfirm: null })}
+        onConfirm={confirmDialog.onConfirm || (() => {})}
+        loading={confirmDialog.loading}
+      />
+
+      {/* Dialog Alasan Ditolak */}
+      <RejectDialog
+        open={rejectDialog.open}
+        title="Alasan Ditolak"
+        onClose={() => setRejectDialog({ open: false, groupId: null, onConfirm: null })}
+        onConfirm={rejectDialog.onConfirm || (async () => {})}
+        loading={rejectDialog.loading}
+      />
 
       {/* Modal Kirim ke Katim */}
       <KirimKeKatimModal
