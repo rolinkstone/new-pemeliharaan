@@ -7,7 +7,8 @@ import {
   FaMoon, FaSun, FaCog, FaHome,
   FaMapMarkerAlt, FaDatabase, FaChartLine, FaDoorOpen,   
   FaUserTie, FaChevronDown, FaChevronUp, FaBox, FaBuilding, FaLocationArrow,
-  FaShieldAlt, FaBell, FaSearch, FaWarehouse, FaCheckCircle, FaClock, FaInfoCircle
+  FaShieldAlt, FaBell, FaSearch, FaWarehouse, FaCheckCircle, FaClock, FaInfoCircle,
+  FaFlask
 } from 'react-icons/fa';
 import { useSession, signOut } from 'next-auth/react';
 import notificationsApi from '../utils/notificationsApi';
@@ -41,10 +42,13 @@ const menuItems = [
   },
   {
     label: 'Persediaan',
-    href: '/persediaan',
     icon: FaWarehouse,
     color: 'from-teal-500 to-emerald-500',
     glowColor: 'rgba(20,184,166,0.3)',
+    children: [
+      { label: 'Persediaan ATK', href: '/persediaan', icon: FaBox, color: 'from-amber-500 to-orange-500' },
+      { label: 'Persediaan Reagen', href: '/persediaan/reagen', icon: FaFlask, color: 'from-violet-500 to-purple-500' },
+    ],
   },
 ];
 
@@ -57,7 +61,7 @@ export default function DashboardLayout({ children }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [expandedMenus, setExpandedMenus] = useState({ Aset: true });
+  const [expandedMenus, setExpandedMenus] = useState({ Aset: true, Persediaan: true });
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -173,8 +177,7 @@ export default function DashboardLayout({ children }) {
   const { name, email, initials, role } = getUserInfo();
 
   const isActive = (href) => {
-    if (href === '/') return router.pathname === '/';
-    return router.pathname === href || router.pathname.startsWith(href + '/');
+    return router.pathname === href;
   };
 
   const isChildActive = (children) => {
@@ -529,7 +532,8 @@ export default function DashboardLayout({ children }) {
                   {router.pathname === '/asetruangan' && 'Aset per Ruangan'}
                   {router.pathname === '/picruangan' && 'PIC Ruangan'}
                   {router.pathname === '/laporanrusak' && 'Laporan Barang Rusak'}
-                  {router.pathname === '/persediaan' && 'Manajemen Persediaan'}
+                  {router.pathname === '/persediaan' && 'Persediaan ATK'}
+                  {router.pathname === '/persediaan/reagen' && 'Persediaan Reagen'}
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-white/30 mt-0.5">
                   {router.pathname === '/' && 'Overview & Statistik Sistem'}
@@ -538,7 +542,8 @@ export default function DashboardLayout({ children }) {
                   {router.pathname === '/asetruangan' && 'Atur lokasi dan penempatan aset'}
                   {router.pathname === '/picruangan' && 'Kelola data Penanggung Jawab Ruangan'}
                   {router.pathname === '/laporanrusak' && 'Kelola laporan kerusakan aset'}
-                  {router.pathname === '/persediaan' && 'Kelola stok barang, permintaan, dan opname'}
+                  {router.pathname === '/persediaan' && 'Kelola stok ATK, barang masuk, permintaan, dan opname'}
+                  {router.pathname === '/persediaan/reagen' && 'Kelola reagen: stok gudang, kadaluarsa, pengeluaran ke LAB, dan pemakaian per gram'}
                 </p>
               </div>
             </div>

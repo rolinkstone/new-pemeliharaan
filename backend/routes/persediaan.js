@@ -587,14 +587,41 @@ router.put('/barang-masuk/:id/tolak', keycloakAuth, async (req, res) => {
 // ========== PERMINTAAN BARANG (PIC Persediaan request → Katim → Kabag → PIC Gudang deliver) ==========
 
 // GET all permintaan — grouped by group_id
+// Data dibatasi per role & identitas:
+//  - PIC Persediaan : hanya permintaan miliknya sendiri (requested_by)
+//  - Katim          : hanya yang dikirim ke dirinya (katim_id)
+//  - PIC Gudang / Kabag TU / Admin : melihat semua
 router.get('/permintaan', keycloakAuth, async (req, res) => {
     try {
+        const username = getUsername(req);
+        const userId = req.user?.user_id || req.user?.id || req.user?.sub || '';
+
+        const isAdmin = hasRole(req, ['admin', 'superadmin']);
+        const isPicGudang = hasRole(req, ['pic_gudang']);
+        const isKabagTu = hasRole(req, ['kabag_tu']);
+        const isKatim = hasRole(req, ['katim']);
+
+        let whereClause = ' WHERE 1=1';
+        const params = [];
+        if (!isAdmin && !isPicGudang && !isKabagTu) {
+            if (isKatim) {
+                // Katim hanya melihat permintaan yang dikirim ke dirinya
+                whereClause += ' AND p.katim_id = ?';
+                params.push(userId);
+            } else {
+                // PIC Persediaan (dan role lain): hanya permintaan miliknya sendiri
+                whereClause += ' AND p.requested_by = ?';
+                params.push(username);
+            }
+        }
+
         const [rows] = await db.query(`
             SELECT p.*, bp.nama_barang, bp.satuan
             FROM permintaan_barang p
             LEFT JOIN barang_persediaan bp ON p.barang_id = bp.id
+            ${whereClause}
             ORDER BY p.created_at DESC
-        `);
+        `, params);
 
         // Group by group_id
         const groups = {};
@@ -624,6 +651,7 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
                 barang_id: r.barang_id,
                 nama_barang: r.nama_barang,
                 jumlah: r.jumlah,
+                jumlah_diminta: r.jumlah_diminta,
                 satuan: r.satuan,
                 catatan_item: r.catatan,
                 status: r.status
@@ -638,7 +666,13 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
             group.diserahkan_count = itemStatuses.filter(s => s === 'diserahkan').length;
             group.ditolak_count = itemStatuses.filter(s => s === 'ditolak').length;
             if (uniqueStatuses.length > 1) {
-                group.status = 'diserahkan_sebagian';
+                // Jika ada item yang sudah disetujui Kabag TU, proses untuk item tsb sudah selesai
+                // → grup dianggap sudah disetujui (bukan lagi "menunggu persetujuan"), walau ada item ditolak.
+                if (itemStatuses.some(s => s === 'disetujui_kabag')) {
+                    group.status = 'disetujui_kabag';
+                } else {
+                    group.status = 'diserahkan_sebagian';
+                }
             }
         }
 
@@ -692,8 +726,8 @@ router.post('/permintaan', keycloakAuth, async (req, res) => {
         for (const item of items) {
             if (!item.barang_id || !item.jumlah) continue;
             const [result] = await db.query(
-                'INSERT INTO permintaan_barang (group_id, tanggal_permintaan, barang_id, jumlah, catatan, status, requested_by) VALUES (?, ?, ?, ?, ?, "draft", ?)',
-                [groupId, tgl, item.barang_id, item.jumlah, item.catatan || catatan || '', username]
+                'INSERT INTO permintaan_barang (group_id, tanggal_permintaan, barang_id, jumlah, jumlah_diminta, catatan, status, requested_by) VALUES (?, ?, ?, ?, ?, ?, "draft", ?)',
+                [groupId, tgl, item.barang_id, item.jumlah, item.jumlah, item.catatan || catatan || '', username]
             );
             results.push(result.insertId);
         }
@@ -724,6 +758,11 @@ router.put('/permintaan/:groupId/kirim-ke-katim', keycloakAuth, async (req, res)
         // Notif ke Katim
         await createNotif(katim_id, 'katim', 'Permintaan Barang Baru',
             `Ada permintaan barang dari ${getUsername(req)} yang perlu disetujui`, `/persediaan`);
+        // Notif ke Kabag TU & PIC Persediaan (permohonan masuk)
+        await createNotif('', 'kabag_tu', 'Permohonan Barang Masuk',
+            `Ada permohonan barang baru dari ${getUsername(req)} yang menunggu persetujuan`, `/persediaan`);
+        await createNotif('', 'pic_persediaan', 'Permohonan Barang Masuk',
+            `Permohonan barang telah dikirim ke Katim untuk disetujui`, `/persediaan`);
         res.json({ success: true, message: `Permintaan dikirim ke ${katim_nama || 'Katim'}` });
     } catch (error) {
         console.error('Error kirim ke katim:', error);
@@ -743,9 +782,9 @@ router.put('/permintaan/:groupId/approve-katim', keycloakAuth, async (req, res) 
             'UPDATE permintaan_barang SET status="disetujui_katim", approved_katim_by=?, approved_katim_at=NOW() WHERE group_id=? AND (status="diajukan" OR status="menunggu_katim")',
             [username, groupId]
         );
-        await createNotif('', 'kabag_tu', 'Permintaan Disetujui Katim',
-            `Permintaan barang telah disetujui oleh Katim, menunggu persetujuan Kabag TU`, `/persediaan`);
-        res.json({ success: true, message: 'Disetujui Katim, menunggu persetujuan Kabag TU' });
+        await createNotif('', 'pic_gudang', 'Permintaan Disetujui Katim',
+            `Permintaan barang telah disetujui oleh Katim, menunggu verifikasi & penyerahan PIC Gudang`, `/persediaan`);
+        res.json({ success: true, message: 'Disetujui Katim, menunggu verifikasi PIC Gudang' });
     } catch (error) {
         console.error('Error approve katim:', error);
         res.status(500).json({ success: false, message: 'Gagal', error: error.message });
@@ -761,12 +800,12 @@ router.put('/permintaan/:groupId/approve-kabag', keycloakAuth, async (req, res) 
         const { groupId } = req.params;
         const username = getUsername(req);
         await db.query(
-            'UPDATE permintaan_barang SET status="disetujui_kabag", approved_kabag_by=?, approved_kabag_at=NOW() WHERE group_id=? AND status="disetujui_katim"',
+            'UPDATE permintaan_barang SET status="disetujui_kabag", approved_kabag_by=?, approved_kabag_at=NOW() WHERE group_id=? AND (status="diserahkan" OR status="diserahkan_sebagian")',
             [username, groupId]
         );
-        await createNotif('', 'pic_gudang', 'Permintaan Siap Diserahkan',
-            `Permintaan barang telah disetujui Kabag TU, silakan proses penyerahan barang`, `/persediaan`);
-        res.json({ success: true, message: 'Disetujui Kabag TU, siap diproses PIC Gudang' });
+        await createNotif('', 'pic_persediaan', 'Permintaan Selesai',
+            `Permintaan barang telah disetujui Kabag TU dan dinyatakan selesai`, `/persediaan`);
+        res.json({ success: true, message: 'Disetujui Kabag TU, permintaan selesai' });
     } catch (error) {
         console.error('Error approve kabag:', error);
         res.status(500).json({ success: false, message: 'Gagal', error: error.message });
@@ -838,6 +877,10 @@ router.post('/permintaan/:groupId/proses-items', keycloakAuth, async (req, res) 
         const msgParts = [];
         if (serahCount > 0) msgParts.push(`${serahCount} item diserahkan`);
         if (tolakCount > 0) msgParts.push(`${tolakCount} item ditolak`);
+        if (serahCount > 0) {
+            await createNotif('', 'kabag_tu', 'Barang Telah Diserahkan',
+                `Barang telah diserahkan oleh PIC Gudang, menunggu persetujuan akhir Kabag TU`, `/persediaan`);
+        }
         res.json({ success: true, message: msgParts.join(', ') + (serahCount > 0 ? ', stok berkurang' : '') });
     } catch (error) {
         await conn.rollback();

@@ -173,6 +173,8 @@ export default function PolishedPageShell({
               <Box
                 key={i}
                 className="stat-card"
+                onClick={stat.onClick}
+                role={stat.onClick ? 'button' : undefined}
                 sx={{
                   position: 'relative',
                   overflow: 'hidden',
@@ -182,9 +184,9 @@ export default function PolishedPageShell({
                   borderColor: alpha(stat.color || theme.palette.primary.main, 0.15),
                   p: 2.5,
                   transition: 'all 0.2s ease',
-                  cursor: 'default',
+                  cursor: stat.onClick ? 'pointer' : 'default',
                   '&:hover': {
-                    transform: 'translateY(-3px)',
+                    transform: stat.onClick ? 'translateY(-3px)' : 'translateY(0)',
                     boxShadow: `0 8px 25px ${alpha(stat.color || theme.palette.primary.main, 0.2)}`,
                   },
                   '&::before': {

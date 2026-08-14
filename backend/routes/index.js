@@ -22,6 +22,7 @@ const routeModules = [
     { name: 'auth', path: '/auth', file: './auth' },
     { name: 'upload', path: '/upload', file: './upload' },
     { name: 'persediaan', path: '/persediaan', file: './persediaan' },
+    { name: 'reagen', path: '/reagen', file: './reagen' },
     { name: 'notifications', path: '/notifications', file: './notifications' }
 ];
 

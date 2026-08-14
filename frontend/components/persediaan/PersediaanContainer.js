@@ -4,7 +4,7 @@ import {
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   MenuItem, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, Chip, Tooltip, LinearProgress,
-  Fade,
+  Fade, Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon, Refresh as RefreshIcon, Edit as EditIcon,
@@ -14,6 +14,7 @@ import {
   Upload as UploadIcon, Assignment as AssignmentIcon,
   RemoveCircleOutline as RemoveIcon,
   ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon,
+  Print as PrintIcon,
 } from '@mui/icons-material';
 import * as api from './api/persediaanApi';
 import PolishedPageShell from '../common/PolishedPageShell';
@@ -23,6 +24,7 @@ import ProsesSerahkanModal from './modals/ProsesSerahkanModal';
 import ConfirmDialog from '../common/ConfirmDialog';
 import RejectDialog from '../common/RejectDialog';
 import { formatDateForDisplay } from '../../utils/formatters';
+import { cetakSPBSBBK } from '../../utils/cetakSPBSBBK';
 
 const statusColors = {
   draft: 'default',
@@ -82,6 +84,18 @@ const PersediaanContainer = ({ session }) => {
   const isPicPersediaan = hasRole('pic_persediaan');
   const isKatim = hasRole('katim');
   const isKabagTu = hasRole('kabag_tu');
+
+  // Tab yang boleh dilihat per role:
+  //  - pic_persediaan : Barang + Permintaan saja
+  //  - pic_gudang     : Barang, Barang Masuk, Permintaan (lihat semua data PIC), Stok Opname
+  //  - katim/kabag_tu : tetap mengikuti alur persetujuannya
+  const canSeeTab = (i) => {
+    if (i === 0) return true; // Barang — semua role
+    if (i === 1) return isPicGudang || isKabagTu; // Barang Masuk
+    if (i === 2) return isPicPersediaan || isKatim || isKabagTu || isPicGudang; // Permintaan
+    if (i === 3) return isPicGudang || isKabagTu; // Stok Opname
+    return true;
+  };
 
   // Fetch ALL barang for dropdowns (no pagination)
   const fetchAllBarang = useCallback(async () => {
@@ -464,11 +478,12 @@ const PersediaanContainer = ({ session }) => {
       {/* TABS */}
       <Box sx={{ mb: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         {tabs.map((t, i) => {
+          if (!canSeeTab(i)) return null;
           // Badge untuk tab Permintaan
           const pendingCount = i === 2 ? permintaanList.filter(g => {
             if (isKatim) return g.status === 'menunggu_katim' || g.status === 'diajukan';
-            if (isKabagTu) return g.status === 'disetujui_katim';
-            if (isPicGudang) return g.status === 'disetujui_kabag';
+            if (isPicGudang) return g.status === 'disetujui_katim';
+            if (isKabagTu) return g.status === 'diserahkan' || g.status === 'diserahkan_sebagian';
             return false;
           }).length : 0;
           return (
@@ -515,7 +530,7 @@ const PersediaanContainer = ({ session }) => {
                     <TableCell>Kategori</TableCell>
                     <TableCell>Satuan</TableCell>
                     <TableCell align="right">Stok</TableCell>
-                    {(isPicGudang) && <TableCell align="center">Aksi</TableCell>}
+                    {isPicGudang && <TableCell align="center">Aksi</TableCell>}
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -530,7 +545,7 @@ const PersediaanContainer = ({ session }) => {
                           color={(b.saldo || 0) > 0 ? 'success' : 'error'}
                           sx={{ fontWeight: 600, minWidth: 50 }} />
                       </TableCell>
-                      {(isPicGudang) && (
+                      {isPicGudang && (
                         <TableCell align="center">
                           <Tooltip title="Edit"><IconButton size="small" onClick={() => openEditModal(b)}
                             sx={{ color: '#3b82f6' }}><EditIcon fontSize="small" /></IconButton></Tooltip>
@@ -675,15 +690,15 @@ const PersediaanContainer = ({ session }) => {
             {/* Notification alerts per role */}
             {(() => {
               const needsKatim = permintaanList.filter(g => g.status === 'menunggu_katim' || g.status === 'diajukan');
-              const needsKabag = permintaanList.filter(g => g.status === 'disetujui_katim');
-              const needsGudang = permintaanList.filter(g => g.status === 'disetujui_kabag');
+              const needsGudang = permintaanList.filter(g => g.status === 'disetujui_katim');
+              const needsKabag = permintaanList.filter(g => g.status === 'diserahkan' || g.status === 'diserahkan_sebagian');
               const alerts = [];
               if (isKatim && needsKatim.length > 0)
                 alerts.push({ severity: 'warning', msg: `🔔 ${needsKatim.length} permintaan menunggu persetujuan Anda (Katim)` });
-              if (isKabagTu && needsKabag.length > 0)
-                alerts.push({ severity: 'info', msg: `🔔 ${needsKabag.length} permintaan telah disetujui Katim, menunggu persetujuan Anda (Kabag TU)` });
               if (isPicGudang && needsGudang.length > 0)
-                alerts.push({ severity: 'success', msg: `🔔 ${needsGudang.length} permintaan siap diproses (PIC Gudang)` });
+                alerts.push({ severity: 'success', msg: `🔔 ${needsGudang.length} permintaan disetujui Katim, siap diverifikasi & diserahkan (PIC Gudang)` });
+              if (isKabagTu && needsKabag.length > 0)
+                alerts.push({ severity: 'info', msg: `🔔 ${needsKabag.length} permintaan telah diserahkan, menunggu persetujuan akhir Anda (Kabag TU)` });
               return alerts.map((a, i) => (
                 <Alert key={i} severity={a.severity} sx={{ mb: 1.5 }}>{a.msg}</Alert>
               ));
@@ -765,13 +780,7 @@ const PersediaanContainer = ({ session }) => {
                               <Tooltip title="Tolak"><IconButton size="small" onClick={() => handleReject(group.group_id)} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                             </>
                           )}
-                          {group.status === 'disetujui_katim' && isKabagTu && (
-                            <>
-                              <Tooltip title="Setujui"><IconButton size="small" onClick={async () => { const r = await api.approvePermintaanKabag(session, group.group_id); if (r.success) { showSnackbar(r.message); fetchAll(); } }} sx={{ color: '#10b981' }}><CheckCircleIcon fontSize="small" /></IconButton></Tooltip>
-                              <Tooltip title="Tolak"><IconButton size="small" onClick={() => handleReject(group.group_id)} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
-                            </>
-                          )}
-                          {group.status === 'disetujui_kabag' && isPicGudang && (
+                          {group.status === 'disetujui_katim' && isPicGudang && (
                             <>
                               <Tooltip title="Proses Penyerahan">
                                 <IconButton size="small" onClick={() => setProsesModal({ open: true, group })}
@@ -783,19 +792,30 @@ const PersediaanContainer = ({ session }) => {
                               </Tooltip>
                             </>
                           )}
+                          {(group.status === 'diserahkan' || group.status === 'diserahkan_sebagian') && isKabagTu && (
+                            <>
+                              <Tooltip title="Setujui"><IconButton size="small" onClick={async () => { const r = await api.approvePermintaanKabag(session, group.group_id); if (r.success) { showSnackbar(r.message); fetchAll(); } }} sx={{ color: '#10b981' }}><CheckCircleIcon fontSize="small" /></IconButton></Tooltip>
+                              <Tooltip title="Tolak"><IconButton size="small" onClick={() => handleReject(group.group_id)} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
+                            </>
+                          )}
+                          {group.status === 'disetujui_kabag' && (
+                            <Tooltip title="Cetak SPB & SBBK">
+                              <IconButton size="small" onClick={() => cetakSPBSBBK({ group, tipe: 'atk' })}
+                                sx={{ color: '#3b82f6' }}><PrintIcon fontSize="small" /></IconButton>
+                            </Tooltip>
+                          )}
                           {/* Status info */}
                           {group.status === 'menunggu_katim' && group.katim_nama && <Typography variant="caption" display="block" color="text.secondary">✉️ Dikirim ke: {group.katim_nama}</Typography>}
                           {group.status === 'disetujui_katim' && group.approved_katim_by && <Typography variant="caption" display="block" color="success.main">✅ Disetujui Katim: {group.approved_katim_by}</Typography>}
-                          {group.status === 'disetujui_katim' && <Typography variant="caption" display="block" color="text.secondary">➡️ Diteruskan ke Kabag TU</Typography>}
-                          {group.status === 'disetujui_kabag' && group.approved_kabag_by && <Typography variant="caption" display="block" color="success.main">✅ Disetujui Kabag: {group.approved_kabag_by}</Typography>}
-                          {group.status === 'disetujui_kabag' && <Typography variant="caption" display="block" color="text.secondary">➡️ Diteruskan ke PIC Gudang</Typography>}
-
+                          {group.status === 'disetujui_katim' && <Typography variant="caption" display="block" color="text.secondary">➡️ Diteruskan ke PIC Gudang untuk verifikasi & penyerahan</Typography>}
                           {group.status === 'diserahkan' && group.delivered_by && <Typography variant="caption" display="block" color="success.main">✅ Diserahkan oleh: {group.delivered_by}</Typography>}
                           {group.status === 'diserahkan_sebagian' && (
                             <Typography variant="caption" display="block" color="warning.dark">
                               ✅ Diserahkan: {group.diserahkan_count} barang | ❌ Ditolak: {group.ditolak_count} barang
                             </Typography>
                           )}
+                          {(group.status === 'diserahkan' || group.status === 'diserahkan_sebagian') && <Typography variant="caption" display="block" color="text.secondary">➡️ Menunggu persetujuan akhir Kabag TU</Typography>}
+                          {group.status === 'disetujui_kabag' && group.approved_kabag_by && <Typography variant="caption" display="block" color="success.main">✅ Disetujui Kabag: {group.approved_kabag_by} · Selesai</Typography>}
                         </TableCell>
                       </TableRow>
 
@@ -1137,13 +1157,19 @@ const PersediaanContainer = ({ session }) => {
                   )}
                 </Box>
                 <Box sx={{ display: 'flex', gap: 2 }}>
-                  <TextField select label="Pilih Barang" fullWidth required size="small" value={item.barang_id}
-                    onChange={(e) => updatePermintaanItem(idx, 'barang_id', e.target.value)}
-                    sx={{ flex: 2 }}>
-                    {allBarang.filter(b => (b.saldo || 0) > 0).map((b) => (
-                      <MenuItem key={b.id} value={b.id}>{b.nama_barang} (stok: {b.saldo} {b.satuan})</MenuItem>
-                    ))}
-                  </TextField>
+                  <Autocomplete
+                    size="small"
+                    options={allBarang.filter(b => (b.saldo || 0) > 0)}
+                    getOptionLabel={(b) => `${b.nama_barang} (stok: ${b.saldo || 0} ${b.satuan})`}
+                    isOptionEqualToValue={(option, value) => String(option.id) === String(value?.id)}
+                    value={allBarang.find(b => String(b.id) === String(item.barang_id)) || null}
+                    onChange={(e, newVal) => updatePermintaanItem(idx, 'barang_id', newVal ? newVal.id : '')}
+                    noOptionsText="Tidak ada barang"
+                    renderInput={(params) => (
+                      <TextField {...params} label="Pilih Barang" placeholder="Ketik nama barang..." required size="small" />
+                    )}
+                    sx={{ flex: 2 }}
+                  />
                   <TextField label="Jumlah" type="number" required size="small" value={item.jumlah}
                     onChange={(e) => updatePermintaanItem(idx, 'jumlah', e.target.value)}
                     sx={{ flex: 1, minWidth: 100 }} />

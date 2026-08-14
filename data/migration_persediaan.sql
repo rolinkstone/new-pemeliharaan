@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS permintaan_barang (
     tanggal_permintaan DATE DEFAULT NULL,
     barang_id INT NOT NULL,
     jumlah INT NOT NULL,
+    jumlah_diminta INT DEFAULT 0,
     catatan TEXT DEFAULT NULL,
     status ENUM('draft', 'diajukan', 'menunggu_katim', 'disetujui_katim', 'disetujui_kabag', 'diserahkan', 'diserahkan_sebagian', 'ditolak') DEFAULT 'draft',
     requested_by VARCHAR(100) DEFAULT NULL,

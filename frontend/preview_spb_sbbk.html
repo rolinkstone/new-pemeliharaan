@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<title>SPB &amp; SBBK</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Times New Roman', Times, serif; color: #000; background: #fff; }
+  .sheet {
+    width: 210mm; min-height: 297mm; padding: 10mm 14mm 12mm;
+    background: #fdf2f8;               /* pink */
+    -webkit-print-color-adjust: exact; /* agar pink ikut tercetak */
+    print-color-adjust: exact;
+    border: 2px solid #000;
+    position: relative;
+    page-break-after: always;
+  }
+  .sheet.last { page-break-after: auto; }
+
+  .doc-code { position: absolute; top: 6mm; right: 10mm; font-size: 10px; color: #000; }
+
+  .kop { text-align: center; margin-top: 8mm; }
+  .instansi { margin-top: 4px; }
+  .badan { font-size: 19px; font-weight: 800; letter-spacing: 2px; }
+  .nama-lengkap { font-size: 12px; font-weight: 600; margin-top: 1px; }
+  .title { font-size: 17px; font-weight: 800; text-decoration: underline; margin-top: 8px; }
+
+  .meta { margin-top: 12px; font-size: 13px; }
+  .meta p { margin: 2px 0; }
+  .meta .lbl { display: inline-block; width: 150px; }
+  .meta .sep { display: inline-block; width: 16px; }
+
+  table.items { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  table.items th, table.items td { border: 1px solid #000; padding: 4px 5px; vertical-align: middle; }
+  table.items thead th { font-weight: 700; }
+  .c { text-align: center; }
+  th.no, td.no { width: 5%; }
+  th.nama, td.nama { text-align: left; width: 36%; }
+  th.satuan, td.satuan { width: 12%; }
+  th.jml, td.jml { width: 14%; }
+  th.ket, td.ket { width: 19%; }
+
+  table.ttd { width: 92%; margin: 30px auto 0 auto; border-collapse: collapse; font-size: 12.5px; table-layout: fixed; }
+  table.ttd td { text-align: center; vertical-align: top; }
+  .lbl-ttd { font-weight: 700; }
+  .jab-ttd { margin-top: 2px; }
+  .space-ttd { height: 46px; }
+  .nama-ttd { font-weight: 700; text-decoration: underline; }
+</style>
+</head>
+<body>
+  
+  <div class="sheet">
+    <div class="doc-code">POM-14.02/CEM.02/SOP.01/IK.16A.01/F.03</div>
+    <div class="kop">
+      <svg width="74" height="74" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="48" fill="#15803d"/>
+        <circle cx="50" cy="50" r="42" fill="#0ea5e9"/>
+        <text x="50" y="62" text-anchor="middle" font-size="30" font-weight="bold" fill="#ffffff" font-family="Arial">POM</text>
+      </svg>
+      <div class="instansi">
+        <div class="badan">BADAN POM</div>
+        <div class="nama-lengkap">BADAN PENGAWAS OBAT DAN MAKANAN</div>
+      </div>
+      <div class="title">SURAT PERMINTAAN BARANG (SPB)</div>
+    </div>
+    <div class="meta">
+      <p><span class="lbl">Unit Seksi/Sub Bagian</span><span class="sep">:</span> Tata Usaha</p>
+      <p><span class="lbl">Nomor</span><span class="sep">:</span> PBP-20250410-243</p>
+      <p><span class="lbl">Tanggal</span><span class="sep">:</span> 2025-04-10</p>
+    </div>
+    <table class="items">
+      <thead>
+        <tr>
+          <th class="c no">NO</th>
+          <th class="nama">NAMA BARANG</th>
+          <th class="c satuan">SATUAN</th>
+          <th class="c jml">JUMLAH<br/>PERMINTAAN</th>
+          <th class="c jml">JUMLAH<br/>DISETUJUI</th>
+          <th class="c ket">KETERANGAN</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+          <tr>
+            <td class="c no">1</td>
+            <td class="nama">Lem Kertas Lem Stick</td>
+            <td class="c satuan">Buah</td>
+            <td class="c jml">1</td>
+            <td class="c jml">1</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">2</td>
+            <td class="nama">Isi Staples Besar</td>
+            <td class="c satuan">Buah</td>
+            <td class="c jml">1</td>
+            <td class="c jml">2</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">3</td>
+            <td class="nama">kalkulator</td>
+            <td class="c satuan">Buah</td>
+            <td class="c jml">1</td>
+            <td class="c jml">1</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">4</td>
+            <td class="nama">Binder Klip 105</td>
+            <td class="c satuan">Kotak</td>
+            <td class="c jml">1</td>
+            <td class="c jml">1</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">5</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">6</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">7</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">8</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">9</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">10</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+      </tbody>
+    </table>
+    <table class="ttd">
+      <tr>
+        <td>
+          <div class="lbl-ttd">Diserahkan</div>
+          <div class="jab-ttd">Pengelola Gudang</div>
+          <div class="space-ttd"></div>
+          <div class="nama-ttd">I Putu Hendrawan</div>
+        </td>
+        <td>
+          <div class="lbl-ttd">Diterima</div>
+          <div class="jab-ttd">Pemohon</div>
+          <div class="space-ttd"></div>
+          <div class="nama-ttd">Abel</div>
+        </td>
+        <td>
+          <div class="lbl-ttd">Mengetahui</div>
+          <div class="jab-ttd">Ketua Tim Kerja</div>
+          <div class="space-ttd"></div>
+          <div class="nama-ttd">Batman</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  
+  <div class="sheet last">
+    <div class="doc-code">POM-14.02/CEM.02/SOP.01/IK.16A.01/F.03</div>
+    <div class="kop">
+      <svg width="74" height="74" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="48" fill="#15803d"/>
+        <circle cx="50" cy="50" r="42" fill="#0ea5e9"/>
+        <text x="50" y="62" text-anchor="middle" font-size="30" font-weight="bold" fill="#ffffff" font-family="Arial">POM</text>
+      </svg>
+      <div class="instansi">
+        <div class="badan">BADAN POM</div>
+        <div class="nama-lengkap">BADAN PENGAWAS OBAT DAN MAKANAN</div>
+      </div>
+      <div class="title">SURAT BUKTI BARANG KELUAR (SBBK)</div>
+    </div>
+    <div class="meta">
+      <p><span class="lbl">Unit Seksi/Sub Bagian</span><span class="sep">:</span> Tata Usaha</p>
+      <p><span class="lbl">Nomor</span><span class="sep">:</span> SBK-20250410-243</p>
+      <p><span class="lbl">Tanggal</span><span class="sep">:</span> 2025-04-10</p>
+    </div>
+    <table class="items">
+      <thead>
+        <tr>
+          <th class="c no">NO</th>
+          <th class="nama">NAMA BARANG</th>
+          <th class="c satuan">SATUAN</th>
+          <th class="c jml">JUMLAH<br/>PERMINTAAN</th>
+          <th class="c jml">JUMLAH<br/>DISETUJUI</th>
+          <th class="c ket">KETERANGAN</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+          <tr>
+            <td class="c no">1</td>
+            <td class="nama">Lem Kertas Lem Stick</td>
+            <td class="c satuan">Buah</td>
+            <td class="c jml">1</td>
+            <td class="c jml">1</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">2</td>
+            <td class="nama">Isi Staples Besar</td>
+            <td class="c satuan">Buah</td>
+            <td class="c jml">1</td>
+            <td class="c jml">2</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">3</td>
+            <td class="nama">kalkulator</td>
+            <td class="c satuan">Buah</td>
+            <td class="c jml">1</td>
+            <td class="c jml">1</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">4</td>
+            <td class="nama">Binder Klip 105</td>
+            <td class="c satuan">Kotak</td>
+            <td class="c jml">1</td>
+            <td class="c jml">1</td>
+            <td class="c ket">Konsumsi</td>
+          </tr>
+        
+          <tr>
+            <td class="c no">5</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">6</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">7</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">8</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">9</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+          <tr>
+            <td class="c no">10</td>
+            <td class="nama"></td>
+            <td class="c satuan"></td>
+            <td class="c jml"></td>
+            <td class="c jml"></td>
+            <td class="c ket"></td>
+          </tr>
+        
+      </tbody>
+    </table>
+    <table class="ttd">
+      <tr>
+        <td>
+          <div class="lbl-ttd">Diserahkan</div>
+          <div class="jab-ttd">Pengelola Gudang</div>
+          <div class="space-ttd"></div>
+          <div class="nama-ttd">I Putu Hendrawan</div>
+        </td>
+        <td>
+          <div class="lbl-ttd">Diterima</div>
+          <div class="jab-ttd">Pemohon</div>
+          <div class="space-ttd"></div>
+          <div class="nama-ttd">Abel</div>
+        </td>
+        <td>
+          <div class="lbl-ttd">Mengetahui</div>
+          <div class="jab-ttd">Kabag Tata Usaha</div>
+          <div class="space-ttd"></div>
+          <div class="nama-ttd">Superman</div>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+</body>
+</html>

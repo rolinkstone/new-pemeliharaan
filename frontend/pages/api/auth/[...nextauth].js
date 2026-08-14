@@ -17,7 +17,7 @@ export const authOptions = {
 
       profile(profile) {
         const realmRoles = profile.realm_access?.roles || [];
-        const recognizedRoles = ['admin', 'superadmin', 'ppk', 'pic_ruangan', 'pic', 'kabag_tu', 'kabalai', 'bendahara', 'pic_persediaan', 'pic_gudang', 'katim'];
+        const recognizedRoles = ['admin', 'superadmin', 'ppk', 'pic_ruangan', 'pic', 'kabag_tu', 'kabalai', 'bendahara', 'pic_persediaan', 'pic_gudang', 'pic_lab', 'katim'];
         const roles = realmRoles.filter(r => recognizedRoles.includes(r));
         const primaryRole = roles.length > 0 ? roles[0] : 'user';
 
@@ -65,6 +65,10 @@ export const authOptions = {
       session.user.isKabagTU = userRoles.includes('kabag_tu');
       session.user.isKabalai = userRoles.includes('kabalai');
       session.user.isBendahara = userRoles.includes('bendahara');
+      session.user.isPicLab = userRoles.includes('pic_lab');
+      session.user.isPicGudang = userRoles.includes('pic_gudang');
+      session.user.isPicPersediaan = userRoles.includes('pic_persediaan');
+      session.user.isKatim = userRoles.includes('katim');
 
       session.accessToken = token.accessToken;
       session.idToken = token.idToken;
