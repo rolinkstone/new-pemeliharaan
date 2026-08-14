@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "build": "node build.js"
+    "build": "node build.js",
+    "test": "mocha test/**/*.test.js --reporter progress --exit",
+    "test:spec": "mocha test/**/*.test.js --reporter spec --exit"
   },
   "keywords": [],
   "author": "",
@@ -31,5 +33,9 @@
     "uuid": "^14.0.1",
     "xlsx": "^0.18.5",
     "xlsx-js-style": "^1.2.0"
+  },
+  "devDependencies": {
+    "mocha": "^11.8.0",
+    "supertest": "^7.2.2"
   }
 }
