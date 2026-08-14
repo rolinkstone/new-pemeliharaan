@@ -616,7 +616,7 @@ router.post('/reagen/pengeluaran', keycloakAuth, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Minimal 1 item harus dipilih' });
         }
         const username = getUsername(req);
-        const { v4: uuidv4 } = require('uuid');
+        const { randomUUID: uuidv4 } = require('crypto');
         const groupId = uuidv4();
 
         // Validasi stok botol per reagen

@@ -701,7 +701,7 @@ router.post('/permintaan', keycloakAuth, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Maksimal 5 item barang per permintaan' });
         }
         const username = getUsername(req);
-        const { v4: uuidv4 } = require('uuid');
+        const { randomUUID: uuidv4 } = require('crypto');
         const groupId = uuidv4();
         const tgl = tanggal || new Date().toISOString().split('T')[0];
 
