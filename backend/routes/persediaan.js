@@ -966,8 +966,8 @@ router.get('/opname/mutasi', keycloakAuth, async (req, res) => {
         const masukMap = {};
         masukRows.forEach(r => { masukMap[r.barang_id] = r.total_masuk; });
 
-        // Mutasi keluar dalam range
-        let keluarQuery = 'SELECT barang_id, SUM(jumlah) as total_keluar FROM permintaan_barang WHERE status="diserahkan"';
+        // Mutasi keluar dalam range (status yang stoknya sudah berkurang: diserahkan / diserahkan_sebagian / disetujui_kabag)
+        let keluarQuery = 'SELECT barang_id, SUM(jumlah) as total_keluar FROM permintaan_barang WHERE status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag")';
         const keluarParams = [];
         if (tanggal_mulai) { keluarQuery += ' AND delivered_at >= ?'; keluarParams.push(tanggal_mulai); }
         if (tanggal_akhir) { keluarQuery += ' AND delivered_at <= ?'; keluarParams.push(tanggal_akhir + ' 23:59:59'); }
@@ -989,7 +989,7 @@ router.get('/opname/mutasi', keycloakAuth, async (req, res) => {
         // Mutasi keluar SETELAH range
         let keluarSetelahMap = {};
         if (tanggal_akhir) {
-            let q = 'SELECT barang_id, SUM(jumlah) as total FROM permintaan_barang WHERE status="diserahkan" AND delivered_at > ?';
+            let q = 'SELECT barang_id, SUM(jumlah) as total FROM permintaan_barang WHERE status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag") AND delivered_at > ?';
             const p = [tanggal_akhir + ' 23:59:59'];
             q += ' GROUP BY barang_id';
             const [rows] = await db.query(q, p);
@@ -1049,7 +1049,7 @@ router.get('/opname/mutasi/:barang_id/detail', keycloakAuth, async (req, res) =>
             let q = `SELECT p.id, p.jumlah, p.delivered_at as tanggal, p.catatan, p.requested_by, p.delivered_by,
                      bp.nama_barang, bp.satuan FROM permintaan_barang p
                      LEFT JOIN barang_persediaan bp ON p.barang_id = bp.id
-                     WHERE p.barang_id = ? AND p.status="diserahkan"`;
+                     WHERE p.barang_id = ? AND p.status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag")`;
             const p = [barang_id];
             if (tanggal_mulai) { q += ' AND p.delivered_at >= ?'; p.push(tanggal_mulai); }
             if (tanggal_akhir) { q += ' AND p.delivered_at <= ?'; p.push(tanggal_akhir + ' 23:59:59'); }

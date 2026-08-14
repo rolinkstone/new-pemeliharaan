@@ -4,7 +4,7 @@ import {
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   MenuItem, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, IconButton, Chip, Tooltip, LinearProgress,
-  Fade, InputAdornment, TablePagination,
+  Fade, InputAdornment, TablePagination, Autocomplete,
 } from '@mui/material';
 import {
   Add as AddIcon, Refresh as RefreshIcon, Edit as EditIcon,
@@ -97,7 +97,7 @@ const useClientPagination = (data) => {
 const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) => {
   const [tab, setTab] = useState(initialTab);
   const [labSubTab, setLabSubTab] = useState(0); // 0 = Persediaan Lab, 1 = Riwayat Pemakaian
-  const tabs = ['Master Reagen', 'Stok Gudang', 'Barang Masuk', 'Permohonan Reagen', 'Persediaan & Pemakaian Lab'];
+  const tabs = ['Master Reagen', 'Stok Gudang', 'Barang Masuk', 'Permohonan Reagen', 'Persediaan & Pemakaian Lab', 'Stok Opname'];
 
   // Data states
   const [reagenList, setReagenList] = useState([]);
@@ -107,12 +107,15 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
   const [pengeluaranList, setPengeluaranList] = useState([]);
   const [labStok, setLabStok] = useState([]);
   const [pemakaianList, setPemakaianList] = useState([]);
+  const [opnameList, setOpnameList] = useState([]);
+  const [mutasiList, setMutasiList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({ search: '', kategori: '', lab: '' });
   const [pagination, setPagination] = useState({ currentPage: 1, perPage: 10, total: 0, totalPages: 0 });
   const [labPagination, setLabPagination] = useState({ page: 0, perPage: 10 });
   const [expiryFilter, setExpiryFilter] = useState(''); // '', 'expired', 'near'
+  const [mutasiDateRange, setMutasiDateRange] = useState({ mulai: '', akhir: '' });
 
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [confirmDialog, setConfirmDialog] = useState({ open: false, message: '', onConfirm: null });
@@ -141,6 +144,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
     if (i === 2) return isPicGudang || isKabagTu; // Barang Masuk
     if (i === 3) return isPicLab || isPicGudang || isKatim || isKabagTu; // Permohonan Reagen
     if (i === 4) return isPicLab || isPicGudang || isKatim; // Persediaan & Pemakaian Lab (termasuk Riwayat Pemakaian)
+    if (i === 5) return isPicGudang || isKabagTu; // Stok Opname
     return true;
   };
 
@@ -171,13 +175,19 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
       const labParams = { ...stokParams };
       if (filters.lab) labParams.lab_tujuan = filters.lab;
 
-      const [reagen, stok, masuk, pengeluaran, lab, pemakaian] = await Promise.all([
+      const opnameParams = {};
+      if (mutasiDateRange.mulai) opnameParams.tanggal_mulai = mutasiDateRange.mulai;
+      if (mutasiDateRange.akhir) opnameParams.tanggal_akhir = mutasiDateRange.akhir;
+
+      const [reagen, stok, masuk, pengeluaran, lab, pemakaian, opname, mutasi] = await Promise.all([
         api.fetchReagen(session, params),
         api.fetchStokGudang(session, stokParams),
         api.fetchMasuk(session),
         api.fetchPengeluaran(session),
         api.fetchLabStok(session, labParams),
         api.fetchPemakaianLab(session, filters.lab ? { lab_tujuan: filters.lab } : {}),
+        api.fetchOpname(session, opnameParams),
+        api.fetchMutasiStok(session, opnameParams),
       ]);
       if (reagen.success) {
         setReagenList(reagen.data);
@@ -188,12 +198,14 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
       if (pengeluaran.success) setPengeluaranList(pengeluaran.data);
       if (lab.success) setLabStok(lab.data);
       if (pemakaian.success) setPemakaianList(pemakaian.data);
+      if (opname.success) setOpnameList(opname.data);
+      if (mutasi.success) setMutasiList(mutasi.data);
     } catch (e) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [session, filters, pagination.currentPage, pagination.perPage]);
+  }, [session, filters, pagination.currentPage, pagination.perPage, mutasiDateRange.mulai, mutasiDateRange.akhir]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -446,6 +458,45 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
     } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
   };
 
+  // ========== STOK OPNAME (GUDANG / BOTOL) ==========
+  const todayStr = typeof window !== 'undefined' ? new Date().toISOString().split('T')[0] : '';
+  const [opnameModalOpen, setOpnameModalOpen] = useState(false);
+  const [opnameForm, setOpnameForm] = useState({ reagen_id: '', stok_nyata: '', tanggal: todayStr, catatan: '' });
+  const [opnamePage, setOpnamePage] = useState(0);
+  const [opnameRowsPerPage, setOpnameRowsPerPage] = useState(10);
+  const [mutasiPage, setMutasiPage] = useState(0);
+  const [mutasiRowsPerPage, setMutasiRowsPerPage] = useState(10);
+  const [historyModal, setHistoryModal] = useState({ open: false, data: [], title: '', jenis: '' });
+
+  const openOpnameModal = () => {
+    setOpnameForm({ reagen_id: '', stok_nyata: '', tanggal: todayStr, catatan: '' });
+    setOpnameModalOpen(true);
+  };
+
+  const handleSubmitOpname = async () => {
+    try {
+      const res = await api.createOpname(session, opnameForm);
+      if (res.success) {
+        showSnackbar(res.message);
+        fetchAll();
+        setOpnameModalOpen(false);
+        setOpnameForm({ reagen_id: '', stok_nyata: '', tanggal: todayStr, catatan: '' });
+      } else showSnackbar(res.message, 'error');
+    } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+  };
+
+  const openHistory = async (item, jenis) => {
+    try {
+      const params = { jenis };
+      if (mutasiDateRange.mulai) params.tanggal_mulai = mutasiDateRange.mulai;
+      if (mutasiDateRange.akhir) params.tanggal_akhir = mutasiDateRange.akhir;
+      const res = await api.fetchMutasiDetail(session, item.id, params);
+      if (res.success) {
+        setHistoryModal({ open: true, data: res.data, title: `${item.nama_barang} — ${jenis === 'masuk' ? 'Barang Masuk' : 'Barang Keluar'}`, jenis });
+      }
+    } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+  };
+
   // ========== STATS ==========
   const getStatCards = () => {
     const totalReagen = allReagen.length || pagination.total || reagenList.length;
@@ -549,6 +600,12 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
             <Button variant="contained" startIcon={<SendIcon />} onClick={() => setPengeluaranOpen(true)}
               sx={{ bgcolor: '#fff', color: 'primary.main', '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' } }}>
               Ajukan Permohonan
+            </Button>
+          )}
+          {tab === 5 && (isPicGudang || isKabagTu) && (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={openOpnameModal}
+              sx={{ bgcolor: '#fff', color: 'primary.main', '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' } }}>
+              Stok Opname
             </Button>
           )}
         </Box>
@@ -1111,6 +1168,157 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
         </Fade>
       )}
 
+      {/* ==================== TAB 5: STOK OPNAME ==================== */}
+      {tab === 5 && (
+        <Fade in>
+          <Box>
+            {/* Filter & Search */}
+            <Paper sx={{ p: 2, mb: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+                <TextField size="small" label="Cari reagen..." value={filters.search}
+                  onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                  sx={{ minWidth: 200 }} />
+                <Typography variant="body2" fontWeight={600} color="text.secondary">
+                  Filter Tanggal Mutasi:
+                </Typography>
+                <TextField type="date" size="small" label="Dari" value={mutasiDateRange.mulai}
+                  onChange={(e) => setMutasiDateRange(prev => ({ ...prev, mulai: e.target.value }))}
+                  InputLabelProps={{ shrink: true }} sx={{ maxWidth: 180 }} />
+                <TextField type="date" size="small" label="Sampai" value={mutasiDateRange.akhir}
+                  onChange={(e) => setMutasiDateRange(prev => ({ ...prev, akhir: e.target.value }))}
+                  InputLabelProps={{ shrink: true }} sx={{ maxWidth: 180 }} />
+                {(filters.search || mutasiDateRange.mulai || mutasiDateRange.akhir) && (
+                  <Button size="small" color="error" variant="text"
+                    onClick={() => { setFilters(prev => ({ ...prev, search: '' })); setMutasiDateRange({ mulai: '', akhir: '' }); }}>
+                    Reset
+                  </Button>
+                )}
+              </Box>
+            </Paper>
+
+            {/* All Reagen with Stok & Mutasi */}
+            <Typography variant="subtitle2" fontWeight={600} mb={1.5}>
+              Mutasi Stok Reagen
+              {mutasiDateRange.mulai && <Chip size="small" label={`Periode: ${mutasiDateRange.mulai} s/d ${mutasiDateRange.akhir || 'sekarang'}`} sx={{ ml: 1 }} />}
+            </Typography>
+            <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', mb: 4 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f8fafc', '& th': thSx }}>
+                    <TableCell>Reagen</TableCell>
+                    <TableCell>Satuan</TableCell>
+                    <TableCell align="right">Stok Awal</TableCell>
+                    <TableCell align="right" sx={{ color: '#10b981' }}>Masuk</TableCell>
+                    <TableCell align="right" sx={{ color: '#ef4444' }}>Keluar</TableCell>
+                    <TableCell align="right">Stok Akhir</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {mutasiList
+                    .filter(b => !filters.search || b.nama_barang.toLowerCase().includes(filters.search.toLowerCase()))
+                    .slice(mutasiPage * mutasiRowsPerPage, mutasiPage * mutasiRowsPerPage + mutasiRowsPerPage)
+                    .map((b) => (
+                    <TableRow key={b.id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                      <TableCell>
+                        <Typography fontWeight={500} variant="body2">{b.nama_barang}</Typography>
+                        <Typography variant="caption" color="text.secondary">{b.kode_barang} {b.kategori && `· ${b.kategori}`}</Typography>
+                      </TableCell>
+                      <TableCell>{b.satuan}</TableCell>
+                      <TableCell align="right">
+                        <Typography fontWeight={600}>{b.stok_awal}</Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        {b.masuk > 0 ? (
+                          <Chip label={`+${b.masuk}`} size="small" color="success" variant="outlined"
+                            onClick={() => openHistory(b, 'masuk')}
+                            sx={{ fontWeight: 600, cursor: 'pointer', '&:hover': { filter: 'brightness(0.9)' } }} />
+                        ) : <Typography variant="caption" color="text.disabled">—</Typography>}
+                      </TableCell>
+                      <TableCell align="right">
+                        {b.keluar > 0 ? (
+                          <Chip label={`-${b.keluar}`} size="small" color="error" variant="outlined"
+                            onClick={() => openHistory(b, 'keluar')}
+                            sx={{ fontWeight: 600, cursor: 'pointer', '&:hover': { filter: 'brightness(0.9)' } }} />
+                        ) : <Typography variant="caption" color="text.disabled">—</Typography>}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Chip label={b.stok_akhir} size="small"
+                          color={b.stok_akhir > 0 ? 'success' : b.stok_akhir === 0 ? 'default' : 'error'}
+                          sx={{ fontWeight: 700, minWidth: 50 }} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {mutasiList.length === 0 && !loading && (
+                    <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4, color: '#94a3b8' }}>Tidak ada data reagen</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              <TablePagination
+                component="div"
+                count={mutasiList.filter(b => !filters.search || b.nama_barang.toLowerCase().includes(filters.search.toLowerCase())).length}
+                page={mutasiPage}
+                onPageChange={(e, p) => setMutasiPage(p)}
+                rowsPerPage={mutasiRowsPerPage}
+                onRowsPerPageChange={(e) => { setMutasiRowsPerPage(parseInt(e.target.value, 10)); setMutasiPage(0); }}
+                rowsPerPageOptions={[5, 10, 25, 50]}
+                labelRowsPerPage="Baris/hal"
+              />
+            </TableContainer>
+
+            {/* Riwayat Opname */}
+            <Typography variant="subtitle2" fontWeight={600} mb={1.5}>Riwayat Stok Opname</Typography>
+            <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f8fafc', '& th': thSx }}>
+                    <TableCell>Tanggal</TableCell>
+                    <TableCell>Reagen</TableCell>
+                    <TableCell align="right">Stok Sistem</TableCell>
+                    <TableCell align="right">Stok Nyata</TableCell>
+                    <TableCell align="right">Selisih</TableCell>
+                    <TableCell>Catatan</TableCell>
+                    <TableCell>Oleh</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {opnameList.slice(opnamePage * opnameRowsPerPage, opnamePage * opnameRowsPerPage + opnameRowsPerPage).map((o) => (
+                    <TableRow key={o.id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                      <TableCell>{o.tanggal?.split('T')[0]}</TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={500}>{o.nama_barang}</Typography>
+                        <Typography variant="caption" color="text.secondary">{o.kode_barang}</Typography>
+                      </TableCell>
+                      <TableCell align="right">{o.stok_sistem}</TableCell>
+                      <TableCell align="right">{o.stok_nyata}</TableCell>
+                      <TableCell align="right">
+                        <Chip label={`${o.selisih >= 0 ? '+' : ''}${o.selisih}`} size="small"
+                          color={o.selisih > 0 ? 'success' : o.selisih < 0 ? 'error' : 'default'}
+                          sx={{ fontWeight: 600 }} />
+                      </TableCell>
+                      <TableCell><Typography variant="body2" color="text.secondary">{o.catatan || '-'}</Typography></TableCell>
+                      <TableCell>{o.created_by}</TableCell>
+                    </TableRow>
+                  ))}
+                  {opnameList.length === 0 && !loading && (
+                    <TableRow><TableCell colSpan={7} align="center" sx={{ py: 4, color: '#94a3b8' }}>Belum ada opname</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+              <TablePagination
+                component="div"
+                count={opnameList.length}
+                page={opnamePage}
+                onPageChange={(e, p) => setOpnamePage(p)}
+                rowsPerPage={opnameRowsPerPage}
+                onRowsPerPageChange={(e) => { setOpnameRowsPerPage(parseInt(e.target.value, 10)); setOpnamePage(0); }}
+                rowsPerPageOptions={[5, 10, 25, 50]}
+                labelRowsPerPage="Baris/hal"
+              />
+            </TableContainer>
+          </Box>
+        </Fade>
+      )}
+
       {/* ==================== DIALOGS & MODALS ==================== */}
 
       {/* Master CRUD modal */}
@@ -1168,12 +1376,18 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
 
             {/* Detail Stok */}
             <Typography variant="subtitle2" fontWeight={600}>2. Detail Stok Reagen</Typography>
-            <TextField select label="Pilih Reagen" value={masukForm.reagen_id} onChange={(e) => setMasukForm({ ...masukForm, reagen_id: e.target.value })} size="small">
-              <MenuItem value="">— Pilih Reagen —</MenuItem>
-              {allReagen.map(r => (
-                <MenuItem key={r.id} value={r.id}>{`${r.kode_barang || ''} · ${r.nama_barang} (${r.berat_volume || '-'})`}</MenuItem>
-              ))}
-            </TextField>
+            <Autocomplete
+              size="small"
+              options={allReagen}
+              getOptionLabel={(r) => `${r.kode_barang || ''} · ${r.nama_barang} (${r.berat_volume || '-'})`}
+              isOptionEqualToValue={(option, value) => String(option.id) === String(value?.id)}
+              value={allReagen.find(r => String(r.id) === String(masukForm.reagen_id)) || null}
+              onChange={(e, newVal) => setMasukForm({ ...masukForm, reagen_id: newVal ? newVal.id : '' })}
+              noOptionsText="Tidak ada reagen"
+              renderInput={(params) => (
+                <TextField {...params} label="Pilih Reagen" placeholder="Ketik nama / kode reagen..." size="small" />
+              )}
+            />
             <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' } }}>
               <TextField label="No. Batch" value={masukForm.no_batch} onChange={(e) => setMasukForm({ ...masukForm, no_batch: e.target.value })} placeholder="Kosong = otomatis" size="small" />
               <TextField label="Tanggal Kadaluarsa" type="date" value={masukForm.tanggal_kadaluarsa} onChange={(e) => setMasukForm({ ...masukForm, tanggal_kadaluarsa: e.target.value })} size="small" InputLabelProps={{ shrink: true }} />
@@ -1266,6 +1480,89 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
         <DialogActions>
           <Button onClick={() => setPemakaianModal({ open: false, labStokItem: null })}>Batal</Button>
           <Button variant="contained" onClick={handleSubmitPemakaian}>Simpan</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal Stok Opname */}
+      <Dialog open={opnameModalOpen} onClose={() => setOpnameModalOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>Stok Opname</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <Autocomplete
+              size="small"
+              options={allReagen}
+              getOptionLabel={(r) => `${r.nama_barang} (stok sistem: ${r.saldo_botol || 0} botol)`}
+              isOptionEqualToValue={(option, value) => String(option.id) === String(value?.id)}
+              value={allReagen.find(r => String(r.id) === String(opnameForm.reagen_id)) || null}
+              onChange={(e, newVal) => setOpnameForm(prev => ({ ...prev, reagen_id: newVal ? newVal.id : '' }))}
+              noOptionsText="Tidak ada reagen"
+              renderInput={(params) => (
+                <TextField {...params} label="Pilih Reagen" placeholder="Ketik nama / kode reagen..." required size="small" />
+              )}
+            />
+            <TextField label="Stok Nyata (hasil hitung fisik, botol)" type="number" fullWidth required value={opnameForm.stok_nyata}
+              onChange={(e) => setOpnameForm({ ...opnameForm, stok_nyata: e.target.value })} />
+            <TextField label="Tanggal" type="date" fullWidth required value={opnameForm.tanggal}
+              onChange={(e) => setOpnameForm({ ...opnameForm, tanggal: e.target.value })}
+              InputLabelProps={{ shrink: true }} />
+            <TextField label="Catatan" multiline rows={2} fullWidth value={opnameForm.catatan}
+              onChange={(e) => setOpnameForm({ ...opnameForm, catatan: e.target.value })} />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpnameModalOpen(false)}>Batal</Button>
+          <Button variant="contained" onClick={handleSubmitOpname}>Simpan Opname</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal History Mutasi */}
+      <Dialog open={historyModal.open} onClose={() => setHistoryModal({ ...historyModal, open: false })} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 600 }}>{historyModal.title}</DialogTitle>
+        <DialogContent>
+          {historyModal.data.length === 0 ? (
+            <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>Tidak ada transaksi</Typography>
+          ) : (
+            <TableContainer component={Paper} sx={{ mt: 1 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f8fafc', '& th': { fontWeight: 600, fontSize: '0.8rem' } }}>
+                    <TableCell>Tanggal</TableCell>
+                    <TableCell>Batch</TableCell>
+                    <TableCell align="right">Jumlah</TableCell>
+                    <TableCell>Keterangan</TableCell>
+                    <TableCell>Oleh</TableCell>
+                    {historyModal.jenis === 'masuk' && <TableCell>Nota</TableCell>}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {historyModal.data.map((item, idx) => (
+                    <TableRow key={item.id || idx} hover>
+                      <TableCell>{(item.tanggal || item.tanggal_pembelian || '').split('T')[0]}</TableCell>
+                      <TableCell><Typography variant="body2">{item.no_batch || '-'}</Typography></TableCell>
+                      <TableCell align="right">
+                        <Chip label={`${item.tipe === 'masuk' ? '+' : '-'}${item.jumlah}`} size="small"
+                          color={item.tipe === 'masuk' ? 'success' : 'error'} variant="outlined" sx={{ fontWeight: 600 }} />
+                      </TableCell>
+                      <TableCell><Typography variant="body2">{item.catatan || '-'}</Typography></TableCell>
+                      <TableCell>{item.created_by || item.requested_by || item.delivered_by || '-'}</TableCell>
+                      {historyModal.jenis === 'masuk' && (
+                        <TableCell>
+                          {item.kuitansi_url ? (
+                            <a href={item.kuitansi_url.startsWith('/uploads') ? `${api.BACKEND_HOST}${item.kuitansi_url}` : item.kuitansi_url} target="_blank" rel="noreferrer">
+                              <Chip label="Lihat" size="small" clickable variant="outlined" />
+                            </a>
+                          ) : '-'}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHistoryModal({ ...historyModal, open: false })}>Tutup</Button>
         </DialogActions>
       </Dialog>
 

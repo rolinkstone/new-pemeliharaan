@@ -943,4 +943,196 @@ router.get('/reagen/lab-pemakaian', keycloakAuth, async (req, res) => {
     }
 });
 
+// ========== STOK OPNAME (GUDANG / BOTOL) ==========
+
+// GET riwayat stok opname reagen (filter tanggal opsional)
+router.get('/reagen/opname', keycloakAuth, async (req, res) => {
+    try {
+        const { tanggal_mulai, tanggal_akhir } = req.query;
+        let query = `
+            SELECT so.*, r.nama_barang, r.kode_barang, r.satuan
+            FROM reagen_opname so
+            LEFT JOIN reagen r ON so.reagen_id = r.id
+            WHERE 1=1
+        `;
+        const params = [];
+        if (tanggal_mulai) { query += ' AND so.tanggal >= ?'; params.push(tanggal_mulai); }
+        if (tanggal_akhir) { query += ' AND so.tanggal <= ?'; params.push(tanggal_akhir); }
+        query += ' ORDER BY so.tanggal DESC, so.created_at DESC';
+        const [rows] = await db.query(query, params);
+        res.json({ success: true, data: rows, total: rows.length });
+    } catch (error) {
+        console.error('Error fetch opname reagen:', error);
+        res.status(500).json({ success: false, message: 'Gagal mengambil data opname', error: error.message });
+    }
+});
+
+// GET mutasi stok gudang reagen — semua reagen + masuk/keluar dalam range tanggal
+router.get('/reagen/opname/mutasi', keycloakAuth, async (req, res) => {
+    try {
+        const { tanggal_mulai, tanggal_akhir } = req.query;
+
+        // Semua master reagen dengan saldo botol saat ini
+        const [semuaReagen] = await db.query('SELECT * FROM reagen ORDER BY kategori ASC, no_urut ASC');
+
+        // Mutasi masuk dalam range (filter pakai tanggal_pembelian)
+        let masukQuery = 'SELECT reagen_id, SUM(jumlah_botol) as total_masuk FROM reagen_masuk WHERE status="disetujui"';
+        const masukParams = [];
+        if (tanggal_mulai) { masukQuery += ' AND tanggal_pembelian >= ?'; masukParams.push(tanggal_mulai); }
+        if (tanggal_akhir) { masukQuery += ' AND tanggal_pembelian <= ?'; masukParams.push(tanggal_akhir); }
+        masukQuery += ' GROUP BY reagen_id';
+        const [masukRows] = await db.query(masukQuery, masukParams);
+        const masukMap = {};
+        masukRows.forEach(r => { masukMap[r.reagen_id] = r.total_masuk; });
+
+        // Mutasi keluar dalam range (status yang stok gudangnya sudah berkurang: diserahkan / diserahkan_sebagian / disetujui_kabag)
+        let keluarQuery = 'SELECT reagen_id, SUM(jumlah_botol) as total_keluar FROM reagen_pengeluaran WHERE status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag")';
+        const keluarParams = [];
+        if (tanggal_mulai) { keluarQuery += ' AND delivered_at >= ?'; keluarParams.push(tanggal_mulai); }
+        if (tanggal_akhir) { keluarQuery += ' AND delivered_at <= ?'; keluarParams.push(tanggal_akhir + ' 23:59:59'); }
+        keluarQuery += ' GROUP BY reagen_id';
+        const [keluarRows] = await db.query(keluarQuery, keluarParams);
+        const keluarMap = {};
+        keluarRows.forEach(r => { keluarMap[r.reagen_id] = r.total_keluar; });
+
+        // Mutasi masuk SETELAH range (untuk kalkulasi stok_awal)
+        let masukSetelahMap = {};
+        if (tanggal_akhir) {
+            let q = 'SELECT reagen_id, SUM(jumlah_botol) as total FROM reagen_masuk WHERE status="disetujui" AND tanggal_pembelian > ?';
+            const p = [tanggal_akhir];
+            q += ' GROUP BY reagen_id';
+            const [rows] = await db.query(q, p);
+            rows.forEach(r => { masukSetelahMap[r.reagen_id] = r.total; });
+        }
+
+        // Mutasi keluar SETELAH range
+        let keluarSetelahMap = {};
+        if (tanggal_akhir) {
+            let q = 'SELECT reagen_id, SUM(jumlah_botol) as total FROM reagen_pengeluaran WHERE status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag") AND delivered_at > ?';
+            const p = [tanggal_akhir + ' 23:59:59'];
+            q += ' GROUP BY reagen_id';
+            const [rows] = await db.query(q, p);
+            rows.forEach(r => { keluarSetelahMap[r.reagen_id] = r.total; });
+        }
+
+        // Gabungkan (pakai Number() biar tidak concatenation string)
+        const data = semuaReagen.map(b => {
+            const masuk = Number(masukMap[b.id]) || 0;
+            const keluar = Number(keluarMap[b.id]) || 0;
+            const masukStlh = Number(masukSetelahMap[b.id]) || 0;
+            const keluarStlh = Number(keluarSetelahMap[b.id]) || 0;
+            const saldo = Number(b.saldo_botol) || 0;
+            const stok_awal = saldo - masuk + keluar - masukStlh + keluarStlh;
+            const stok_akhir = stok_awal + masuk - keluar;
+            return {
+                id: b.id,
+                kode_barang: b.kode_barang,
+                nama_barang: b.nama_barang,
+                kategori: b.kategori,
+                berat_volume: b.berat_volume,
+                satuan: b.satuan,
+                stok_awal,
+                masuk,
+                keluar,
+                stok_akhir,
+            };
+        });
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetch mutasi reagen:', error);
+        res.status(500).json({ success: false, message: 'Gagal mengambil mutasi stok', error: error.message });
+    }
+});
+
+// GET detail transaksi masuk/keluar suatu reagen dalam range tanggal
+router.get('/reagen/opname/mutasi/:reagen_id/detail', keycloakAuth, async (req, res) => {
+    try {
+        const { reagen_id } = req.params;
+        const { tanggal_mulai, tanggal_akhir, jenis } = req.query; // jenis = 'masuk' | 'keluar'
+
+        let result = [];
+        if (!jenis || jenis === 'masuk') {
+            let q = `SELECT rm.id, rm.jumlah_botol, rm.tanggal_pembelian, rm.kuitansi_url, rm.catatan, rm.created_by, rm.no_batch,
+                     r.nama_barang, r.satuan, r.berat_volume FROM reagen_masuk rm
+                     LEFT JOIN reagen r ON rm.reagen_id = r.id
+                     WHERE rm.reagen_id = ? AND rm.status="disetujui"`;
+            const p = [reagen_id];
+            if (tanggal_mulai) { q += ' AND rm.tanggal_pembelian >= ?'; p.push(tanggal_mulai); }
+            if (tanggal_akhir) { q += ' AND rm.tanggal_pembelian <= ?'; p.push(tanggal_akhir); }
+            q += ' ORDER BY rm.tanggal_pembelian DESC';
+            const [rows] = await db.query(q, p);
+            result = [...result, ...rows.map(r => ({ ...r, tipe: 'masuk', jumlah: r.jumlah_botol, tanggal: r.tanggal_pembelian }))];
+        }
+
+        if (!jenis || jenis === 'keluar') {
+            let q = `SELECT p.id, p.jumlah_botol, p.delivered_at as tanggal, p.catatan, p.requested_by, p.delivered_by, p.no_batch,
+                     r.nama_barang, r.satuan, r.berat_volume FROM reagen_pengeluaran p
+                     LEFT JOIN reagen r ON p.reagen_id = r.id
+                     WHERE p.reagen_id = ? AND p.status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag")`;
+            const p = [reagen_id];
+            if (tanggal_mulai) { q += ' AND p.delivered_at >= ?'; p.push(tanggal_mulai); }
+            if (tanggal_akhir) { q += ' AND p.delivered_at <= ?'; p.push(tanggal_akhir + ' 23:59:59'); }
+            q += ' ORDER BY p.delivered_at DESC';
+            const [rows] = await db.query(q, p);
+            result = [...result, ...rows.map(r => ({ ...r, tipe: 'keluar', jumlah: r.jumlah_botol }))];
+        }
+
+        // Sortir by tanggal (desc)
+        result.sort((a, b) => {
+            const da = new Date(a.tanggal || a.tanggal_pembelian || 0).getTime();
+            const db = new Date(b.tanggal || b.tanggal_pembelian || 0).getTime();
+            return db - da;
+        });
+
+        res.json({ success: true, data: result });
+    } catch (error) {
+        console.error('Error fetch detail mutasi reagen:', error);
+        res.status(500).json({ success: false, message: 'Gagal', error: error.message });
+    }
+});
+
+// POST create stok opname reagen
+router.post('/reagen/opname', keycloakAuth, async (req, res) => {
+    if (!hasRole(req, ['pic_gudang', 'admin', 'superadmin', 'kabag_tu'])) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak' });
+    }
+    const conn = await db.pool.getConnection();
+    try {
+        await conn.beginTransaction();
+        const { reagen_id, stok_nyata, tanggal, catatan } = req.body;
+        if (!reagen_id || stok_nyata === undefined || !tanggal) {
+            await conn.rollback(); conn.release();
+            return res.status(400).json({ success: false, message: 'Reagen, stok nyata, dan tanggal wajib diisi' });
+        }
+
+        const username = getUsername(req);
+
+        // Ambil stok sistem (saldo botol gudang) saat ini
+        const [reagen] = await conn.query('SELECT saldo_botol FROM reagen WHERE id=?', [reagen_id]);
+        if (reagen.length === 0) { await conn.rollback(); conn.release(); return res.status(404).json({ success: false, message: 'Reagen tidak ditemukan' }); }
+
+        const stok_sistem = reagen[0].saldo_botol;
+        const selisih = stok_nyata - stok_sistem;
+
+        // Simpan opname
+        await conn.query(
+            'INSERT INTO reagen_opname (reagen_id, stok_sistem, stok_nyata, selisih, tanggal, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [reagen_id, stok_sistem, stok_nyata, selisih, tanggal, catatan || '', username]
+        );
+
+        // Update saldo botol gudang berdasarkan stok nyata
+        await conn.query('UPDATE reagen SET saldo_botol=? WHERE id=?', [stok_nyata, reagen_id]);
+
+        await conn.commit();
+        res.json({ success: true, message: `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}` });
+    } catch (error) {
+        await conn.rollback();
+        console.error('Error create opname reagen:', error);
+        res.status(500).json({ success: false, message: 'Gagal mencatat opname', error: error.message });
+    } finally {
+        conn.release();
+    }
+});
+
 module.exports = router;

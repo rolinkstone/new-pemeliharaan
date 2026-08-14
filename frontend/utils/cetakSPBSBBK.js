@@ -168,14 +168,11 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
 <meta charset="utf-8" />
 <title>SPB &amp; SBBK</title>
 <style>
+  @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Times New Roman', Times, serif; color: #000; background: #fff; }
+  body { font-family: 'Times New Roman', Times, serif; color: #000; background: #fff; margin: 0; }
   .sheet {
     width: 210mm; min-height: 297mm; padding: 10mm 14mm 12mm;
-    background: #fdf2f8;               /* pink */
-    -webkit-print-color-adjust: exact; /* agar pink ikut tercetak */
-    print-color-adjust: exact;
-    border: 2px solid #000;
     position: relative;
     page-break-after: always;
   }

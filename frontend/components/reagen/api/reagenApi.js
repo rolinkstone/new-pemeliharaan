@@ -140,6 +140,27 @@ export const fetchPemakaianLab = async (session, params = {}) => {
   return data;
 };
 
+// ========== STOK OPNAME (GUDANG / BOTOL) ==========
+export const fetchOpname = async (session, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/reagen/opname`, { headers: getHeaders(session), params });
+  return data;
+};
+
+export const fetchMutasiStok = async (session, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/reagen/opname/mutasi`, { headers: getHeaders(session), params });
+  return data;
+};
+
+export const createOpname = async (session, body) => {
+  const { data } = await axios.post(`${API_URL}/reagen/opname`, body, { headers: getHeaders(session) });
+  return data;
+};
+
+export const fetchMutasiDetail = async (session, reagen_id, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/reagen/opname/mutasi/${reagen_id}/detail`, { headers: getHeaders(session), params });
+  return data;
+};
+
 // ========== FILE UPLOAD (kuitansi) ==========
 const UPLOAD_URL = `${BASE}/upload/foto`;
 export const uploadFile = async (session, file) => {
