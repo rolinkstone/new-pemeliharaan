@@ -3,15 +3,15 @@ version: '3.8'
 services:
   backend:
     build: ./backend
-    container_name: talawang-backend
+    container_name: tabela-backend
     restart: unless-stopped
     network_mode: "host"
     environment:
       - DB_HOST=127.0.0.1
       - DB_PORT=3306
-      - DB_USER=accounting
-      - DB_PASSWORD=cXnBtsX7mmpSD5zK
-      - DB_NAME=accounting
+      - DB_USER=pemeliharaan_aset_bpom
+      - DB_PASSWORD=abWTBenzFpLGPR3L
+      - DB_NAME=pemeliharaan_aset_bpom
       - KEYCLOAK_SERVER_URL=https://auth.bbpompky.id
       - KEYCLOAK_REALM=master
       - KEYCLOAK_ADMIN_USERNAME=admin
@@ -33,18 +33,18 @@ services:
     build: 
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: talawang-frontend
+    container_name: tabela-frontend
     restart: unless-stopped
     ports:
-      - "3001:3001"  # ⭐ Host:3001 → Container:3001
+      - "3003:3003"  # ⭐ Host:3003 → Container:3003
     environment:
       - NODE_ENV=production
       # ⭐ Gunakan domain tunnel untuk NextAuth
-      - NEXT_PUBLIC_API_URL=http://api-talawang.bbpompky.id/api
+      - NEXT_PUBLIC_API_URL=http://data-tabela.bbpompky.id/api
       - KEYCLOAK_ISSUER=https://auth.bbpompky.id/realms/master
-      - KEYCLOAK_CLIENT_ID=talawang
-      - KEYCLOAK_CLIENT_SECRET=iPHkDbSBwaxo04kFro4GLHmFE6wLtjlj
-      - NEXTAUTH_URL=https://talawang.bbpompky.id
+      - KEYCLOAK_CLIENT_ID=pemeliharaan
+      - KEYCLOAK_CLIENT_SECRET=aYjH7KsPnoivQaSCQSl6yScQnyGXCPEk
+      - NEXTAUTH_URL=https://tabela-raya.bbpompky.id
       - NEXTAUTH_SECRET=dnpp//pRJuxPWuZsWUBX4YB0BAxORPt7dRR/MX91KEA=
       - KEYCLOAK_ADMIN_USERNAME=admin
       - KEYCLOAK_ADMIN_PASSWORD=ontageniT1!
