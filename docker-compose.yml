@@ -34,7 +34,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: http://data-tabela.bbpompky.id/api
+        NEXT_PUBLIC_API_URL: https://data-tabela.bbpompky.id/api
         NEXT_PUBLIC_KEYCLOAK_ISSUER: https://auth.bbpompky.id/realms/master
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: pemeliharaan
     container_name: tabela-frontend
@@ -44,7 +44,7 @@ services:
     environment:
       - NODE_ENV=production
       # ⭐ Gunakan domain tunnel untuk NextAuth
-      - NEXT_PUBLIC_API_URL=http://data-tabela.bbpompky.id/api
+      - NEXT_PUBLIC_API_URL=https://data-tabela.bbpompky.id/api
       - KEYCLOAK_ISSUER=https://auth.bbpompky.id/realms/master
       - KEYCLOAK_CLIENT_ID=pemeliharaan
       - KEYCLOAK_CLIENT_SECRET=aYjH7KsPnoivQaSCQSl6yScQnyGXCPEk
