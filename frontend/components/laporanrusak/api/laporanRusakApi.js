@@ -141,7 +141,20 @@ const fetchAllLaporanRusak = async (session, params = {}) => {
                     if (errorText.includes('Cannot GET')) {
                         errorMessage = `Endpoint tidak ditemukan: ${url}. Pastikan backend sudah memiliki route /api/laporanrusak`;
                     } else {
-                        errorMessage = `Data tidak ditemukan (404)`;
+                        // 404 dengan body JSON (bukan 'Cannot GET') artinya tidak ada data.
+                        // Perlakukan sebagai daftar kosong agar tidak muncul notif error,
+                        // sama seperti perilaku di local (backend mengembalikan data: []).
+                        return {
+                            success: true,
+                            message: 'Tidak ada data',
+                            data: [],
+                            pagination: {
+                                currentPage: parseInt(params.page) || 1,
+                                perPage: parseInt(params.limit) || 10,
+                                total: 0,
+                                totalPages: 0
+                            }
+                        };
                     }
                 } else if (response.status === 401) {
                     errorMessage = 'Unauthorized: Token tidak valid atau expired';
@@ -916,6 +929,8 @@ const fetchRuanganOptions = async (session, params = {}) => {
 
 /**
  * GET /api/laporanrusak/aset-berdasarkan-ruangan/:ruanganId
+ * Dengan fallback ke endpoint lain jika endpoint utama tidak tersedia
+ * (mis. versi backend production lebih lama), agar perilaku sama dengan local.
  */
 const fetchAsetByRuangan = async (session, ruanganId) => {
     const token = getToken(session);
@@ -929,62 +944,85 @@ const fetchAsetByRuangan = async (session, ruanganId) => {
         };
     }
     
+    if (!ruanganId) {
+        return {
+            success: true,
+            data: [],
+            message: 'Pilih ruangan terlebih dahulu'
+        };
+    }
+    
     const baseUrl = getBaseUrl();
-    const url = `${baseUrl}/laporanrusak/aset-berdasarkan-ruangan/${ruanganId}`;
     
-    console.log('📤 Fetching aset by ruangan from:', url);
-    
-    try {
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json'
-            }
+    // Normalisasi response:
+    // - Endpoint utama mengembalikan master_aset.id sebagai `id`
+    // - Endpoint asetRuangan mengembalikan aset_ruangan.id sebagai `id` dan master_aset.id sebagai `aset_id`
+    // Form laporan butuh aset_id yang merujuk ke master_aset.id, jadi id dipetakan ke aset_id bila tersedia.
+    const normalizeAset = (rows) => {
+        if (!Array.isArray(rows)) return [];
+        return rows.map(row => {
+            const id = row.aset_id || row.id;
+            return { ...row, id };
         });
-        
-        console.log('📥 Response status:', response.status);
-        
-        if (!response.ok) {
-            let errorMessage = `HTTP Error ${response.status}`;
-            try {
-                const errorText = await response.text();
-                errorMessage = `${errorMessage}: ${errorText.substring(0, 100)}`;
-            } catch {
-                errorMessage = `${errorMessage}: ${response.statusText}`;
+    };
+    
+    // Coba beberapa endpoint secara berurutan (fallback jika 404/error)
+    const endpoints = [
+        `${baseUrl}/laporanrusak/aset-berdasarkan-ruangan/${ruanganId}`,
+        `${baseUrl}/asetRuangan/ruangan/${ruanganId}`,
+        `${baseUrl}/asetRuangan?ruangan_id=${ruanganId}&status=aktif&limit=1000`,
+    ];
+    
+    let lastError = null;
+    
+    for (const url of endpoints) {
+        try {
+            console.log('📤 Fetching aset by ruangan dari:', url);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                }
+            });
+            
+            console.log('📥 Response status:', response.status);
+            
+            if (!response.ok) {
+                lastError = `HTTP Error ${response.status}`;
+                console.log(`⚠️ Endpoint ${url} gagal (${response.status}), mencoba fallback...`);
+                continue;
+            }
+            
+            const result = await response.json();
+            console.log('📥 Response data:', result);
+            
+            let asetData = [];
+            if (result.data && Array.isArray(result.data)) {
+                asetData = result.data;
+            } else if (Array.isArray(result)) {
+                asetData = result;
             }
             
             return {
-                success: false,
-                message: errorMessage,
-                data: []
+                success: true,
+                data: normalizeAset(asetData),
+                message: result.message || 'Data aset berhasil dimuat'
             };
+        } catch (error) {
+            lastError = error.message;
+            console.log(`❌ Gagal dengan endpoint ${url}:`, error.message);
         }
-        
-        const result = await response.json();
-        console.log('📥 Response data:', result);
-        
-        let asetData = [];
-        if (result.data && Array.isArray(result.data)) {
-            asetData = result.data;
-        } else if (Array.isArray(result)) {
-            asetData = result;
-        }
-        
-        return {
-            success: true,
-            data: asetData,
-            message: result.message || 'Data aset berhasil dimuat'
-        };
-    } catch (error) {
-        console.error('Error fetching aset by ruangan:', error);
-        return {
-            success: false,
-            message: error.message,
-            data: []
-        };
     }
+    
+    console.warn('⚠️ Semua endpoint aset by ruangan gagal:', lastError);
+    return {
+        success: true,
+        data: [],
+        message: lastError ? `Gagal memuat aset: ${lastError}` : 'Tidak ada aset di ruangan ini'
+    };
 };
 
 /**

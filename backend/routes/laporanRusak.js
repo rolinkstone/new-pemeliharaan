@@ -287,6 +287,104 @@ router.get('/', keycloakAuth, async (req, res) => {
         });
     }
 });
+
+// ========== GET STATISTICS (OPTIMIZED: single query) ==========
+router.get('/statistics', keycloakAuth, async (req, res) => {
+    try {
+        const [rows] = await db.query(`
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft,
+                SUM(CASE WHEN status = 'menunggu_verifikasi_pic' THEN 1 ELSE 0 END) as menunggu_verifikasi_pic,
+                SUM(CASE WHEN status = 'menunggu_disposisi' THEN 1 ELSE 0 END) as menunggu_disposisi,
+                SUM(CASE WHEN status = 'menunggu_verifikasi_ppk' THEN 1 ELSE 0 END) as menunggu_verifikasi_ppk,
+                SUM(CASE WHEN status = 'diverifikasi_ppk' THEN 1 ELSE 0 END) as diverifikasi_ppk,
+                SUM(CASE WHEN status = 'dalam_perbaikan' THEN 1 ELSE 0 END) as dalam_perbaikan,
+                SUM(CASE WHEN status = 'selesai' THEN 1 ELSE 0 END) as selesai,
+                SUM(CASE WHEN status = 'ditolak' THEN 1 ELSE 0 END) as ditolak
+            FROM laporan_rusak
+        `);
+        
+        const stats = rows[0] || {};
+        
+        res.json({
+            success: true,
+            data: {
+                total: stats.total || 0,
+                draft: stats.draft || 0,
+                menunggu_verifikasi_pic: stats.menunggu_verifikasi_pic || 0,
+                menunggu_disposisi: stats.menunggu_disposisi || 0,
+                menunggu_verifikasi_ppk: stats.menunggu_verifikasi_ppk || 0,
+                diverifikasi_ppk: stats.diverifikasi_ppk || 0,
+                dalam_perbaikan: stats.dalam_perbaikan || 0,
+                selesai: stats.selesai || 0,
+                ditolak: stats.ditolak || 0
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching statistics:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Gagal mengambil statistik',
+            error: error.message 
+        });
+    }
+});
+
+// ========== ENDPOINT RUANGAN ==========
+router.get('/ruangan', keycloakAuth, async (req, res) => {
+    try {
+        const { user_id, has_pic } = req.query;
+        
+        let query = `
+            SELECT 
+                r.id,
+                r.kode_ruangan,
+                r.nama_ruangan,
+                r.deskripsi,
+                r.lokasi,
+                r.is_active,
+                pr.user_id as pic_user_id,
+                pr.tgl_penugasan,
+                pr.tgl_berakhir
+            FROM ruangan r
+        `;
+        
+        const params = [];
+        
+        if (user_id && has_pic === 'true') {
+            query += `
+                INNER JOIN pic_ruangan pr ON r.id = pr.ruangan_id
+                WHERE pr.user_id = ? 
+                    AND pr.status = 'aktif'
+                    AND r.is_active = 1
+            `;
+            params.push(user_id);
+        } else {
+            query += ' WHERE r.is_active = 1';
+        }
+        
+        query += ' ORDER BY r.kode_ruangan ASC';
+        
+        const [rows] = await db.query(query, params);
+        
+        console.log(`✅ Mendapatkan ${rows.length} ruangan untuk user ${user_id || 'semua'}`);
+        
+        res.json({
+            success: true,
+            data: rows,
+            message: 'Data ruangan berhasil dimuat'
+        });
+    } catch (error) {
+        console.error('❌ Error fetching ruangan:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message,
+            data: []
+        });
+    }
+});
+
 // ========== GET LAPORAN BY ID ==========
 // backend/routes/laporanrusak.js
 
@@ -1143,49 +1241,6 @@ router.post('/:id/selesaikan-perbaikan', keycloakAuth, async (req, res) => {
     }
 });
 
-// ========== GET STATISTICS (OPTIMIZED: single query) ==========
-router.get('/statistics', keycloakAuth, async (req, res) => {
-    try {
-        const [rows] = await db.query(`
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) as draft,
-                SUM(CASE WHEN status = 'menunggu_verifikasi_pic' THEN 1 ELSE 0 END) as menunggu_verifikasi_pic,
-                SUM(CASE WHEN status = 'menunggu_disposisi' THEN 1 ELSE 0 END) as menunggu_disposisi,
-                SUM(CASE WHEN status = 'menunggu_verifikasi_ppk' THEN 1 ELSE 0 END) as menunggu_verifikasi_ppk,
-                SUM(CASE WHEN status = 'diverifikasi_ppk' THEN 1 ELSE 0 END) as diverifikasi_ppk,
-                SUM(CASE WHEN status = 'dalam_perbaikan' THEN 1 ELSE 0 END) as dalam_perbaikan,
-                SUM(CASE WHEN status = 'selesai' THEN 1 ELSE 0 END) as selesai,
-                SUM(CASE WHEN status = 'ditolak' THEN 1 ELSE 0 END) as ditolak
-            FROM laporan_rusak
-        `);
-        
-        const stats = rows[0] || {};
-        
-        res.json({
-            success: true,
-            data: {
-                total: stats.total || 0,
-                draft: stats.draft || 0,
-                menunggu_verifikasi_pic: stats.menunggu_verifikasi_pic || 0,
-                menunggu_disposisi: stats.menunggu_disposisi || 0,
-                menunggu_verifikasi_ppk: stats.menunggu_verifikasi_ppk || 0,
-                diverifikasi_ppk: stats.diverifikasi_ppk || 0,
-                dalam_perbaikan: stats.dalam_perbaikan || 0,
-                selesai: stats.selesai || 0,
-                ditolak: stats.ditolak || 0
-            }
-        });
-    } catch (error) {
-        console.error('Error fetching statistics:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: 'Gagal mengambil statistik',
-            error: error.message 
-        });
-    }
-});
-
 // ========== GET ASET BY RUANGAN ==========
 router.get('/aset-berdasarkan-ruangan/:ruanganId', keycloakAuth, async (req, res) => {
     try {
@@ -1230,60 +1285,6 @@ router.get('/aset-berdasarkan-ruangan/:ruanganId', keycloakAuth, async (req, res
         
     } catch (error) {
         console.error('❌ Error:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message,
-            data: []
-        });
-    }
-});
-
-// ========== ENDPOINT RUANGAN ==========
-router.get('/ruangan', keycloakAuth, async (req, res) => {
-    try {
-        const { user_id, has_pic } = req.query;
-        
-        let query = `
-            SELECT 
-                r.id,
-                r.kode_ruangan,
-                r.nama_ruangan,
-                r.deskripsi,
-                r.lokasi,
-                r.is_active,
-                pr.user_id as pic_user_id,
-                pr.tgl_penugasan,
-                pr.tgl_berakhir
-            FROM ruangan r
-        `;
-        
-        const params = [];
-        
-        if (user_id && has_pic === 'true') {
-            query += `
-                INNER JOIN pic_ruangan pr ON r.id = pr.ruangan_id
-                WHERE pr.user_id = ? 
-                    AND pr.status = 'aktif'
-                    AND r.is_active = 1
-            `;
-            params.push(user_id);
-        } else {
-            query += ' WHERE r.is_active = 1';
-        }
-        
-        query += ' ORDER BY r.kode_ruangan ASC';
-        
-        const [rows] = await db.query(query, params);
-        
-        console.log(`✅ Mendapatkan ${rows.length} ruangan untuk user ${user_id || 'semua'}`);
-        
-        res.json({
-            success: true,
-            data: rows,
-            message: 'Data ruangan berhasil dimuat'
-        });
-    } catch (error) {
-        console.error('❌ Error fetching ruangan:', error);
         res.status(500).json({
             success: false,
             message: error.message,
