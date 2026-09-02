@@ -41,12 +41,12 @@ const getBaseUrl = () => {
 // KONSTANTA STATUS - SESUAI DENGAN DATABASE ANDA
 // ============================================
 const STATUS = {
-    DRAFT: 'draft',
-    MENUNGGU_VERIFIKASI_PIC: 'menunggu_verifikasi_pic',
-    MENUNGGU_DISPOSISI: 'menunggu_disposisi',
-    MENUNGGU_VERIFIKASI_PPK: 'menunggu_verifikasi_ppk',
-    DIVERIFIKASI_PPK: 'diverifikasi_ppk',
+    DIAJUKAN: 'diajukan',
+    MENUNGGU_KATIM: 'menunggu_katim',
+    MENUNGGU_PPK: 'menunggu_ppk',
     DALAM_PERBAIKAN: 'dalam_perbaikan',
+    MENUNGGU_KONFIRMASI_KABAG: 'menunggu_konfirmasi_kabag',
+    MENUNGGU_KONFIRMASI_USER: 'menunggu_konfirmasi_user',
     SELESAI: 'selesai',
     DITOLAK: 'ditolak'
 };
@@ -56,8 +56,8 @@ const STATUS = {
 // ============================================
 const validateStatus = (status) => {
     if (!status) {
-        console.warn('⚠️ Status tidak ada, menggunakan default: menunggu_verifikasi_pic');
-        return STATUS.MENUNGGU_VERIFIKASI_PIC;
+        console.warn('⚠️ Status tidak ada, menggunakan default: diajukan');
+        return STATUS.DIAJUKAN;
     }
     
     const validStatuses = Object.values(STATUS);
@@ -65,8 +65,8 @@ const validateStatus = (status) => {
         return status;
     }
     
-    console.warn(`⚠️ Status tidak valid: ${status}, menggunakan default: menunggu_verifikasi_pic`);
-    return STATUS.MENUNGGU_VERIFIKASI_PIC;
+    console.warn(`⚠️ Status tidak valid: ${status}, menggunakan default: diajukan`);
+    return STATUS.DIAJUKAN;
 };
 
 // ========== LAPORAN RUSAK API ==========
@@ -339,7 +339,7 @@ const createLaporanRusak = async (session, data) => {
         ? data.tgl_laporan.toISOString().split('T')[0]
         : data.tgl_laporan || new Date().toISOString().split('T')[0];
     
-    const validStatus = validateStatus(data.status || STATUS.MENUNGGU_VERIFIKASI_PIC);
+    const validStatus = validateStatus(data.status || STATUS.DIAJUKAN);
     
     const payload = {
         aset_id: data.aset_id,
@@ -716,6 +716,136 @@ const selesaikanPerbaikan = async (session, id, data) => {
 };
 
 /**
+ * POST /api/laporanrusak/:id/katim-verifikasi
+ * Katim mengetahui & mengirim ke PPK (pilih PPK)
+ */
+const katimVerifikasi = async (session, id, data) => {
+    const token = getToken(session);
+    if (!token) return { success: false, message: 'Token tidak ditemukan' };
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/laporanrusak/${id}/katim-verifikasi`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            return { success: false, message: `HTTP Error ${response.status}: ${errorText}` };
+        }
+        return await handleResponse(response);
+    } catch (error) {
+        console.error('❌ Error katim verifikasi:', error);
+        return { success: false, message: error.message };
+    }
+};
+
+/**
+ * POST /api/laporanrusak/:id/ppk-verifikasi
+ * PPK mengetahui + kisaran biaya perbaikan
+ */
+const ppkVerifikasi = async (session, id, data) => {
+    const token = getToken(session);
+    if (!token) return { success: false, message: 'Token tidak ditemukan' };
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/laporanrusak/${id}/ppk-verifikasi`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            return { success: false, message: `HTTP Error ${response.status}: ${errorText}` };
+        }
+        return await handleResponse(response);
+    } catch (error) {
+        console.error('❌ Error verifikasi PPK:', error);
+        return { success: false, message: error.message };
+    }
+};
+
+/**
+ * POST /api/laporanrusak/:id/catat-perbaikan
+ * PIC/Admin mencatat perbaikan selesai
+ */
+const catatPerbaikan = async (session, id, data) => {
+    const token = getToken(session);
+    if (!token) return { success: false, message: 'Token tidak ditemukan' };
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/laporanrusak/${id}/catat-perbaikan`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            return { success: false, message: `HTTP Error ${response.status}: ${errorText}` };
+        }
+        return await handleResponse(response);
+    } catch (error) {
+        console.error('❌ Error catat perbaikan:', error);
+        return { success: false, message: error.message };
+    }
+};
+
+/**
+ * POST /api/laporanrusak/:id/konfirmasi-kabag
+ * Kabag TU mengonfirmasi perbaikan selesai
+ */
+const konfirmasiKabag = async (session, id, data) => {
+    const token = getToken(session);
+    if (!token) return { success: false, message: 'Token tidak ditemukan' };
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/laporanrusak/${id}/konfirmasi-kabag`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(data || {})
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            return { success: false, message: `HTTP Error ${response.status}: ${errorText}` };
+        }
+        return await handleResponse(response);
+    } catch (error) {
+        console.error('❌ Error konfirmasi kabag:', error);
+        return { success: false, message: error.message };
+    }
+};
+
+/**
+ * POST /api/laporanrusak/:id/konfirmasi-user
+ * User (pelapor) mengonfirmasi penyelesaian laporan
+ */
+const konfirmasiUser = async (session, id, data) => {
+    const token = getToken(session);
+    if (!token) return { success: false, message: 'Token tidak ditemukan' };
+    const baseUrl = getBaseUrl();
+    const url = `${baseUrl}/laporanrusak/${id}/konfirmasi-user`;
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(data || {})
+        });
+        if (!response.ok) {
+            const errorText = await response.text();
+            return { success: false, message: `HTTP Error ${response.status}: ${errorText}` };
+        }
+        return await handleResponse(response);
+    } catch (error) {
+        console.error('❌ Error konfirmasi user:', error);
+        return { success: false, message: error.message };
+    }
+};
+
+/**
  * GET /api/laporanrusak/:id/detail-perbaikan
  * Untuk mendapatkan detail perbaikan yang sudah dilakukan
  */
@@ -775,12 +905,12 @@ const fetchLaporanStatistics = async (session) => {
             message: 'Token tidak ditemukan',
             data: {
                 total: 0,
-                draft: 0,
-                menunggu_verifikasi_pic: 0,
-                menunggu_disposisi: 0,
-                menunggu_verifikasi_ppk: 0,
-                diverifikasi_ppk: 0,
+                diajukan: 0,
+                menunggu_katim: 0,
+                menunggu_ppk: 0,
                 dalam_perbaikan: 0,
+                menunggu_konfirmasi_kabag: 0,
+                menunggu_konfirmasi_user: 0,
                 selesai: 0,
                 ditolak: 0
             }
@@ -813,12 +943,12 @@ const fetchLaporanStatistics = async (session) => {
                 message: errorMessage,
                 data: {
                     total: 0,
-                    draft: 0,
-                    menunggu_verifikasi_pic: 0,
-                    menunggu_disposisi: 0,
-                    menunggu_verifikasi_ppk: 0,
-                    diverifikasi_ppk: 0,
+                    diajukan: 0,
+                    menunggu_katim: 0,
+                    menunggu_ppk: 0,
                     dalam_perbaikan: 0,
+                    menunggu_konfirmasi_kabag: 0,
+                    menunggu_konfirmasi_user: 0,
                     selesai: 0,
                     ditolak: 0
                 }
@@ -833,12 +963,12 @@ const fetchLaporanStatistics = async (session) => {
             message: error.message,
             data: {
                 total: 0,
-                draft: 0,
-                menunggu_verifikasi_pic: 0,
-                menunggu_disposisi: 0,
-                menunggu_verifikasi_ppk: 0,
-                diverifikasi_ppk: 0,
+                diajukan: 0,
+                menunggu_katim: 0,
+                menunggu_ppk: 0,
                 dalam_perbaikan: 0,
+                menunggu_konfirmasi_kabag: 0,
+                menunggu_konfirmasi_user: 0,
                 selesai: 0,
                 ditolak: 0
             }
@@ -1308,6 +1438,11 @@ export {
     disposisiLaporan,
     verifikasiPPK,
     selesaikanPerbaikan,
+    katimVerifikasi,
+    ppkVerifikasi,
+    catatPerbaikan,
+    konfirmasiKabag,
+    konfirmasiUser,
     getDetailPerbaikan,
     fetchLaporanStatistics,
     fetchAsetOptions,
@@ -1328,6 +1463,11 @@ export const getStats = fetchLaporanStatistics;
 export const verifikasi = verifikasiLaporan;
 export const disposisi = disposisiLaporan;
 export const selesaiPerbaikan = selesaikanPerbaikan;
+export const katimKirim = katimVerifikasi;
+export const verifikasiPpk = ppkVerifikasi;
+export const catatPerbaikanApi = catatPerbaikan;
+export const konfirmasiKabagApi = konfirmasiKabag;
+export const konfirmasiUserApi = konfirmasiUser;
 export const getPicByRuangan = fetchPicByRuangan;
 export const getAsetOptions = fetchAsetOptions;
 export const getAsetByRuangan = fetchAsetByRuangan;
@@ -1347,6 +1487,11 @@ const laporanApi = {
     disposisiLaporan,
     verifikasiPPK,
     selesaikanPerbaikan,
+    katimVerifikasi,
+    ppkVerifikasi,
+    catatPerbaikan,
+    konfirmasiKabag,
+    konfirmasiUser,
     getDetailPerbaikan,
     fetchLaporanStatistics,
     
@@ -1371,6 +1516,11 @@ const laporanApi = {
     disposisi: disposisiLaporan,
     verifikasiPPK: verifikasiPPK,
     selesaiPerbaikan: selesaikanPerbaikan,
+    katimVerifikasi: katimVerifikasi,
+    ppkVerifikasi: ppkVerifikasi,
+    catatPerbaikan: catatPerbaikan,
+    konfirmasiKabag: konfirmasiKabag,
+    konfirmasiUser: konfirmasiUser,
     getPicByRuangan: fetchPicByRuangan,
     getAsetOptions: fetchAsetOptions,
     getAsetByRuangan: fetchAsetByRuangan,

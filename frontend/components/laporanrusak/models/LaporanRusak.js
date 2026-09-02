@@ -74,14 +74,12 @@ class LaporanRusak {
 
   getStatusConfig() {
     const statusMap = {
-      'draft': { color: 'default', label: 'Draft', icon: '📝' },
-      'menunggu_verifikasi_pic': { color: 'warning', label: 'Menunggu Verifikasi PIC', icon: '⏳' },
-      'diverifikasi_pic': { color: 'info', label: 'Diverifikasi PIC', icon: '✅' },
-      'menunggu_verifikasi_ppk': { color: 'warning', label: 'Menunggu Verifikasi PPK', icon: '⏳' },
-      'diverifikasi_ppk': { color: 'info', label: 'Diverifikasi PPK', icon: '✅' },
-      'menunggu_disposisi': { color: 'warning', label: 'Menunggu Disposisi', icon: '📨' },
-      'didisposisi': { color: 'info', label: 'Didisposisi', icon: '📌' },
+      'diajukan': { color: 'warning', label: 'Diajukan', icon: '📝' },
+      'menunggu_katim': { color: 'warning', label: 'Menunggu Katim', icon: '⏳' },
+      'menunggu_ppk': { color: 'warning', label: 'Menunggu PPK', icon: '⏳' },
       'dalam_perbaikan': { color: 'primary', label: 'Dalam Perbaikan', icon: '🔧' },
+      'menunggu_konfirmasi_kabag': { color: 'warning', label: 'Menunggu Konfirmasi Kabag TU', icon: '📨' },
+      'menunggu_konfirmasi_user': { color: 'warning', label: 'Menunggu Konfirmasi User', icon: '🙋' },
       'selesai': { color: 'success', label: 'Selesai', icon: '🎉' },
       'ditolak': { color: 'error', label: 'Ditolak', icon: '❌' }
     };
@@ -115,19 +113,35 @@ class LaporanRusak {
   }
 
   canEdit() {
-    return ['draft', 'menunggu_verifikasi_pic'].includes(this.status);
+    return ['diajukan'].includes(this.status);
   }
 
   canDelete() {
-    return ['draft', 'menunggu_verifikasi_pic', 'ditolak'].includes(this.status);
+    return ['diajukan'].includes(this.status);
   }
 
   canVerifikasi() {
-    return ['menunggu_verifikasi_pic', 'menunggu_verifikasi_ppk'].includes(this.status);
+    return this.status === 'diajukan';
   }
 
-  canDisposisi() {
-    return this.status === 'menunggu_disposisi';
+  canKatimKirim() {
+    return this.status === 'menunggu_katim';
+  }
+
+  canPPK() {
+    return this.status === 'menunggu_ppk';
+  }
+
+  canCatatPerbaikan() {
+    return this.status === 'dalam_perbaikan';
+  }
+
+  canKonfirmasiKabag() {
+    return this.status === 'menunggu_konfirmasi_kabag';
+  }
+
+  canKonfirmasiUser() {
+    return this.status === 'menunggu_konfirmasi_user';
   }
 }
 

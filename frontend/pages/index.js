@@ -78,7 +78,7 @@ const Home = () => {
           const d = json.data;
           setStats([
             { ...statConfig[0], value: d.total || '0' },
-            { ...statConfig[1], value: (d.menunggu_verifikasi_pic + d.menunggu_disposisi + d.menunggu_verifikasi_ppk) || '0' },
+            { ...statConfig[1], value: (d.diajukan + d.menunggu_katim + d.menunggu_ppk + d.menunggu_konfirmasi_kabag + d.menunggu_konfirmasi_user) || '0' },
             { ...statConfig[2], value: d.dalam_perbaikan || '0' },
             { ...statConfig[3], value: d.selesai || '0' },
           ]);

@@ -1046,7 +1046,8 @@ router.get('/opname/mutasi/:barang_id/detail', keycloakAuth, async (req, res) =>
         }
 
         if (!jenis || jenis === 'keluar') {
-            let q = `SELECT p.id, p.jumlah, p.delivered_at as tanggal, p.catatan, p.requested_by, p.delivered_by,
+            let q = `SELECT p.id, p.jumlah, p.jumlah_diminta, p.group_id, p.status,
+                     p.delivered_at as tanggal, p.catatan, p.requested_by, p.delivered_by,
                      bp.nama_barang, bp.satuan FROM permintaan_barang p
                      LEFT JOIN barang_persediaan bp ON p.barang_id = bp.id
                      WHERE p.barang_id = ? AND p.status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag")`;
@@ -1073,6 +1074,9 @@ router.get('/opname/mutasi/:barang_id/detail', keycloakAuth, async (req, res) =>
 });
 
 // POST create stok opname
+// Opsional: body.koreksi = [{ permintaan_id, jumlah_baru }] — mengoreksi jumlah disetujui pada
+// transaksi SPB/SBBK (permintaan_barang) yang sudah terbit/diserahkan, agar hasil SPB & SBBK
+// ikut berubah. Total koreksi (jumlah_lama - jumlah_baru) harus tepat sama dengan selisih.
 router.post('/opname', keycloakAuth, async (req, res) => {
     if (!hasRole(req, ['pic_gudang', 'admin', 'superadmin', 'kabag_tu'])) {
         return res.status(403).json({ success: false, message: 'Akses ditolak' });
@@ -1080,7 +1084,7 @@ router.post('/opname', keycloakAuth, async (req, res) => {
     const conn = await db.pool.getConnection();
     try {
         await conn.beginTransaction();
-        const { barang_id, stok_nyata, tanggal, catatan } = req.body;
+        const { barang_id, stok_nyata, tanggal, catatan, koreksi } = req.body;
         if (!barang_id || stok_nyata === undefined || !tanggal) {
             await conn.rollback(); conn.release();
             return res.status(400).json({ success: false, message: 'Barang, stok nyata, dan tanggal wajib diisi' });
@@ -1089,23 +1093,77 @@ router.post('/opname', keycloakAuth, async (req, res) => {
         const username = getUsername(req);
 
         // Ambil stok sistem saat ini
-        const [barang] = await conn.query('SELECT saldo FROM barang_persediaan WHERE id=?', [barang_id]);
+        const [barang] = await conn.query('SELECT saldo, nama_barang, satuan FROM barang_persediaan WHERE id=?', [barang_id]);
         if (barang.length === 0) { await conn.rollback(); conn.release(); return res.status(404).json({ success: false, message: 'Barang tidak ditemukan' }); }
 
-        const stok_sistem = barang[0].saldo;
-        const selisih = stok_nyata - stok_sistem;
+        const stok_sistem = Number(barang[0].saldo) || 0;
+        const stokNyata = Number(stok_nyata);
+        if (!Number.isInteger(stokNyata) || stokNyata < 0) {
+            await conn.rollback(); conn.release();
+            return res.status(400).json({ success: false, message: 'Stok nyata harus bilangan bulat >= 0' });
+        }
+        const selisih = stokNyata - stok_sistem;
+
+        let catatanFinal = (catatan || '').trim();
+        const koreksiRows = [];
+
+        // Terapkan koreksi SPB/SBBK (opsional)
+        if (koreksi && Array.isArray(koreksi) && koreksi.length > 0) {
+            let totalKoreksi = 0; // positif = stok bertambah lewat pengurangan jumlah serah
+            const parts = [];
+            for (const k of koreksi) {
+                const permintaanId = k.permintaan_id;
+                const jumlahBaru = Number(k.jumlah_baru);
+                if (!permintaanId || !Number.isInteger(jumlahBaru) || jumlahBaru < 0) {
+                    await conn.rollback(); conn.release();
+                    return res.status(400).json({ success: false, message: 'Koreksi tidak valid: jumlah baru harus bilangan bulat >= 0' });
+                }
+                const [rows] = await conn.query('SELECT id, barang_id, jumlah, jumlah_diminta, status FROM permintaan_barang WHERE id=?', [permintaanId]);
+                if (rows.length === 0 || Number(rows[0].barang_id) !== Number(barang_id)) {
+                    await conn.rollback(); conn.release();
+                    return res.status(400).json({ success: false, message: `Transaksi SPB/SBBK #${permintaanId} tidak ditemukan untuk barang "${barang[0].nama_barang}"` });
+                }
+                const p = rows[0];
+                if (!['diserahkan', 'diserahkan_sebagian', 'disetujui_kabag'].includes(p.status)) {
+                    await conn.rollback(); conn.release();
+                    return res.status(400).json({ success: false, message: `Transaksi SPB/SBBK #${permintaanId} berstatus "${p.status}" tidak bisa dikoreksi (harus sudah diserahkan)` });
+                }
+                const jumlahLama = Number(p.jumlah) || 0;
+                // Jumlah boleh dinaikkan melebihi jumlah_diminta (koreksi mengikuti kondisi nyata).
+                totalKoreksi += (jumlahLama - jumlahBaru);
+                koreksiRows.push({ id: permintaanId, jumlahLama, jumlahBaru });
+                parts.push(`#${permintaanId}: ${jumlahLama}→${jumlahBaru}`);
+            }
+            if (totalKoreksi !== selisih) {
+                await conn.rollback(); conn.release();
+                return res.status(400).json({
+                    success: false,
+                    message: `Total koreksi SPB/SBBK (${totalKoreksi >= 0 ? '+' : ''}${totalKoreksi}) tidak sama dengan selisih opname (${selisih >= 0 ? '+' : ''}${selisih})`
+                });
+            }
+            for (const kr of koreksiRows) {
+                await conn.query(
+                    'UPDATE permintaan_barang SET jumlah=?, catatan=CONCAT(IFNULL(catatan,""), ?) WHERE id=?',
+                    [kr.jumlahBaru, ` | Koreksi opname ${tanggal} oleh ${username} (${kr.jumlahLama}→${kr.jumlahBaru})`, kr.id]
+                );
+            }
+            catatanFinal = (catatanFinal ? catatanFinal + ' | ' : '') + `Koreksi SPB/SBBK: ${parts.join(', ')}`;
+        }
 
         // Simpan opname
         await conn.query(
             'INSERT INTO stok_opname (barang_id, stok_sistem, stok_nyata, selisih, tanggal, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [barang_id, stok_sistem, stok_nyata, selisih, tanggal, catatan || '', username]
+            [barang_id, stok_sistem, stokNyata, selisih, tanggal, catatanFinal, username]
         );
 
         // Update saldo berdasarkan stok nyata
-        await conn.query('UPDATE barang_persediaan SET saldo=? WHERE id=?', [stok_nyata, barang_id]);
+        await conn.query('UPDATE barang_persediaan SET saldo=? WHERE id=?', [stokNyata, barang_id]);
 
         await conn.commit();
-        res.json({ success: true, message: `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}` });
+        const msg = koreksiRows.length > 0
+            ? `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}. ${koreksiRows.length} transaksi SPB/SBBK dikoreksi.`
+            : `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}`;
+        res.json({ success: true, message: msg });
     } catch (error) {
         await conn.rollback();
         console.error('Error create opname:', error);

@@ -1,506 +1,158 @@
 // components/laporanrusak/modals/VerifikasiModal.js
+// Cek Fisik BMN oleh PIC Ruangan (alur baru)
+// Keputusan: internal (perbaikan tim internal -> selesai)
+//            anggaran (perlu anggaran -> diteruskan ke Katim, pilih Katim)
+//            tolak
 
 import React, { useState, useEffect } from 'react';
 import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  IconButton,
-  Typography,
-  Box,
-  CircularProgress,
-  FormControl,
-  FormLabel,
-  RadioGroup,
-  FormControlLabel,
-  Radio,
-  TextField,
-  Alert,
-  Paper,
-  Chip,
-  Avatar,
-  InputAdornment,
-  Divider,
-  Grid,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button,
+  TextField, Box, Typography, Chip, Alert, CircularProgress,
+  RadioGroup, FormControlLabel, Radio, Autocomplete, InputAdornment,
 } from '@mui/material';
-import {
-  Close as CloseIcon,
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-  Build as BuildIcon,
-  AttachMoney as AttachMoneyIcon,
-  Info as InfoIcon,
-  Assignment as AssignmentIcon,
-} from '@mui/icons-material';
-import { alpha, useTheme } from '@mui/material/styles';
+import axios from 'axios';
 
-// Enum status sesuai dengan database
-const STATUS = {
-  DRAFT: 'draft',
-  MENUNGGU_VERIFIKASI_PIC: 'menunggu_verifikasi_pic',
-  MENUNGGU_DISPOSISI: 'menunggu_disposisi',
-  MENUNGGU_VERIFIKASI_PPK: 'menunggu_verifikasi_ppk',
-  DIVERIFIKASI_PPK: 'diverifikasi_ppk',
-  DALAM_PERBAIKAN: 'dalam_perbaikan',
-  SELESAI: 'selesai',
-  DITOLAK: 'ditolak'
-};
+const BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5002/api').replace(/\/+$/, '');
+const getHeaders = (session) => ({
+  Authorization: `Bearer ${session?.accessToken}`,
+  'Content-Type': 'application/json',
+});
 
-const VerifikasiModal = ({
-  open,
-  onClose,
-  onConfirm,
-  laporan,
-  loading = false,
-}) => {
-  const theme = useTheme();
-  const [keputusan, setKeputusan] = useState('setuju');
+export default function VerifikasiModal({ open, onClose, onConfirm, laporan, loading, session }) {
+  const [keputusan, setKeputusan] = useState('internal');
   const [catatan, setCatatan] = useState('');
-  const [butuhAnggaran, setButuhAnggaran] = useState(false);
+  const [katimId, setKatimId] = useState('');
+  const [katimNama, setKatimNama] = useState('');
   const [estimasiBiaya, setEstimasiBiaya] = useState('');
-  const [estimasiBiayaError, setEstimasiBiayaError] = useState('');
+  const [katimList, setKatimList] = useState([]);
+  const [katimLoading, setKatimLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (open && laporan) {
-      setKeputusan('setuju');
-      setCatatan('');
-      setButuhAnggaran(false);
-      setEstimasiBiaya('');
-      setEstimasiBiayaError('');
-    }
-  }, [open, laporan]);
+    if (!open) return;
+    setKeputusan('internal');
+    setCatatan('');
+    setKatimId('');
+    setKatimNama('');
+    setEstimasiBiaya('');
+    setError('');
+  }, [open]);
 
-  const handleClose = () => {
-    if (!loading) {
-      onClose();
+  const loadKatim = async () => {
+    if (katimList.length > 0) return;
+    setKatimLoading(true);
+    try {
+      let token = session?.accessToken || session?.token;
+      if (!token) { try { token = localStorage.getItem('token'); } catch (e) { /* ignore */ } }
+      const { data } = await axios.get(`${BASE}/keycloak/katim/list`, {
+        headers: { Authorization: `Bearer ${token || ''}` },
+      });
+      const arr = data?.data || data || [];
+      setKatimList(Array.isArray(arr) ? arr : []);
+    } catch (e) {
+      console.error('Gagal muat Katim:', e);
+    } finally {
+      setKatimLoading(false);
     }
   };
 
-  const formatRupiah = (value) => {
-    if (!value) return '';
-    const number = value.toString().replace(/[^,\d]/g, '');
-    return new Intl.NumberFormat('id-ID').format(number);
-  };
-
-  const handleEstimasiBiayaChange = (e) => {
-    const rawValue = e.target.value.replace(/[^0-9]/g, '');
-    setEstimasiBiaya(rawValue);
-    if (rawValue && butuhAnggaran && keputusan === 'setuju') {
-      if (parseFloat(rawValue) <= 0) {
-        setEstimasiBiayaError('Estimasi biaya harus lebih dari 0');
-      } else {
-        setEstimasiBiayaError('');
-      }
-    } else {
-      setEstimasiBiayaError('');
-    }
+  const handleOpenKatim = () => {
+    if (keputusan === 'anggaran') loadKatim();
   };
 
   const handleSubmit = () => {
-    // Validasi estimasi biaya jika butuh anggaran
-    if (butuhAnggaran && keputusan === 'setuju') {
-      if (!estimasiBiaya || parseFloat(estimasiBiaya) <= 0) {
-        setEstimasiBiayaError('Estimasi biaya wajib diisi dan harus lebih dari 0');
-        return;
-      }
+    setError('');
+    if (!catatan.trim() && keputusan !== 'tolak') {
+      setError('Detail hasil pengecekan fisik wajib diisi');
+      return;
     }
-    
-    let nextStatus;
-    if (keputusan === 'setuju') {
-      if (butuhAnggaran) {
-        nextStatus = STATUS.MENUNGGU_DISPOSISI;
-      } else {
-        nextStatus = STATUS.SELESAI;
-      }
-    } else {
-      nextStatus = STATUS.DITOLAK;
+    if (keputusan === 'anggaran' && !katimId) {
+      setError('Pilih Katim tujuan terlebih dahulu');
+      return;
     }
-    
-    const dataToSubmit = {
-      keputusan: keputusan,
-      catatan: catatan || (keputusan === 'setuju' 
-          ? (butuhAnggaran ? 'Diverifikasi, perlu anggaran' : 'Diverifikasi, perbaikan langsung') 
-          : 'Ditolak'),
-      alur: butuhAnggaran ? 'dengan_anggaran' : 'langsung',
-      next_status: nextStatus,
-      // Estimasi biaya hanya dikirim jika butuh anggaran dan keputusan setuju
-      estimasi_biaya: butuhAnggaran && keputusan === 'setuju' ? parseFloat(estimasiBiaya) : null
-    };
-    
-    console.log('📤 Verifikasi PIC - Data dikirim:', dataToSubmit);
-    console.log('💰 Estimasi Biaya:', dataToSubmit.estimasi_biaya);
-    onConfirm(dataToSubmit);
+    setSubmitting(true);
+    onConfirm({
+      keputusan,
+      catatan: catatan.trim(),
+      katim_id: keputusan === 'anggaran' ? katimId : null,
+      katim_nama: keputusan === 'anggaran' ? katimNama : null,
+      estimasi_biaya: keputusan === 'anggaran' && estimasiBiaya ? parseFloat(estimasiBiaya) : null,
+    });
+    // loading di-handle oleh parent; reset submitting setelah dipanggil
+    setTimeout(() => setSubmitting(false), 1000);
   };
-
-  const getKeputusanIcon = () => {
-    return keputusan === 'setuju' 
-      ? <CheckCircleIcon sx={{ color: theme.palette.success.main }} />
-      : <CancelIcon sx={{ color: theme.palette.error.main }} />;
-  };
-
-  if (!laporan) return null;
 
   return (
-    <Dialog
-      open={open}
-      onClose={handleClose}
-      maxWidth="sm"
-      fullWidth
-      disableEscapeKeyDown={loading}
-      PaperProps={{ 
-        sx: { 
-          borderRadius: 3,
-          boxShadow: theme.shadows[10],
-        } 
-      }}
-    >
-      <DialogTitle sx={{ 
-        borderBottom: `1px solid ${theme.palette.divider}`, 
-        pb: 2,
-        bgcolor: alpha(theme.palette.primary.main, 0.02),
-      }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Box display="flex" alignItems="center" gap={1.5}>
-            <Avatar
-              sx={{
-                bgcolor: theme.palette.primary.main,
-                width: 40,
-                height: 40,
-                borderRadius: 2,
-              }}
-            >
-              <AssignmentIcon sx={{ fontSize: 24, color: 'white' }} />
-            </Avatar>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ fontWeight: 600 }}>Cek Fisik BMN</DialogTitle>
+      <DialogContent>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          {laporan && (
             <Box>
-              <Typography variant="h6" fontWeight="700">
-                Verifikasi Laporan
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                {laporan.nomor_laporan} - {laporan.aset_nama}
-              </Typography>
+              <Typography variant="body2" fontWeight={600}>{laporan.nomor_laporan}</Typography>
+              <Typography variant="caption" color="text.secondary">{laporan.aset_nama} — {laporan.ruangan_nama}</Typography>
             </Box>
+          )}
+
+          {error && <Alert severity="error">{error}</Alert>}
+
+          <Box>
+            <Typography variant="subtitle2" fontWeight={600} mb={0.5}>Keputusan Pengecekan Fisik</Typography>
+            <RadioGroup row value={keputusan} onChange={(e) => setKeputusan(e.target.value)}>
+              <FormControlLabel value="internal" control={<Radio size="small" />} label="Perbaikan Tim Internal" />
+              <FormControlLabel value="anggaran" control={<Radio size="small" />} label="Perlu Anggaran" />
+              <FormControlLabel value="tolak" control={<Radio size="small" />} label="Tolak" />
+            </RadioGroup>
+            <Typography variant="caption" color="text.secondary">
+              {keputusan === 'internal' ? 'Perbaikan oleh tim internal → laporan langsung selesai.'
+                : keputusan === 'anggaran' ? 'Diteruskan ke Katim untuk diteruskan ke PPK.'
+                : 'Laporan ditolak pada pengecekan fisik.'}
+            </Typography>
           </Box>
-          <IconButton 
-            onClick={handleClose} 
-            disabled={loading} 
-            size="small"
-            sx={{
-              color: theme.palette.grey[500],
-              '&:hover': {
-                bgcolor: alpha(theme.palette.grey[500], 0.1),
-              }
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
+
+          <TextField
+            label={keputusan === 'tolak' ? 'Alasan Penolakan' : 'Detail Kerusakan (hasil cek fisik)'}
+            multiline rows={3} fullWidth value={catatan}
+            onChange={(e) => setCatatan(e.target.value)}
+            placeholder="Uraikan hasil pengecekan fisik BMN..."
+          />
+
+          {keputusan === 'anggaran' && (
+            <>
+              <Autocomplete
+                onOpen={handleOpenKatim}
+                options={katimList}
+                loading={katimLoading}
+                getOptionLabel={(opt) => opt?.nama || opt?.username || opt?.user_id || ''}
+                value={katimList.find(k => String(k.user_id || k.id) === String(katimId)) || null}
+                onChange={(e, val) => {
+                  setKatimId(val ? String(val.user_id || val.id) : '');
+                  setKatimNama(val ? (val.nama || val.username || '') : '');
+                }}
+                isOptionEqualToValue={(opt, val) => String(opt.user_id || opt.id) === String(val?.user_id || val?.id)}
+                renderInput={(params) => (
+                  <TextField {...params} label="Pilih Katim" required size="small"
+                    InputProps={{ ...params.InputProps, endAdornment: katimLoading ? <CircularProgress size={18} /> : params.InputProps.endAdornment }} />
+                )}
+              />
+              <TextField
+                label="Estimasi Biaya (opsional)" type="number" fullWidth size="small"
+                value={estimasiBiaya}
+                onChange={(e) => setEstimasiBiaya(e.target.value)}
+                InputProps={{ startAdornment: <InputAdornment position="start">Rp</InputAdornment> }}
+              />
+            </>
+          )}
         </Box>
-      </DialogTitle>
-
-      <DialogContent sx={{ pt: 3, pb: 2 }}>
-        {loading ? (
-          <Box display="flex" justifyContent="center" alignItems="center" minHeight={300}>
-            <CircularProgress />
-          </Box>
-        ) : (
-          <>
-            {/* Informasi Laporan */}
-            <Paper 
-              variant="outlined" 
-              sx={{ 
-                p: 2, 
-                mb: 3, 
-                bgcolor: alpha(theme.palette.info.main, 0.04),
-                borderRadius: 2,
-              }}
-            >
-              <Box display="flex" alignItems="center" gap={1} mb={1}>
-                <InfoIcon fontSize="small" color="info" />
-                <Typography variant="subtitle2" fontWeight="600" color="info.main">
-                  Detail Laporan
-                </Typography>
-              </Box>
-              
-              <Grid container spacing={1}>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">Pelapor:</Typography>
-                  <Typography variant="body2" fontWeight="600">{laporan.pelapor_nama}</Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">Ruangan:</Typography>
-                  <Typography variant="body2" fontWeight="600">{laporan.ruangan_nama}</Typography>
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">Prioritas:</Typography>
-                  <Chip 
-                    size="small" 
-                    label={laporan.prioritas} 
-                    color={
-                      laporan.prioritas === 'darurat' ? 'error' :
-                      laporan.prioritas === 'tinggi' ? 'warning' :
-                      laporan.prioritas === 'sedang' ? 'info' : 'success'
-                    }
-                    sx={{ height: 20, mt: 0.5 }}
-                  />
-                </Grid>
-                <Grid item xs={6}>
-                  <Typography variant="caption" color="text.secondary">Status:</Typography>
-                  <Chip 
-                    size="small" 
-                    label={laporan.status} 
-                    color="warning"
-                    sx={{ height: 20, mt: 0.5 }}
-                  />
-                </Grid>
-              </Grid>
-            </Paper>
-
-            {/* Pilihan Alur Verifikasi */}
-            <FormControl component="fieldset" sx={{ mb: 3, width: '100%' }}>
-              <FormLabel component="legend" sx={{ mb: 1.5, fontWeight: 600 }}>
-                Pilih Alur Verifikasi
-              </FormLabel>
-              
-              <Paper 
-                variant="outlined" 
-                sx={{ 
-                  p: 2,
-                  mb: 2,
-                  borderColor: !butuhAnggaran ? theme.palette.success.main : theme.palette.divider,
-                  bgcolor: !butuhAnggaran ? alpha(theme.palette.success.main, 0.04) : 'transparent',
-                  borderRadius: 2,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  '&:hover': {
-                    borderColor: theme.palette.success.main,
-                    bgcolor: alpha(theme.palette.success.main, 0.02),
-                  }
-                }}
-                onClick={() => setButuhAnggaran(false)}
-              >
-                <Box display="flex" alignItems="center" gap={2}>
-                  <Radio checked={!butuhAnggaran} onChange={() => setButuhAnggaran(false)} value={false} />
-                  <Box>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <BuildIcon color="success" />
-                      <Typography variant="subtitle1" fontWeight="600" color="success.main">
-                        Perbaikan Langsung (Tanpa Anggaran)
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      • Perbaikan dapat dilakukan langsung oleh tim internal
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      • Tidak memerlukan anggaran tambahan
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      • Status akan berubah menjadi <strong>SELESAI</strong> setelah diverifikasi
-                    </Typography>
-                  </Box>
-                </Box>
-              </Paper>
-
-              <Paper 
-                variant="outlined" 
-                sx={{ 
-                  p: 2,
-                  borderColor: butuhAnggaran ? theme.palette.warning.main : theme.palette.divider,
-                  bgcolor: butuhAnggaran ? alpha(theme.palette.warning.main, 0.04) : 'transparent',
-                  borderRadius: 2,
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  '&:hover': {
-                    borderColor: theme.palette.warning.main,
-                    bgcolor: alpha(theme.palette.warning.main, 0.02),
-                  }
-                }}
-                onClick={() => setButuhAnggaran(true)}
-              >
-                <Box display="flex" alignItems="center" gap={2}>
-                  <Radio checked={butuhAnggaran} onChange={() => setButuhAnggaran(true)} value={true} />
-                  <Box>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <AttachMoneyIcon color="warning" />
-                      <Typography variant="subtitle1" fontWeight="600" color="warning.main">
-                        Perbaikan dengan Anggaran
-                      </Typography>
-                    </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      • Memerlukan anggaran tambahan
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      • Akan melalui proses: Verifikasi PIC → <strong>Menunggu Disposisi</strong> → Disposisi Kabag TU → Verifikasi PPK
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      • Status akan berubah menjadi <strong>MENUNGGU DISPOSISI</strong>
-                    </Typography>
-                  </Box>
-                </Box>
-              </Paper>
-            </FormControl>
-
-            {/* Estimasi Biaya - Hanya muncul jika butuh anggaran */}
-            {butuhAnggaran && keputusan === 'setuju' && (
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle2" fontWeight="600" mb={1}>
-                  Estimasi Biaya Perbaikan <span style={{ color: theme.palette.error.main }}>*</span>
-                </Typography>
-                <TextField
-                  fullWidth
-                  label="Estimasi Biaya"
-                  value={estimasiBiaya ? formatRupiah(estimasiBiaya) : ''}
-                  onChange={handleEstimasiBiayaChange}
-                  placeholder="Masukkan estimasi biaya perbaikan"
-                  error={!!estimasiBiayaError}
-                  helperText={estimasiBiayaError || "Masukkan perkiraan biaya yang diperlukan untuk perbaikan"}
-                  InputProps={{
-                    startAdornment: <InputAdornment position="start">Rp</InputAdornment>,
-                  }}
-                  sx={{ mb: 1 }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  ⚠️ Estimasi biaya akan disimpan dan digunakan sebagai acuan untuk proses selanjutnya
-                </Typography>
-              </Box>
-            )}
-
-            <Divider sx={{ my: 2 }} />
-
-            {/* Pilihan Keputusan */}
-            <FormControl component="fieldset" sx={{ mb: 3, width: '100%' }}>
-              <FormLabel component="legend" sx={{ mb: 1.5, fontWeight: 600 }}>
-                Keputusan Verifikasi
-              </FormLabel>
-              <RadioGroup value={keputusan} onChange={(e) => setKeputusan(e.target.value)}>
-                <Paper 
-                  variant="outlined" 
-                  sx={{ 
-                    mb: 1.5, 
-                    borderColor: keputusan === 'setuju' ? theme.palette.success.main : theme.palette.divider,
-                    bgcolor: keputusan === 'setuju' ? alpha(theme.palette.success.main, 0.04) : 'transparent',
-                    borderRadius: 2,
-                  }}
-                >
-                  <FormControlLabel 
-                    value="setuju" 
-                    control={<Radio />} 
-                    label={
-                      <Box sx={{ py: 1, px: 1 }}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <CheckCircleIcon color="success" />
-                          <Box>
-                            <Typography variant="body1" fontWeight="600">
-                              Setuju
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {butuhAnggaran 
-                                ? 'Laporan akan masuk ke antrian disposisi' 
-                                : 'Laporan akan langsung selesai'}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </Box>
-                    } 
-                    sx={{ width: '100%', m: 0 }}
-                  />
-                </Paper>
-
-                <Paper 
-                  variant="outlined" 
-                  sx={{ 
-                    borderColor: keputusan === 'tolak' ? theme.palette.error.main : theme.palette.divider,
-                    bgcolor: keputusan === 'tolak' ? alpha(theme.palette.error.main, 0.04) : 'transparent',
-                    borderRadius: 2,
-                  }}
-                >
-                  <FormControlLabel 
-                    value="tolak" 
-                    control={<Radio />} 
-                    label={
-                      <Box sx={{ py: 1, px: 1 }}>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <CancelIcon color="error" />
-                          <Box>
-                            <Typography variant="body1" fontWeight="600">
-                              Tolak
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Laporan akan ditolak dan tidak diproses lebih lanjut
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </Box>
-                    } 
-                    sx={{ width: '100%', m: 0 }}
-                  />
-                </Paper>
-              </RadioGroup>
-            </FormControl>
-
-            <TextField
-              fullWidth
-              label="Catatan Verifikasi"
-              value={catatan}
-              onChange={(e) => setCatatan(e.target.value)}
-              multiline
-              rows={3}
-              placeholder="Masukkan catatan verifikasi (opsional)"
-              sx={{ mb: 2 }}
-            />
-
-            <Alert 
-              severity={keputusan === 'setuju' ? (butuhAnggaran ? 'warning' : 'success') : 'error'}
-              sx={{ 
-                borderRadius: 2,
-              }}
-            >
-              <Typography variant="body2" fontWeight="600" gutterBottom>
-                Ringkasan:
-              </Typography>
-              <Typography variant="caption">
-                {keputusan === 'setuju' 
-                  ? (butuhAnggaran 
-                    ? `Laporan akan diverifikasi dan masuk ke antrian disposisi Kabag TU.${estimasiBiaya ? ` Estimasi biaya: Rp ${formatRupiah(estimasiBiaya)}` : ''}`
-                    : 'Laporan akan langsung selesai. Perbaikan dapat segera dilakukan.')
-                  : 'Laporan akan ditolak. Pengaju dapat mengajukan ulang.'}
-              </Typography>
-            </Alert>
-          </>
-        )}
       </DialogContent>
-
-      <DialogActions sx={{ 
-        p: 3, 
-        borderTop: `1px solid ${theme.palette.divider}`,
-        bgcolor: alpha(theme.palette.background.default, 0.5),
-      }}>
-        <Button 
-          onClick={handleClose} 
-          disabled={loading} 
-          variant="outlined"
-          sx={{ borderRadius: 2, px: 3 }}
-        >
-          Batal
-        </Button>
-        <Button
-          onClick={handleSubmit}
-          variant="contained"
-          color={keputusan === 'setuju' ? (butuhAnggaran ? 'warning' : 'success') : 'error'}
-          startIcon={getKeputusanIcon()}
-          disabled={loading || (butuhAnggaran && keputusan === 'setuju' && (!estimasiBiaya || parseFloat(estimasiBiaya) <= 0))}
-          sx={{ 
-            borderRadius: 2,
-            px: 4,
-          }}
-        >
-          {keputusan === 'setuju' 
-            ? (butuhAnggaran ? 'Setuju & Menunggu Disposisi' : 'Setuju & Selesai')
-            : 'Tolak'}
+      <DialogActions>
+        <Button onClick={onClose}>Batal</Button>
+        <Button variant="contained" color="primary" onClick={handleSubmit} disabled={submitting || loading}>
+          {submitting || loading ? <CircularProgress size={18} sx={{ mr: 1 }} /> : null}
+          Simpan
         </Button>
       </DialogActions>
     </Dialog>
   );
-};
-
-export default VerifikasiModal;
+}

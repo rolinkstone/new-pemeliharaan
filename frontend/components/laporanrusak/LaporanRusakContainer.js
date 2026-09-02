@@ -34,9 +34,11 @@ import LaporanRusakTable from './LaporanRusakTable';
 import FilterSection from './FilterSection';
 import LaporanRusakModal from './modals/LaporanRusakModal';
 import VerifikasiModal from './modals/VerifikasiModal';
-import DisposisiModal from './modals/DisposisiModal';
-import VerifikasiPPKModal from './modals/VerifikasiPPKModal';
-import SelesaiPerbaikanModal from './modals/SelesaiPerbaikanModal';
+import KatimKirimModal from './modals/KatimKirimModal';
+import PPKVerifikasiModal from './modals/PPKVerifikasiModal';
+import CatatPerbaikanModal from './modals/CatatPerbaikanModal';
+import KonfirmasiKabagModal from './modals/KonfirmasiKabagModal';
+import KonfirmasiUserModal from './modals/KonfirmasiUserModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
 import PolishedPageShell from '../common/PolishedPageShell';
 
@@ -71,9 +73,11 @@ const LaporanRusakContainer = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [viewModalOpen, setViewModalOpen] = useState(false);
   const [verifikasiModalOpen, setVerifikasiModalOpen] = useState(false);
-  const [disposisiModalOpen, setDisposisiModalOpen] = useState(false);
-  const [verifikasiPPKModalOpen, setVerifikasiPPKModalOpen] = useState(false);
-  const [selesaiPerbaikanModalOpen, setSelesaiPerbaikanModalOpen] = useState(false);
+  const [katimModalOpen, setKatimModalOpen] = useState(false);
+  const [ppkModalOpen, setPpkModalOpen] = useState(false);
+  const [catatPerbaikanModalOpen, setCatatPerbaikanModalOpen] = useState(false);
+  const [konfirmasiKabagModalOpen, setKonfirmasiKabagModalOpen] = useState(false);
+  const [konfirmasiUserModalOpen, setKonfirmasiUserModalOpen] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
@@ -317,19 +321,29 @@ const LaporanRusakContainer = () => {
     setVerifikasiModalOpen(true);
   };
 
-  const handleDisposisi = (item) => {
+  const handleKatimKirim = (item) => {
     setSelectedItem(item);
-    setDisposisiModalOpen(true);
+    setKatimModalOpen(true);
   };
 
-  const handleVerifikasiPPK = (item) => {
+  const handlePPK = (item) => {
     setSelectedItem(item);
-    setVerifikasiPPKModalOpen(true);
+    setPpkModalOpen(true);
   };
 
-  const handleSelesaiPerbaikan = (item) => {
+  const handleCatatPerbaikan = (item) => {
     setSelectedItem(item);
-    setSelesaiPerbaikanModalOpen(true);
+    setCatatPerbaikanModalOpen(true);
+  };
+
+  const handleKonfirmasiKabag = (item) => {
+    setSelectedItem(item);
+    setKonfirmasiKabagModalOpen(true);
+  };
+
+  const handleKonfirmasiUser = (item) => {
+    setSelectedItem(item);
+    setKonfirmasiUserModalOpen(true);
   };
 
   const handleDelete = (item) => {
@@ -432,18 +446,18 @@ const LaporanRusakContainer = () => {
     }
   };
 
-  const handleConfirmDisposisi = async (data) => {
+  const handleConfirmKatim = async (data) => {
     if (!session || !selectedItem) return;
     setModalLoading(true);
     try {
-      const result = await laporanApi.disposisi(session, selectedItem.id, data);
+      const result = await laporanApi.katimVerifikasi(session, selectedItem.id, data);
       if (result?.success) {
-        showSnackbar('Disposisi berhasil', 'success');
-        setDisposisiModalOpen(false);
+        showSnackbar('Laporan diteruskan ke PPK', 'success');
+        setKatimModalOpen(false);
         initialFetchDone.current = false;
         fetchData();
       } else {
-        showSnackbar(result?.message || 'Gagal disposisi', 'error');
+        showSnackbar(result?.message || 'Gagal kirim ke PPK', 'error');
       }
     } catch (error) {
       showSnackbar(error.message, 'error');
@@ -452,14 +466,14 @@ const LaporanRusakContainer = () => {
     }
   };
 
-  const handleConfirmVerifikasiPPK = async (data) => {
+  const handleConfirmPPK = async (data) => {
     if (!session || !selectedItem) return;
     setModalLoading(true);
     try {
-      const result = await laporanApi.verifikasiPPK(session, selectedItem.id, data);
+      const result = await laporanApi.ppkVerifikasi(session, selectedItem.id, data);
       if (result?.success) {
         showSnackbar('Verifikasi PPK berhasil', 'success');
-        setVerifikasiPPKModalOpen(false);
+        setPpkModalOpen(false);
         initialFetchDone.current = false;
         fetchData();
       } else {
@@ -472,31 +486,66 @@ const LaporanRusakContainer = () => {
     }
   };
 
-// components/laporanrusak/LaporanRusakContainer.js
-
-const handleConfirmSelesaiPerbaikan = async (data) => {
-  if (!session || !selectedItem) return;
-  setModalLoading(true);
-  try {
-    // PASTIKAN MENGGUNAKAN selesaikanPerbaikan, BUKAN selesai
-    console.log('🔍 Memanggil fungsi:', laporanApi.selesaikanPerbaikan); // Debug
-    const result = await laporanApi.selesaikanPerbaikan(session, selectedItem.id, data);
-    
-    if (result?.success) {
-      showSnackbar('Perbaikan berhasil diselesaikan', 'success');
-      setSelesaiPerbaikanModalOpen(false);
-      initialFetchDone.current = false;
-      fetchData();
-    } else {
-      showSnackbar(result?.message || 'Gagal menyelesaikan perbaikan', 'error');
+  const handleConfirmCatatPerbaikan = async (data) => {
+    if (!session || !selectedItem) return;
+    setModalLoading(true);
+    try {
+      const result = await laporanApi.catatPerbaikan(session, selectedItem.id, data);
+      if (result?.success) {
+        showSnackbar('Perbaikan dicatat selesai', 'success');
+        setCatatPerbaikanModalOpen(false);
+        initialFetchDone.current = false;
+        fetchData();
+      } else {
+        showSnackbar(result?.message || 'Gagal mencatat perbaikan', 'error');
+      }
+    } catch (error) {
+      console.error('❌ Error catat perbaikan:', error);
+      showSnackbar(error.message, 'error');
+    } finally {
+      setModalLoading(false);
     }
-  } catch (error) {
-    console.error('❌ Error selesaikan perbaikan:', error);
-    showSnackbar(error.message, 'error');
-  } finally {
-    setModalLoading(false);
-  }
-};
+  };
+
+  const handleConfirmKonfirmasiKabag = async (data) => {
+    if (!session || !selectedItem) return;
+    setModalLoading(true);
+    try {
+      const result = await laporanApi.konfirmasiKabag(session, selectedItem.id, data);
+      if (result?.success) {
+        showSnackbar('Perbaikan dikonfirmasi Kabag TU', 'success');
+        setKonfirmasiKabagModalOpen(false);
+        initialFetchDone.current = false;
+        fetchData();
+      } else {
+        showSnackbar(result?.message || 'Gagal konfirmasi Kabag TU', 'error');
+      }
+    } catch (error) {
+      showSnackbar(error.message, 'error');
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleConfirmKonfirmasiUser = async (data) => {
+    if (!session || !selectedItem) return;
+    setModalLoading(true);
+    try {
+      const result = await laporanApi.konfirmasiUser(session, selectedItem.id, data);
+      if (result?.success) {
+        showSnackbar('Laporan selesai', 'success');
+        setKonfirmasiUserModalOpen(false);
+        initialFetchDone.current = false;
+        fetchData();
+      } else {
+        showSnackbar(result?.message || 'Gagal konfirmasi', 'error');
+      }
+    } catch (error) {
+      showSnackbar(error.message, 'error');
+    } finally {
+      setModalLoading(false);
+    }
+  };
 
   const handleConfirmDelete = async () => {
     if (!session || !selectedItem) return;
@@ -535,7 +584,7 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
       },
       {
         label: 'Menunggu Proses',
-        value: (statistics.menunggu_verifikasi_pic || 0) + (statistics.menunggu_disposisi || 0) + (statistics.menunggu_verifikasi_ppk || 0),
+        value: (statistics.diajukan || 0) + (statistics.menunggu_katim || 0) + (statistics.menunggu_ppk || 0) + (statistics.menunggu_konfirmasi_kabag || 0) + (statistics.menunggu_konfirmasi_user || 0),
         icon: <WarningIcon sx={{ fontSize: 22 }} />,
         color: '#f59e0b',
         maxValue: statistics.total || 100,
@@ -560,10 +609,12 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
   // Quick filter chips berdasarkan status
   const quickFilters = [
     { key: '', label: 'Semua', icon: null },
-    { key: 'menunggu_verifikasi_pic', label: 'Verifikasi PIC', icon: <WarningIcon sx={{ fontSize: 14 }} /> },
-    { key: 'menunggu_disposisi', label: 'Disposisi', icon: <AssignmentIcon sx={{ fontSize: 14 }} /> },
-    { key: 'menunggu_verifikasi_ppk', label: 'Verifikasi PPK', icon: <AttachMoneyIcon sx={{ fontSize: 14 }} /> },
+    { key: 'diajukan', label: 'Diajukan', icon: <WarningIcon sx={{ fontSize: 14 }} /> },
+    { key: 'menunggu_katim', label: 'Menunggu Katim', icon: <AssignmentIcon sx={{ fontSize: 14 }} /> },
+    { key: 'menunggu_ppk', label: 'Menunggu PPK', icon: <AttachMoneyIcon sx={{ fontSize: 14 }} /> },
     { key: 'dalam_perbaikan', label: 'Perbaikan', icon: <BuildIcon sx={{ fontSize: 14 }} /> },
+    { key: 'menunggu_konfirmasi_kabag', label: 'Konfirmasi Kabag', icon: <AssignmentIcon sx={{ fontSize: 14 }} /> },
+    { key: 'menunggu_konfirmasi_user', label: 'Konfirmasi User', icon: <DoneAllIcon sx={{ fontSize: 14 }} /> },
     { key: 'selesai', label: 'Selesai', icon: <DoneAllIcon sx={{ fontSize: 14 }} /> },
     { key: 'ditolak', label: 'Ditolak', icon: <ErrorIcon sx={{ fontSize: 14 }} /> },
   ];
@@ -634,7 +685,7 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
           >
             Refresh
           </Button>
-          {!['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status) && (
+          {!['menunggu_katim', 'menunggu_ppk', 'dalam_perbaikan', 'menunggu_konfirmasi_kabag', 'menunggu_konfirmasi_user', 'selesai', 'ditolak'].includes(filters.status) && (
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -694,11 +745,11 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
               Tidak Ada Laporan
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3, maxWidth: 400, mx: 'auto' }}>
-              {['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status)
+              {['menunggu_katim', 'menunggu_ppk', 'dalam_perbaikan', 'menunggu_konfirmasi_kabag', 'menunggu_konfirmasi_user', 'selesai', 'ditolak'].includes(filters.status)
                 ? 'Tidak ada laporan dengan status ini.'
                 : 'Belum ada laporan kerusakan yang tercatat.'}
             </Typography>
-            {!['menunggu_disposisi', 'menunggu_verifikasi_ppk', 'dalam_perbaikan', 'selesai', 'ditolak'].includes(filters.status) && (
+            {!['menunggu_katim', 'menunggu_ppk', 'dalam_perbaikan', 'menunggu_konfirmasi_kabag', 'menunggu_konfirmasi_user', 'selesai', 'ditolak'].includes(filters.status) && (
               <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreate}>
                 Buat Laporan Pertama
               </Button>
@@ -715,9 +766,14 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
               onEdit={handleEdit}
               onDelete={handleDelete}
               onVerifikasi={handleVerifikasi}
-              onDisposisi={handleDisposisi}
-              onVerifikasiPPK={handleVerifikasiPPK}
-              onSelesaiPerbaikan={handleSelesaiPerbaikan}
+              onDisposisi={handleKatimKirim}
+              onVerifikasiPPK={handlePPK}
+              onSelesaiPerbaikan={handleCatatPerbaikan}
+              onKatimKirim={handleKatimKirim}
+              onPPK={handlePPK}
+              onCatatPerbaikan={handleCatatPerbaikan}
+              onKonfirmasiKabag={handleKonfirmasiKabag}
+              onKonfirmasiUser={handleKonfirmasiUser}
               pagination={pagination}
               onPageChange={handlePageChange}
               sortConfig={sortConfig}
@@ -760,28 +816,46 @@ const handleConfirmSelesaiPerbaikan = async (data) => {
         onConfirm={handleConfirmVerifikasi}
         laporan={selectedItem}
         loading={modalLoading}
+        session={session}
       />
 
-      <DisposisiModal
-        open={disposisiModalOpen}
-        onClose={() => setDisposisiModalOpen(false)}
-        onConfirm={handleConfirmDisposisi}
+      <KatimKirimModal
+        open={katimModalOpen}
+        onClose={() => setKatimModalOpen(false)}
+        onConfirm={handleConfirmKatim}
+        laporan={selectedItem}
+        loading={modalLoading}
+        session={session}
+      />
+
+      <PPKVerifikasiModal
+        open={ppkModalOpen}
+        onClose={() => setPpkModalOpen(false)}
+        onConfirm={handleConfirmPPK}
         laporan={selectedItem}
         loading={modalLoading}
       />
 
-      <VerifikasiPPKModal
-        open={verifikasiPPKModalOpen}
-        onClose={() => setVerifikasiPPKModalOpen(false)}
-        onConfirm={handleConfirmVerifikasiPPK}
+      <CatatPerbaikanModal
+        open={catatPerbaikanModalOpen}
+        onClose={() => setCatatPerbaikanModalOpen(false)}
+        onConfirm={handleConfirmCatatPerbaikan}
         laporan={selectedItem}
         loading={modalLoading}
       />
 
-      <SelesaiPerbaikanModal
-        open={selesaiPerbaikanModalOpen}
-        onClose={() => setSelesaiPerbaikanModalOpen(false)}
-        onConfirm={handleConfirmSelesaiPerbaikan}
+      <KonfirmasiKabagModal
+        open={konfirmasiKabagModalOpen}
+        onClose={() => setKonfirmasiKabagModalOpen(false)}
+        onConfirm={handleConfirmKonfirmasiKabag}
+        laporan={selectedItem}
+        loading={modalLoading}
+      />
+
+      <KonfirmasiUserModal
+        open={konfirmasiUserModalOpen}
+        onClose={() => setKonfirmasiUserModalOpen(false)}
+        onConfirm={handleConfirmKonfirmasiUser}
         laporan={selectedItem}
         loading={modalLoading}
       />

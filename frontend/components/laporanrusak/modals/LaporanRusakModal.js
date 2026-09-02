@@ -74,15 +74,12 @@ const formatRupiah = (value) => {
 // KONSTANTA STATUS - SAMA DENGAN DATABASE
 // ============================================
 const STATUS = {
-  DRAFT: 'draft',
-  MENUNGGU_VERIFIKASI_PIC: 'menunggu_verifikasi_pic',
-  DIVERIFIKASI_PIC: 'diverifikasi_pic',
-  MENUNGGU_VERIFIKASI_PPK: 'menunggu_verifikasi_ppk',
-  DIVERIFIKASI_PPK: 'diverifikasi_ppk',
-  MENUNGGU_DISPOSISI: 'menunggu_disposisi',
-  DITERUSKAN: 'diteruskan',
-  DIDISPOSISI: 'didisposisi',
+  DIAJUKAN: 'diajukan',
+  MENUNGGU_KATIM: 'menunggu_katim',
+  MENUNGGU_PPK: 'menunggu_ppk',
   DALAM_PERBAIKAN: 'dalam_perbaikan',
+  MENUNGGU_KONFIRMASI_KABAG: 'menunggu_konfirmasi_kabag',
+  MENUNGGU_KONFIRMASI_USER: 'menunggu_konfirmasi_user',
   SELESAI: 'selesai',
   DITOLAK: 'ditolak'
 };
@@ -95,71 +92,53 @@ const StatusBadge = ({ status, size = 'medium' }) => {
   
   const getStatusConfig = (status) => {
     const configs = {
-      [STATUS.DRAFT]: { 
-        label: 'Draft', 
-        color: theme.palette.grey[600],
-        bgColor: alpha(theme.palette.grey[600], 0.1),
-        icon: <ScheduleIcon /> 
-      },
-      [STATUS.MENUNGGU_VERIFIKASI_PIC]: { 
-        label: 'Menunggu Verifikasi PIC', 
+      [STATUS.DIAJUKAN]: {
+        label: 'Diajukan',
         color: theme.palette.warning.main,
         bgColor: alpha(theme.palette.warning.main, 0.1),
-        icon: <WarningIcon /> 
+        icon: <WarningIcon />
       },
-      [STATUS.MENUNGGU_VERIFIKASI_PPK]: { 
-        label: 'Menunggu Verifikasi PPK', 
-        color: theme.palette.warning.main,
-        bgColor: alpha(theme.palette.warning.main, 0.1),
-        icon: <WarningIcon /> 
-      },
-      [STATUS.DIVERIFIKASI_PIC]: { 
-        label: 'Diverifikasi PIC', 
+      [STATUS.MENUNGGU_KATIM]: {
+        label: 'Menunggu Katim',
         color: theme.palette.info.main,
         bgColor: alpha(theme.palette.info.main, 0.1),
-        icon: <CheckCircleIcon /> 
+        icon: <AssignmentIcon />
       },
-      [STATUS.DIVERIFIKASI_PPK]: { 
-        label: 'Diverifikasi PPK', 
-        color: theme.palette.info.main,
-        bgColor: alpha(theme.palette.info.main, 0.1),
-        icon: <CheckCircleIcon /> 
-      },
-      [STATUS.MENUNGGU_DISPOSISI]: { 
-        label: 'Menunggu Disposisi', 
+      [STATUS.MENUNGGU_PPK]: {
+        label: 'Menunggu PPK',
         color: theme.palette.secondary.main,
         bgColor: alpha(theme.palette.secondary.main, 0.1),
-        icon: <AssignmentIcon /> 
+        icon: <PersonIcon />
       },
-      [STATUS.DITERUSKAN]: { 
-        label: 'Diteruskan ke Kabag TU', 
+      [STATUS.DALAM_PERBAIKAN]: {
+        label: 'Dalam Perbaikan',
         color: theme.palette.warning.main,
         bgColor: alpha(theme.palette.warning.main, 0.1),
-        icon: <ArrowForwardIcon /> 
+        icon: <BuildIcon />
       },
-      [STATUS.DIDISPOSISI]: { 
-        label: 'Didisposisi ke PPK', 
+      [STATUS.MENUNGGU_KONFIRMASI_KABAG]: {
+        label: 'Menunggu Konfirmasi Kabag TU',
         color: theme.palette.primary.main,
         bgColor: alpha(theme.palette.primary.main, 0.1),
-        icon: <PersonIcon /> 
+        icon: <AssignmentIcon />
       },
-      [STATUS.DALAM_PERBAIKAN]: { 
-        label: 'Dalam Perbaikan', 
-        color: theme.palette.warning.main,
-        bgColor: alpha(theme.palette.warning.main, 0.1),
-        icon: <BuildIcon /> 
+      [STATUS.MENUNGGU_KONFIRMASI_USER]: {
+        label: 'Menunggu Konfirmasi User',
+        color: theme.palette.secondary.main,
+        bgColor: alpha(theme.palette.secondary.main, 0.1),
+        icon: <PersonIcon />
       },
-      [STATUS.SELESAI]: { 
-        label: 'Selesai', 
+      [STATUS.SELESAI]: {
+        label: 'Selesai',
         color: theme.palette.success.main,
         bgColor: alpha(theme.palette.success.main, 0.1),
-        icon: <DoneAllIcon /> 
+        icon: <DoneAllIcon />
       },
-      [STATUS.DITOLAK]: { 
-        label: 'Ditolak', 
+      [STATUS.DITOLAK]: {
+        label: 'Ditolak',
         color: theme.palette.error.main,
         bgColor: alpha(theme.palette.error.main, 0.1),
-        icon: <ErrorIcon /> 
+        icon: <ErrorIcon />
       }
     };
     
@@ -434,14 +413,7 @@ const LaporanRusakModal = ({
       // PASTIKAN STATUS YANG BENAR
       // ============================================
       let correctedStatus = initialData.status;
-      
-      // Logika koreksi status jika diperlukan
-      if (initialData.status === STATUS.MENUNGGU_VERIFIKASI_PIC && initialData.disposisi_ke) {
-        correctedStatus = STATUS.MENUNGGU_DISPOSISI;
-        console.log('🔄 Mengkoreksi status dari menunggu_verifikasi_pic -> menunggu_disposisi');
-      }
-      
-      console.log('📊 Status setelah koreksi:', correctedStatus);
+      console.log('📊 Status laporan:', correctedStatus);
       
       // ============================================
       // GABUNGKAN SEMUA DATA
@@ -457,11 +429,21 @@ const LaporanRusakModal = ({
         created_at: initialData.created_at,
         updated_at: initialData.updated_at,
         
-        // Data tambahan untuk disposisi
+        // Data tambahan alur baru
         disposisi_ke: initialData.disposisi_ke,
         disposisi_catatan: initialData.disposisi_catatan,
         disposisi_tgl: initialData.disposisi_tgl,
         estimasi_biaya: initialData.estimasi_biaya,
+        verified_by: initialData.verified_by,
+        verified_catatan: initialData.verified_catatan,
+        katim_nama: initialData.katim_nama,
+        katim_confirm_by: initialData.katim_confirm_by,
+        ppk_nama: initialData.ppk_nama,
+        ppk_confirm_by: initialData.ppk_confirm_by,
+        kisaran_biaya: initialData.kisaran_biaya,
+        perbaikan_done_by: initialData.perbaikan_done_by,
+        kabag_confirm_by: initialData.kabag_confirm_by,
+        user_confirm_by: initialData.user_confirm_by,
         
         // Data aset
         ...asetData,
@@ -517,7 +499,7 @@ const LaporanRusakModal = ({
       const dataToSubmit = {
         ...formData,
         foto_kerusakan: formData.foto_kerusakan?.map(foto => foto.url || foto) || [],
-        status: formData.id ? formData.status : 'menunggu_verifikasi_pic'
+        status: formData.id ? formData.status : 'diajukan'
       };
       
       console.log('📤 DATA YANG AKAN DISUBMIT:', dataToSubmit);
@@ -648,6 +630,57 @@ const LaporanRusakModal = ({
             <Typography variant="body2" fontWeight="600" color="success.main">
               {formatRupiah(formData.estimasi_biaya)}
             </Typography>
+          </SectionCard>
+        )}
+
+        {/* Alur Persetujuan (alur baru) */}
+        {(formData.verified_by || formData.katim_nama || formData.ppk_nama || formData.perbaikan_done_by || formData.kabag_confirm_by || formData.user_confirm_by) && (
+          <SectionCard title="Alur Persetujuan" icon={<SupervisorAccountIcon />} color="info">
+            {formData.verified_by && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>Cek Fisik oleh:</Typography>
+                <Typography variant="body2" fontWeight={600}>{formData.verified_by}</Typography>
+                {formData.verified_catatan && (
+                  <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'pre-wrap', display: 'block' }}>{formData.verified_catatan}</Typography>
+                )}
+              </Box>
+            )}
+            {formData.katim_nama && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>Katim:</Typography>
+                <Typography variant="body2" fontWeight={600}>{formData.katim_nama}</Typography>
+              </Box>
+            )}
+            {formData.ppk_nama && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>PPK:</Typography>
+                <Typography variant="body2" fontWeight={600}>{formData.ppk_nama}</Typography>
+              </Box>
+            )}
+            {formData.kisaran_biaya && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>Kisaran Biaya Perbaikan:</Typography>
+                <Typography variant="body2" fontWeight={600} color="success.main">{formData.kisaran_biaya}</Typography>
+              </Box>
+            )}
+            {formData.perbaikan_done_by && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>Perbaikan dicatat oleh:</Typography>
+                <Typography variant="body2" fontWeight={600}>{formData.perbaikan_done_by}</Typography>
+              </Box>
+            )}
+            {formData.kabag_confirm_by && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>Dikonfirmasi Kabag TU:</Typography>
+                <Typography variant="body2" fontWeight={600}>{formData.kabag_confirm_by}</Typography>
+              </Box>
+            )}
+            {formData.user_confirm_by && (
+              <Box sx={{ mb: 1.5 }}>
+                <Typography variant="caption" color="text.secondary" display="block" gutterBottom>Dikonfirmasi User (Pelapor):</Typography>
+                <Typography variant="body2" fontWeight={600}>{formData.user_confirm_by}</Typography>
+              </Box>
+            )}
           </SectionCard>
         )}
 

@@ -4,7 +4,7 @@ import {
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   MenuItem, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, Chip, Tooltip, LinearProgress,
-  Fade, Autocomplete,
+  Fade, Autocomplete, Checkbox,
 } from '@mui/material';
 import {
   Add as AddIcon, Refresh as RefreshIcon, Edit as EditIcon,
@@ -337,11 +337,94 @@ const PersediaanContainer = ({ session }) => {
   const [opnamePage, setOpnamePage] = useState(0);
   const [opnameRowsPerPage, setOpnameRowsPerPage] = useState(10);
   const [opnameForm, setOpnameForm] = useState({ barang_id: '', stok_nyata: '', tanggal: today, catatan: '' });
+  const [opnameTransaksi, setOpnameTransaksi] = useState([]); // transaksi SPB/SBBK (keluar) utk barang terpilih
+  const [opnameTransaksiLoading, setOpnameTransaksiLoading] = useState(false);
+  const [opnameKoreksi, setOpnameKoreksi] = useState({}); // { [permintaan_id]: { jumlah_lama, jumlah_baru, dipilih } }
+
+  // Muat daftar transaksi SPB/SBBK (keluar) yang sudah terbit untuk barang terpilih
+  const fetchOpnameTransaksi = useCallback(async (barangId) => {
+    if (!barangId) { setOpnameTransaksi([]); setOpnameKoreksi({}); return; }
+    setOpnameTransaksiLoading(true);
+    try {
+      const res = await api.fetchMutasiDetail(session, barangId, { jenis: 'keluar' });
+      if (res.success) {
+        const eligible = res.data || [];
+        setOpnameTransaksi(eligible);
+        setOpnameKoreksi(Object.fromEntries(eligible.map(t => [
+          String(t.id),
+          { jumlah_lama: Number(t.jumlah) || 0, jumlah_baru: Number(t.jumlah) || 0, dipilih: false }
+        ])));
+      } else {
+        setOpnameTransaksi([]); setOpnameKoreksi({});
+      }
+    } catch (e) {
+      setOpnameTransaksi([]); setOpnameKoreksi({});
+    } finally {
+      setOpnameTransaksiLoading(false);
+    }
+  }, [session]);
+
+  // Nilai turunan opname (stok sistem, selisih, total koreksi SPB/SBBK)
+  const opnameBarang = allBarang.find(b => String(b.id) === String(opnameForm.barang_id)) || null;
+  const stokSistemOpname = opnameBarang ? Number(opnameBarang.saldo) || 0 : 0;
+  const stokNyataVal = (opnameForm.stok_nyata === '' || opnameForm.stok_nyata === null || opnameForm.stok_nyata === undefined)
+    ? null : Number(opnameForm.stok_nyata);
+  const selisihOpname = stokNyataVal === null ? null : stokNyataVal - stokSistemOpname;
+  const opnameKoreksiList = Object.entries(opnameKoreksi).map(([id, k]) => ({ id, ...k }));
+  const totalKoreksi = opnameKoreksiList.reduce((sum, k) => {
+    if (!k.dipilih) return sum;
+    const baru = k.jumlah_baru === '' ? k.jumlah_lama : Number(k.jumlah_baru);
+    return sum + (Number(k.jumlah_lama) - baru);
+  }, 0);
+  const koreksiCovered = selisihOpname !== null && totalKoreksi === selisihOpname;
+  const sisaSelisih = selisihOpname === null ? 0 : selisihOpname - totalKoreksi;
+
+  const resetOpnameForm = () => {
+    setOpnameForm({ barang_id: '', stok_nyata: '', tanggal: today || new Date().toISOString().split('T')[0], catatan: '' });
+    setOpnameTransaksi([]);
+    setOpnameKoreksi({});
+  };
+
+  // Isi otomatis: alokasikan sisa selisih ke transaksi SPB/SBBK (dari terbaru) sampai tercakup
+  const handleAutoKoreksi = () => {
+    if (selisihOpname === null || sisaSelisih === 0) return;
+    let sisa = sisaSelisih;
+    const next = {};
+    for (const t of opnameTransaksi) {
+      const key = String(t.id);
+      const k = opnameKoreksi[key];
+      if (!k) continue;
+      if (sisa === 0) {
+        next[key] = { ...k, dipilih: false, jumlah_baru: k.jumlah_lama };
+        continue;
+      }
+      const maxBaru = Number.MAX_SAFE_INTEGER;
+      const jumlahBaru = Math.max(0, Math.min(k.jumlah_lama - sisa, maxBaru));
+      const absorbed = k.jumlah_lama - jumlahBaru;
+      next[key] = { ...k, dipilih: absorbed !== 0, jumlah_baru: jumlahBaru };
+      sisa -= absorbed;
+      if (sisa === 0) break;
+    }
+    setOpnameKoreksi(prev => ({ ...prev, ...next }));
+  };
 
   const handleSubmitOpname = async () => {
     try {
-      const res = await api.createOpname(session, opnameForm);
-      if (res.success) { showSnackbar(res.message); fetchAll(); setOpnameModalOpen(false); setOpnameForm({ barang_id: '', stok_nyata: '', tanggal: today || new Date().toISOString().split('T')[0], catatan: '' }); }
+      if (stokNyataVal === null) {
+        showSnackbar('Stok nyata wajib diisi', 'error');
+        return;
+      }
+      // Jika ada selisih & ada transaksi SPB/SBBK, total koreksi harus pas dengan selisih
+      if (selisihOpname !== 0 && opnameTransaksi.length > 0 && !koreksiCovered) {
+        showSnackbar(`Total koreksi SPB/SBBK belum sesuai selisih. Sisa ${sisaSelisih >= 0 ? '+' : ''}${sisaSelisih}`, 'error');
+        return;
+      }
+      const koreksiPayload = selisihOpname !== 0 ? opnameKoreksiList
+        .filter(k => k.dipilih && k.jumlah_baru !== '' && Number(k.jumlah_baru) !== Number(k.jumlah_lama))
+        .map(k => ({ permintaan_id: Number(k.id), jumlah_baru: Number(k.jumlah_baru) })) : [];
+      const body = { ...opnameForm, stok_nyata: stokNyataVal, koreksi: koreksiPayload };
+      const res = await api.createOpname(session, body);
+      if (res.success) { showSnackbar(res.message); fetchAll(); setOpnameModalOpen(false); resetOpnameForm(); }
       else showSnackbar(res.message, 'error');
     } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
   };
@@ -1198,27 +1281,149 @@ const PersediaanContainer = ({ session }) => {
       </Dialog>
 
       {/* Modal Stok Opname */}
-      <Dialog open={opnameModalOpen} onClose={() => setOpnameModalOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={opnameModalOpen} onClose={() => { setOpnameModalOpen(false); resetOpnameForm(); }} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>Stok Opname</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
             <TextField select label="Pilih Barang" fullWidth required value={opnameForm.barang_id}
-              onChange={(e) => setOpnameForm({ ...opnameForm, barang_id: e.target.value })}>
+              onChange={(e) => {
+                const bid = e.target.value;
+                setOpnameForm(prev => ({ ...prev, barang_id: bid, stok_nyata: '' }));
+                fetchOpnameTransaksi(bid);
+              }}>
               {allBarang.map((b) => (
                 <MenuItem key={b.id} value={b.id}>{b.nama_barang} (stok sistem: {b.saldo || 0} {b.satuan})</MenuItem>
               ))}
             </TextField>
             <TextField label="Stok Nyata (hasil hitung fisik)" type="number" fullWidth required value={opnameForm.stok_nyata}
-              onChange={(e) => setOpnameForm({ ...opnameForm, stok_nyata: e.target.value })} />
+              onChange={(e) => setOpnameForm(prev => ({ ...prev, stok_nyata: e.target.value }))} />
+
+            {/* Ringkasan selisih */}
+            {selisihOpname !== null && (
+              <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                <Typography variant="body2" fontWeight={600} color="text.secondary">Stok sistem:</Typography>
+                <Chip label={stokSistemOpname} size="small" color="info" variant="outlined" sx={{ fontWeight: 600 }} />
+                <Typography variant="body2" fontWeight={600} color="text.secondary">Selisih:</Typography>
+                <Chip label={`${selisihOpname >= 0 ? '+' : ''}${selisihOpname}`} size="small"
+                  color={selisihOpname > 0 ? 'success' : selisihOpname < 0 ? 'error' : 'default'}
+                  sx={{ fontWeight: 700 }} />
+                {selisihOpname === 0 && <Typography variant="caption" color="text.secondary">Stok sesuai, tidak perlu koreksi SPB/SBBK.</Typography>}
+              </Box>
+            )}
+
+            {/* Koreksi SPB/SBBK yang sudah terbit */}
+            {selisihOpname !== null && selisihOpname !== 0 && (
+              <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, bgcolor: '#fafafa' }}>
+                <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} mb={1}>
+                  <Box>
+                    <Typography variant="subtitle2" fontWeight={600}>Koreksi SPB/SBBK yang sudah terbit</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Pilih transaksi keluar (SPB/SBBK) yang harus dikurangi/ditambah jumlahnya. Total koreksi harus sama dengan selisih.
+                    </Typography>
+                  </Box>
+                  {opnameTransaksi.length > 0 && (
+                    <Button size="small" variant="outlined" onClick={handleAutoKoreksi} disabled={sisaSelisih === 0}>
+                      Isi Otomatis
+                    </Button>
+                  )}
+                </Box>
+
+                {opnameTransaksiLoading ? (
+                  <Box display="flex" justifyContent="center" py={3}><CircularProgress size={28} /></Box>
+                ) : opnameTransaksi.length === 0 ? (
+                  <Alert severity="info">
+                    Tidak ada transaksi SPB/SBBK (keluar) untuk barang ini. Saldo akan disesuaikan langsung ke stok nyata.
+                  </Alert>
+                ) : (
+                  <>
+                    <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow sx={{ bgcolor: '#f8fafc', '& th': { fontWeight: 600, fontSize: '0.78rem', color: '#64748b' } }}>
+                            <TableCell padding="checkbox">Pilih</TableCell>
+                            <TableCell>Tanggal</TableCell>
+                            <TableCell>Pemohon / Status</TableCell>
+                            <TableCell align="center">Jumlah Saat Ini</TableCell>
+                            <TableCell align="center">Qty Baru</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {opnameTransaksi.map((t) => {
+                            const k = opnameKoreksi[String(t.id)] || { jumlah_lama: Number(t.jumlah) || 0, jumlah_baru: Number(t.jumlah) || 0, dipilih: false };
+                            const maxBaru = Number.MAX_SAFE_INTEGER;
+                            return (
+                              <TableRow key={t.id} hover sx={{ bgcolor: k.dipilih ? '#ecfdf5' : 'inherit' }}>
+                                <TableCell padding="checkbox">
+                                  <Checkbox checked={k.dipilih} size="small"
+                                    onChange={(e) => setOpnameKoreksi(prev => ({
+                                      ...prev,
+                                      [String(t.id)]: { ...k, dipilih: e.target.checked }
+                                    }))} />
+                                </TableCell>
+                                <TableCell>{String(t.tanggal || '').split('T')[0] || '-'}</TableCell>
+                                <TableCell>
+                                  <Typography variant="body2">{t.requested_by || '-'}</Typography>
+                                  <Box display="flex" alignItems="center" gap={0.5} mt={0.25} flexWrap="wrap">
+                                    <Chip label={statusLabels[t.status] || t.status} size="small"
+                                      color={statusColors[t.status] || 'default'} variant="outlined"
+                                      sx={{ height: 20, fontSize: '0.68rem' }} />
+                                    <Typography variant="caption" color="text.secondary">Diminta: {t.jumlah_diminta ?? '-'}</Typography>
+                                  </Box>
+                                </TableCell>
+                                <TableCell align="center">
+                                  <Chip label={k.jumlah_lama} size="small" color="default" variant="outlined" sx={{ fontWeight: 700 }} />
+                                </TableCell>
+                                <TableCell align="center">
+                                  <TextField
+                                    type="number"
+                                    size="small"
+                                    disabled={!k.dipilih}
+                                    value={k.jumlah_baru}
+                                    onChange={(e) => setOpnameKoreksi(prev => ({
+                                      ...prev,
+                                      [String(t.id)]: { ...k, jumlah_baru: e.target.value === '' ? '' : Number(e.target.value) }
+                                    }))}
+                                    inputProps={{ min: 0, max: maxBaru, style: { textAlign: 'center', width: 64 } }}
+                                    sx={{ width: 90 }}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+
+                    {/* Ringkasan total koreksi */}
+                    <Box mt={1.5} display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                      <Typography variant="body2" fontWeight={600} color="text.secondary">Total koreksi:</Typography>
+                      <Chip label={`${totalKoreksi >= 0 ? '+' : ''}${totalKoreksi}`} size="small"
+                        color={totalKoreksi === selisihOpname ? 'success' : 'error'}
+                        sx={{ fontWeight: 700 }} />
+                      <Typography variant="body2" fontWeight={600} color="text.secondary">Butuh:</Typography>
+                      <Chip label={`${selisihOpname >= 0 ? '+' : ''}${selisihOpname}`} size="small" color="default" variant="outlined" sx={{ fontWeight: 700 }} />
+                      {sisaSelisih !== 0 ? (
+                        <Typography variant="caption" color="error" sx={{ fontWeight: 600 }}>
+                          Sisa belum terkoreksi: {sisaSelisih >= 0 ? '+' : ''}{sisaSelisih}
+                        </Typography>
+                      ) : (
+                        <Typography variant="caption" color="success.main" sx={{ fontWeight: 600 }}>✓ Selisih tercakup semua.</Typography>
+                      )}
+                    </Box>
+                  </>
+                )}
+              </Box>
+            )}
+
             <TextField label="Tanggal" type="date" fullWidth required value={opnameForm.tanggal}
-              onChange={(e) => setOpnameForm({ ...opnameForm, tanggal: e.target.value })}
+              onChange={(e) => setOpnameForm(prev => ({ ...prev, tanggal: e.target.value }))}
               InputLabelProps={{ shrink: true }} />
             <TextField label="Catatan" multiline rows={2} fullWidth value={opnameForm.catatan}
-              onChange={(e) => setOpnameForm({ ...opnameForm, catatan: e.target.value })} />
+              onChange={(e) => setOpnameForm(prev => ({ ...prev, catatan: e.target.value }))} />
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setOpnameModalOpen(false)}>Batal</Button>
+          <Button onClick={() => { setOpnameModalOpen(false); resetOpnameForm(); }}>Batal</Button>
           <Button variant="contained" onClick={handleSubmitOpname}>Simpan Opname</Button>
         </DialogActions>
       </Dialog>

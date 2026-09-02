@@ -63,36 +63,31 @@ import { useSession } from 'next-auth/react';
 // KONSTANTA
 // ============================================
 const STATUS = {
-  DRAFT: 'draft',
-  MENUNGGU_VERIFIKASI_PIC: 'menunggu_verifikasi_pic',
-  DIVERIFIKASI_PIC: 'diverifikasi_pic',
-  MENUNGGU_VERIFIKASI_PPK: 'menunggu_verifikasi_ppk',
-  DIVERIFIKASI_PPK: 'diverifikasi_ppk',
-  MENUNGGU_DISPOSISI: 'menunggu_disposisi',
-  DIDISPOSISI: 'didisposisi',
+  DIAJUKAN: 'diajukan',
+  MENUNGGU_KATIM: 'menunggu_katim',
+  MENUNGGU_PPK: 'menunggu_ppk',
   DALAM_PERBAIKAN: 'dalam_perbaikan',
+  MENUNGGU_KONFIRMASI_KABAG: 'menunggu_konfirmasi_kabag',
+  MENUNGGU_KONFIRMASI_USER: 'menunggu_konfirmasi_user',
   SELESAI: 'selesai',
   DITOLAK: 'ditolak'
 };
 
 // Semua status (untuk display badge)
 const STATUS_OPTIONS = [
-  { value: STATUS.DRAFT, label: 'Draft', color: 'default' },
-  { value: STATUS.MENUNGGU_VERIFIKASI_PIC, label: 'Menunggu Verifikasi PIC', color: 'warning' },
-  { value: STATUS.MENUNGGU_VERIFIKASI_PPK, label: 'Menunggu Verifikasi PPK', color: 'warning' },
-  { value: STATUS.DIVERIFIKASI_PIC, label: 'Diverifikasi PIC', color: 'success' },
-  { value: STATUS.DIVERIFIKASI_PPK, label: 'Diverifikasi PPK', color: 'success' },
-  { value: STATUS.MENUNGGU_DISPOSISI, label: 'Menunggu Disposisi', color: 'info' },
-  { value: STATUS.DIDISPOSISI, label: 'Didisposisi', color: 'secondary' },
+  { value: STATUS.DIAJUKAN, label: 'Diajukan', color: 'warning' },
+  { value: STATUS.MENUNGGU_KATIM, label: 'Menunggu Katim', color: 'info' },
+  { value: STATUS.MENUNGGU_PPK, label: 'Menunggu PPK', color: 'secondary' },
   { value: STATUS.DALAM_PERBAIKAN, label: 'Dalam Perbaikan', color: 'info' },
+  { value: STATUS.MENUNGGU_KONFIRMASI_KABAG, label: 'Menunggu Konfirmasi Kabag TU', color: 'primary' },
+  { value: STATUS.MENUNGGU_KONFIRMASI_USER, label: 'Menunggu Konfirmasi User', color: 'secondary' },
   { value: STATUS.SELESAI, label: 'Selesai', color: 'success' },
   { value: STATUS.DITOLAK, label: 'Ditolak', color: 'error' },
 ];
 
 // Status awal untuk laporan baru / edit (hanya status yang bisa dipilih manual)
 const EDITABLE_STATUS_OPTIONS = [
-  { value: STATUS.DRAFT, label: 'Draft', color: 'default' },
-  { value: STATUS.MENUNGGU_VERIFIKASI_PIC, label: 'Menunggu Verifikasi PIC', color: 'warning' },
+  { value: STATUS.DIAJUKAN, label: 'Diajukan', color: 'warning' },
 ];
 
 const PRIORITY_OPTIONS = [
@@ -291,7 +286,7 @@ const LaporanRusakForm = ({
     deskripsi: initialFormData.deskripsi || '',
     foto_kerusakan: initialFormData.foto_kerusakan || [],
     prioritas: initialFormData.prioritas || 'sedang',
-    status: initialFormData.status || (isEdit ? initialFormData.status : STATUS.MENUNGGU_VERIFIKASI_PIC),
+    status: initialFormData.status || (isEdit ? initialFormData.status : STATUS.DIAJUKAN),
     // Field untuk display saja (tidak disimpan ke database)
     aset_nama: initialFormData.aset_nama || '',
     aset_kode: initialFormData.aset_kode || '',

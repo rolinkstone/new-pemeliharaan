@@ -66,15 +66,12 @@ import { useSession } from 'next-auth/react';
 // KONSTANTA STATUS
 // ============================================
 const STATUS = {
-  DRAFT: 'draft',
-  MENUNGGU_VERIFIKASI_PIC: 'menunggu_verifikasi_pic',
-  DIVERIFIKASI_PIC: 'diverifikasi_pic',
-  MENUNGGU_VERIFIKASI_PPK: 'menunggu_verifikasi_ppk',
-  DIVERIFIKASI_PPK: 'diverifikasi_ppk',
-  MENUNGGU_DISPOSISI: 'menunggu_disposisi',
-  DITERUSKAN: 'diteruskan',
-  DIDISPOSISI: 'didisposisi',
+  DIAJUKAN: 'diajukan',
+  MENUNGGU_KATIM: 'menunggu_katim',
+  MENUNGGU_PPK: 'menunggu_ppk',
   DALAM_PERBAIKAN: 'dalam_perbaikan',
+  MENUNGGU_KONFIRMASI_KABAG: 'menunggu_konfirmasi_kabag',
+  MENUNGGU_KONFIRMASI_USER: 'menunggu_konfirmasi_user',
   SELESAI: 'selesai',
   DITOLAK: 'ditolak'
 };
@@ -309,6 +306,11 @@ const LaporanRusakTable = ({
   onDisposisi,
   onVerifikasiPPK,
   onSelesaiPerbaikan,
+  onKatimKirim,
+  onPPK,
+  onCatatPerbaikan,
+  onKonfirmasiKabag,
+  onKonfirmasiUser,
   pagination = { currentPage: 1, perPage: 10, total: 0 },
   onPageChange,
   sortConfig = { field: 'tgl_laporan', direction: 'desc' },
@@ -326,21 +328,13 @@ const LaporanRusakTable = ({
   const [filteredData, setFilteredData] = useState([]);
   const [loadingPIC, setLoadingPIC] = useState(false);
 
-  // ========== DAPATKAN ROLE USER DARI SESSION (MENGGUNAKAN REALM_ACCESS) ==========
-  const realmRoles = session?.user?.realm_access?.roles || [];
-  
-  const isAdmin = realmRoles.includes('admin') || realmRoles.includes('superadmin');
-  const isPICRuangan = realmRoles.includes('pic_ruangan') || realmRoles.includes('pic');
-  const isKabagTU = realmRoles.includes('kabag_tu');
-  const isPPK = realmRoles.includes('ppk');
-  const isBendahara = realmRoles.includes('bendahara');
-  const isKabalai = realmRoles.includes('kabalai');
-  
-  console.log('========== USER INFO ==========');
-  console.log('Realm Roles:', realmRoles);
-  console.log('isKabagTU:', isKabagTU);
-  console.log('isPICRuangan:', isPICRuangan);
-  console.log('================================');
+  // ========== DAPATKAN ROLE USER DARI SESSION ==========
+  const userRoles = session?.user?.roles || [];
+  const isAdmin = session?.user?.isAdmin || userRoles.includes('admin') || userRoles.includes('superadmin') || userRoles.includes('admin_pemeliharaan');
+  const isPICRuangan = session?.user?.isPICRuangan || userRoles.includes('pic_ruangan') || userRoles.includes('pic');
+  const isKabagTU = session?.user?.isKabagTU || userRoles.includes('kabag_tu');
+  const isPPK = session?.user?.isPPK || userRoles.includes('ppk');
+  const isKatim = session?.user?.isKatim || userRoles.includes('katim');
 
   // ========== AMBIL DATA PIC DARI BEBERAPA SUMBER ==========
   useEffect(() => {
@@ -444,60 +438,16 @@ const LaporanRusakTable = ({
     fetchPicData();
   }, [session, data]);
 
-  // ========== FUNGSI CAN VERIFIKASI ==========
+  // ========== FUNGSI CAN VERIFIKASI (CEK FISIK) ==========
   const canVerifikasi = (status) => {
-    if (isPICRuangan && status === STATUS.MENUNGGU_VERIFIKASI_PIC) {
-      return true;
-    }
-    if (isAdmin) {
-      return true;
-    }
-    return false;
+    if (isAdmin) return status === STATUS.DIAJUKAN;
+    return isPICRuangan && status === STATUS.DIAJUKAN;
   };
 
-  // Filter data berdasarkan user yang login (untuk PIC Ruangan)
+  // Data sudah disaring di backend sesuai role; frontend hanya menampilkan semua
   useEffect(() => {
-    if (!data || data.length === 0) {
-      setFilteredData([]);
-      return;
-    }
-
-    if (isAdmin) {
-      setFilteredData(data);
-      return;
-    }
-
-    if (isPICRuangan) {
-      // Dapatkan daftar ruangan yang menjadi tanggung jawab PIC
-      // Gunakan data dari picDetails atau dari row
-      const userPicRooms = [];
-      
-      // Cari dari picDetails
-      Object.entries(picDetails).forEach(([ruanganId, pic]) => {
-        if (pic.user_id === session?.user?.id) {
-          userPicRooms.push(parseInt(ruanganId));
-        }
-      });
-      
-      // Juga cek dari data row
-      data.forEach(row => {
-        const picName = row.pic_ruangan_nama || row.pic_nama;
-        if (picName && picName === session?.user?.name) {
-          if (!userPicRooms.includes(row.ruangan_id)) {
-            userPicRooms.push(row.ruangan_id);
-          }
-        }
-      });
-      
-      console.log('User PIC Rooms:', userPicRooms);
-      
-      const filtered = data.filter(item => userPicRooms.includes(item.ruangan_id));
-      setFilteredData(filtered);
-      return;
-    }
-
-    setFilteredData(data);
-  }, [data, isAdmin, isPICRuangan, picDetails, session]);
+    setFilteredData(data || []);
+  }, [data]);
 
   const handleMenuOpen = (event, row) => {
     event.stopPropagation();
@@ -523,13 +473,12 @@ const LaporanRusakTable = ({
           onDisposisi?.(selectedRow); 
           break;
         case 'verifikasi-ppk': onVerifikasiPPK?.(selectedRow); break;
-        case 'selesai-perbaikan':
-          if (onSelesaiPerbaikan) {
-            onSelesaiPerbaikan(selectedRow);
-          } else {
-            setSnackbar({ open: true, message: 'Fitur selesaikan perbaikan belum tersedia', severity: 'warning' });
-          }
-          break;
+        case 'selesai-perbaikan': onSelesaiPerbaikan?.(selectedRow); break;
+        case 'katim-kirim': onKatimKirim?.(selectedRow); break;
+        case 'ppk': onPPK?.(selectedRow); break;
+        case 'catat-perbaikan': onCatatPerbaikan?.(selectedRow); break;
+        case 'konfirmasi-kabag': onKonfirmasiKabag?.(selectedRow); break;
+        case 'konfirmasi-user': onKonfirmasiUser?.(selectedRow); break;
         default: break;
       }
     }
@@ -550,52 +499,59 @@ const LaporanRusakTable = ({
   const handleSortClick = (field) => onSort(field);
 
   const canEdit = (status) => {
-    if (isAdmin) return true;
-    return isPICRuangan && [STATUS.DRAFT, STATUS.MENUNGGU_VERIFIKASI_PIC].includes(status);
+    if (isAdmin) return status === STATUS.DIAJUKAN;
+    return isPICRuangan && status === STATUS.DIAJUKAN;
   };
 
   const canDelete = (row) => {
-    // Admin bisa hapus semua
-    if (isAdmin) return true;
-    // Pelapor bisa hapus jika masih menunggu verifikasi PIC (belum ditindaklanjuti)
+    if (isAdmin) return row?.status === STATUS.DIAJUKAN;
     if (!row) return false;
     const userId = session?.user?.id || session?.user?.sub;
-    const isOwner = row.pelapor_id === userId;
-    const isWaitingPIC = row.status === STATUS.MENUNGGU_VERIFIKASI_PIC || row.status === STATUS.DRAFT;
-    return isOwner && isWaitingPIC;
+    const isOwner = String(row.pelapor_id) === String(userId);
+    return isOwner && row.status === STATUS.DIAJUKAN;
   };
 
-  const canDisposisi = (status) => {
-    if (isKabagTU && status === STATUS.MENUNGGU_DISPOSISI) {
-      return true;
-    }
-    if (isAdmin) {
-      return true;
-    }
-    return false;
+  // Katim mengetahui & mengirim ke PPK
+  const canKatimKirim = (status) => {
+    if (isAdmin) return status === STATUS.MENUNGGU_KATIM;
+    return isKatim && status === STATUS.MENUNGGU_KATIM;
   };
 
-  const canVerifikasiPPK = (status) => {
-    if (isAdmin) return true;
-    return isPPK && status === STATUS.MENUNGGU_VERIFIKASI_PPK;
+  // PPK mengetahui + kisaran biaya
+  const canPPK = (status) => {
+    if (isAdmin) return status === STATUS.MENUNGGU_PPK;
+    return isPPK && status === STATUS.MENUNGGU_PPK;
   };
 
-  const canSelesaikanPerbaikan = (status) => {
+  // PIC/Admin mencatat perbaikan selesai
+  const canCatatPerbaikan = (status) => {
     if (isAdmin) return status === STATUS.DALAM_PERBAIKAN;
     return isPICRuangan && status === STATUS.DALAM_PERBAIKAN;
   };
 
+  // Kabag TU konfirmasi
+  const canKonfirmasiKabag = (status) => {
+    if (isAdmin) return status === STATUS.MENUNGGU_KONFIRMASI_KABAG;
+    return isKabagTU && status === STATUS.MENUNGGU_KONFIRMASI_KABAG;
+  };
+
+  // User (pelapor) konfirmasi akhir
+  const canKonfirmasiUser = (row) => {
+    if (isAdmin) return row?.status === STATUS.MENUNGGU_KONFIRMASI_USER;
+    if (!row) return false;
+    const userId = session?.user?.id || session?.user?.sub;
+    const isOwner = String(row.pelapor_id) === String(userId);
+    return isOwner && row.status === STATUS.MENUNGGU_KONFIRMASI_USER;
+  };
+
   const getStatusConfig = (status) => {
     const configs = {
-      'draft': { label: 'Draft', icon: <ScheduleIcon />, bgColor: '#9e9e9e', textColor: '#ffffff' },
-      'menunggu_verifikasi_pic': { label: 'Menunggu Verifikasi PIC', icon: <WarningIcon />, bgColor: '#ed6c02', textColor: '#ffffff' },
-      'menunggu_verifikasi_ppk': { label: 'Menunggu Verifikasi PPK', icon: <AttachMoneyIcon />, bgColor: '#0288d1', textColor: '#ffffff' },
-      'diverifikasi_pic': { label: 'Diverifikasi PIC', icon: <CheckCircleIcon />, bgColor: '#2e7d32', textColor: '#ffffff' },
-      'diverifikasi_ppk': { label: 'Diverifikasi PPK', icon: <CheckCircleIcon />, bgColor: '#2e7d32', textColor: '#ffffff' },
-      'menunggu_disposisi': { label: 'Menunggu Disposisi', icon: <AssignmentIcon />, bgColor: '#9c27b0', textColor: '#ffffff' },
-      'diteruskan': { label: 'Diteruskan ke Kabag TU', icon: <ArrowForwardIcon />, bgColor: '#ed6c02', textColor: '#ffffff' },
-      'didisposisi': { label: 'Didisposisi ke PPK', icon: <PersonIcon />, bgColor: '#1976d2', textColor: '#ffffff' },
+      'diajukan': { label: 'Diajukan', icon: <ScheduleIcon />, bgColor: '#ed6c02', textColor: '#ffffff' },
+      'menunggu_katim': { label: 'Menunggu Katim', icon: <WarningIcon />, bgColor: '#0288d1', textColor: '#ffffff' },
+      'menunggu_ppk': { label: 'Menunggu PPK', icon: <AttachMoneyIcon />, bgColor: '#7b1fa2', textColor: '#ffffff' },
       'dalam_perbaikan': { label: 'Dalam Perbaikan', icon: <BuildIcon />, bgColor: '#ed6c02', textColor: '#ffffff' },
+      'menunggu_konfirmasi_kabag': { label: 'Menunggu Konfirmasi Kabag TU', icon: <AssignmentIcon />, bgColor: '#1976d2', textColor: '#ffffff' },
+      'menunggu_konfirmasi_user': { label: 'Menunggu Konfirmasi User', icon: <PersonIcon />, bgColor: '#9c27b0', textColor: '#ffffff' },
       'selesai': { label: 'Selesai', icon: <DoneAllIcon />, bgColor: '#2e7d32', textColor: '#ffffff' },
       'ditolak': { label: 'Ditolak', icon: <ErrorIcon />, bgColor: '#d32f2f', textColor: '#ffffff' },
     };
@@ -841,23 +797,43 @@ const LaporanRusakTable = ({
 
           {selectedRow && canVerifikasi(selectedRow.status) && (
             <MenuItem onClick={() => handleAction('verifikasi')}>
-              <ListItemIcon>
-                <CheckCircleIcon fontSize="small" color={isAdmin ? "primary" : "success"} />
-              </ListItemIcon>
-              <ListItemText>
-                {isAdmin ? 'Verifikasi (Admin)' : 'Verifikasi Laporan'}
-              </ListItemText>
+              <ListItemIcon><CheckCircleIcon fontSize="small" color={isAdmin ? 'primary' : 'success'} /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Cek Fisik (Admin)' : 'Cek Fisik BMN'}</ListItemText>
             </MenuItem>
           )}
 
-          {selectedRow && canDisposisi(selectedRow.status) && (
-            <MenuItem onClick={() => handleAction('disposisi')}>
-              <ListItemIcon>
-                <SupervisorAccountIcon fontSize="small" color="warning" />
-              </ListItemIcon>
-              <ListItemText>
-                {isAdmin ? 'Disposisi (Admin)' : 'Disposisi ke PPK'}
-              </ListItemText>
+          {selectedRow && canKatimKirim(selectedRow.status) && (
+            <MenuItem onClick={() => handleAction('katim-kirim')}>
+              <ListItemIcon><SupervisorAccountIcon fontSize="small" color="warning" /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Kirim ke PPK (Admin)' : 'Kirim ke PPK'}</ListItemText>
+            </MenuItem>
+          )}
+
+          {selectedRow && canPPK(selectedRow.status) && (
+            <MenuItem onClick={() => handleAction('ppk')}>
+              <ListItemIcon><AttachMoneyIcon fontSize="small" color="success" /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Verifikasi PPK (Admin)' : 'Verifikasi PPK'}</ListItemText>
+            </MenuItem>
+          )}
+
+          {selectedRow && canCatatPerbaikan(selectedRow.status) && (
+            <MenuItem onClick={() => handleAction('catat-perbaikan')}>
+              <ListItemIcon><CheckCircleOutlineIcon fontSize="small" color="success" /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Catat Perbaikan (Admin)' : 'Catat Perbaikan Selesai'}</ListItemText>
+            </MenuItem>
+          )}
+
+          {selectedRow && canKonfirmasiKabag(selectedRow.status) && (
+            <MenuItem onClick={() => handleAction('konfirmasi-kabag')}>
+              <ListItemIcon><AssignmentIcon fontSize="small" color="primary" /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Konfirmasi Kabag TU (Admin)' : 'Konfirmasi Perbaikan'}</ListItemText>
+            </MenuItem>
+          )}
+
+          {selectedRow && canKonfirmasiUser(selectedRow) && (
+            <MenuItem onClick={() => handleAction('konfirmasi-user')}>
+              <ListItemIcon><DoneAllIcon fontSize="small" color="success" /></ListItemIcon>
+              <ListItemText>{isAdmin ? 'Konfirmasi User (Admin)' : 'Konfirmasi Selesai'}</ListItemText>
             </MenuItem>
           )}
 
@@ -868,26 +844,12 @@ const LaporanRusakTable = ({
             </MenuItem>
           )}
 
-          {selectedRow && canVerifikasiPPK(selectedRow.status) && (
-            <MenuItem onClick={() => handleAction('verifikasi-ppk')}>
-              <ListItemIcon><AttachMoneyIcon fontSize="small" color="success" /></ListItemIcon>
-              <ListItemText>{isAdmin ? 'Verifikasi PPK (Admin)' : 'Verifikasi PPK'}</ListItemText>
-            </MenuItem>
-          )}
-
-          {selectedRow && canSelesaikanPerbaikan(selectedRow.status) && (
-            <MenuItem onClick={() => handleAction('selesai-perbaikan')} disabled={!onSelesaiPerbaikan}>
-              <ListItemIcon><CheckCircleOutlineIcon fontSize="small" color={onSelesaiPerbaikan ? 'success' : 'disabled'} /></ListItemIcon>
-              <ListItemText>{isAdmin ? 'Selesaikan Perbaikan (Admin)' : 'Selesaikan Perbaikan'}</ListItemText>
-            </MenuItem>
-          )}
-
           <Divider />
 
           {selectedRow && canDelete(selectedRow) && (
             <MenuItem onClick={() => handleAction('delete')} sx={{ color: theme.palette.error.main }}>
               <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
-              <ListItemText>Hapus (Admin)</ListItemText>
+              <ListItemText>Hapus</ListItemText>
             </MenuItem>
           )}
         </Menu>

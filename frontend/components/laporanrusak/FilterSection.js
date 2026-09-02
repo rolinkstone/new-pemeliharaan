@@ -35,14 +35,12 @@ const FilterSection = ({ filters, onFilterChange }) => {
   const [asetOptions, setAsetOptions] = useState([]);
 
   const statusOptions = [
-    { value: 'draft', label: 'Draft' },
-    { value: 'menunggu_verifikasi_pic', label: 'Menunggu Verifikasi PIC' },
-    { value: 'menunggu_verifikasi_ppk', label: 'Menunggu Verifikasi PPK' },
-    { value: 'diverifikasi_pic', label: 'Diverifikasi PIC' },
-    { value: 'diverifikasi_ppk', label: 'Diverifikasi PPK' },
-    { value: 'menunggu_disposisi', label: 'Menunggu Disposisi' },
-    { value: 'didisposisi', label: 'Didisposisi' },
+    { value: 'diajukan', label: 'Diajukan' },
+    { value: 'menunggu_katim', label: 'Menunggu Katim' },
+    { value: 'menunggu_ppk', label: 'Menunggu PPK' },
     { value: 'dalam_perbaikan', label: 'Dalam Perbaikan' },
+    { value: 'menunggu_konfirmasi_kabag', label: 'Menunggu Konfirmasi Kabag TU' },
+    { value: 'menunggu_konfirmasi_user', label: 'Menunggu Konfirmasi User' },
     { value: 'selesai', label: 'Selesai' },
     { value: 'ditolak', label: 'Ditolak' },
   ];
