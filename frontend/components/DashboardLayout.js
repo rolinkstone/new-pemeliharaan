@@ -8,7 +8,7 @@ import {
   FaMapMarkerAlt, FaDatabase, FaChartLine, FaDoorOpen,   
   FaUserTie, FaChevronDown, FaChevronUp, FaBox, FaBuilding, FaLocationArrow,
   FaShieldAlt, FaBell, FaSearch, FaWarehouse, FaCheckCircle, FaClock, FaInfoCircle,
-  FaFlask, FaClipboardList, FaSignInAlt, FaShareSquare
+  FaFlask, FaClipboardList, FaSignInAlt, FaShareSquare, FaVial
 } from 'react-icons/fa';
 import { useSession, signOut } from 'next-auth/react';
 import notificationsApi from '../utils/notificationsApi';
@@ -49,6 +49,7 @@ const menuItems = [
     children: [
       { label: 'Persediaan ATK', href: '/persediaan', icon: FaBox, color: 'from-amber-500 to-orange-500' },
       { label: 'Persediaan Reagen', href: '/persediaan/reagen', icon: FaFlask, color: 'from-violet-500 to-purple-500' },
+      { label: 'Persediaan Glassware', href: '/persediaan/glassware', icon: FaVial, color: 'from-cyan-500 to-sky-500' },
     ],
   },
   {
@@ -581,6 +582,7 @@ export default function DashboardLayout({ children }) {
                   {router.pathname === '/laporanrusak' && 'Laporan Barang Rusak'}
                   {router.pathname === '/persediaan' && 'Persediaan ATK'}
                   {router.pathname === '/persediaan/reagen' && 'Persediaan Reagen'}
+                  {router.pathname === '/persediaan/glassware' && 'Persediaan Glassware'}
                 </h1>
                 <p className="text-[11px] text-gray-400 dark:text-white/30 mt-0.5">
                   {router.pathname === '/' && 'Overview & Statistik Sistem'}
@@ -591,6 +593,7 @@ export default function DashboardLayout({ children }) {
                   {router.pathname === '/laporanrusak' && 'Kelola laporan kerusakan aset'}
                   {router.pathname === '/persediaan' && 'Kelola stok ATK, barang masuk, permintaan, dan opname'}
                   {router.pathname === '/persediaan/reagen' && 'Kelola reagen: stok gudang, kadaluarsa, pengeluaran ke LAB, dan pemakaian per gram'}
+                  {router.pathname === '/persediaan/glassware' && 'Stok opname glassware per laboratorium (Kuantitatif / Kualitatif)'}
                 </p>
               </div>
             </div>

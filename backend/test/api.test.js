@@ -45,6 +45,7 @@ function buildApp({ authed = true } = {}) {
 
   app.use('/api/reagen', require('../routes/reagen'));
   app.use('/api/persediaan', require('../routes/persediaan'));
+  app.use('/api/glassware', require('../routes/glassware'));
 
   return app;
 }
@@ -106,6 +107,12 @@ describe('🔒 Route terproteksi TANPA token (harus 401)', function () {
     '/api/persediaan/opname/mutasi',
     '/api/persediaan/movement',
     '/api/persediaan/barang-masuk/merge',
+    '/api/glassware/laboratorium',
+    '/api/glassware/periode',
+    '/api/glassware/stok',
+    '/api/glassware/masuk',
+    '/api/glassware/pecah',
+    '/api/glassware/movement',
   ];
 
   endpoints.forEach((url) => {
@@ -133,6 +140,8 @@ describe('✅ Route terproteksi sebagai admin (harus 200 + success)', function (
     '/api/persediaan/opname',
     '/api/persediaan/opname/mutasi',
     '/api/persediaan/movement',
+    '/api/glassware/laboratorium',
+    '/api/glassware/periode',
   ];
 
   endpoints.forEach((url) => {
@@ -256,5 +265,82 @@ describe('🧾 Barang Masuk — foto_url & merge lampiran (PDF)', function () {
 
     const r2 = await request(app).get('/api/reagen/reagen/masuk/merge?nota=/uploads/not-exist-a.jpg&foto=/uploads/not-exist-b.jpg');
     assert.strictEqual(r2.status, 404, `Reagen merge file hilang harus 404, dapat ${r2.status}`);
+  });
+});
+
+// ============================================================
+describe('🫙 Persediaan Glassware (stok opname lab)', function () {
+  const app = buildApp({ authed: true });
+
+  it('laboratorium & jenis terisi', async function () {
+    const lab = await request(app).get('/api/glassware/laboratorium');
+    assert.strictEqual(lab.status, 200);
+    assert.ok(Array.isArray(lab.body.data) && lab.body.data.length === 4, 'harus ada 4 laboratorium');
+
+    const jenis = await request(app).get('/api/glassware/jenis');
+    assert.strictEqual(jenis.status, 200);
+    assert.ok(Array.isArray(jenis.body.data) && jenis.body.data.length === 2, 'harus ada 2 jenis');
+  });
+
+  it('periode mengembalikan tanggal YYYY-MM-DD', async function () {
+    const res = await request(app).get('/api/glassware/periode');
+    assert.strictEqual(res.status, 200);
+    const p = res.body.data && res.body.data[0];
+    assert.ok(p, 'harus ada minimal 1 periode');
+    assert.ok(/^\d{4}-\d{2}-\d{2}$/.test(p.tanggal), `tanggal periode tidak valid: ${p.tanggal}`);
+  });
+
+  it('stok per lab+jenis benar (MIKRO kuant 75, kual 165)', async function () {
+    const q = { periode_id: 1, lab: 1 };
+    const kuant = await request(app).get('/api/glassware/stok').query({ ...q, jenis: 1 });
+    assert.strictEqual(kuant.status, 200);
+    assert.strictEqual(kuant.body.data.length, 75, `MIKRO kuantitatif harus 75, dapat ${kuant.body.data.length}`);
+
+    const kual = await request(app).get('/api/glassware/stok').query({ ...q, jenis: 2 });
+    assert.strictEqual(kual.status, 200);
+    assert.strictEqual(kual.body.data.length, 165, `MIKRO kualitatif harus 165, dapat ${kual.body.data.length}`);
+  });
+
+  it('transaksi masuk & pecah: tambah -> list -> hapus', async function () {
+    const g = await request(app).get('/api/glassware/stok').query({ periode_id: 1, lab: 1, jenis: 1 });
+    const item = g.body.data[0];
+
+    const addM = await request(app).post('/api/glassware/masuk').send({ periode_id: 1, laboratorium_id: 1, glassware_id: item.glassware_id, tanggal: '2026-03-10', jumlah: 4, keterangan: 'test' });
+    assert.strictEqual(addM.status, 200, JSON.stringify(addM.body));
+
+    const addP = await request(app).post('/api/glassware/pecah').send({ periode_id: 1, laboratorium_id: 1, glassware_id: item.glassware_id, tanggal: '2026-05-01', jumlah: 1, keterangan: 'test' });
+    assert.strictEqual(addP.status, 200, JSON.stringify(addP.body));
+
+    const listM = await request(app).get('/api/glassware/masuk').query({ periode_id: 1, lab: 1, jenis: 1 });
+    assert.strictEqual(listM.status, 200);
+    assert.ok(listM.body.data.some(r => r.id === addM.body.data.id), 'barang masuk baru harus ada di list');
+
+    const listP = await request(app).get('/api/glassware/pecah').query({ periode_id: 1, lab: 1, jenis: 1 });
+    assert.strictEqual(listP.status, 200);
+    assert.ok(listP.body.data.some(r => r.id === addP.body.data.id), 'pecah baru harus ada di list');
+
+    // Pecah melebihi stok harus ditolak (stok tidak boleh negatif)
+    const bad = await request(app).post('/api/glassware/pecah').send({ periode_id: 1, laboratorium_id: 1, glassware_id: item.glassware_id, tanggal: '2026-05-02', jumlah: 999999, keterangan: 'test' });
+    assert.strictEqual(bad.status, 400, `pecah berlebih harus 400, dapat ${bad.status}`);
+
+    // Bersihkan data test
+    await request(app).delete(`/api/glassware/masuk/${addM.body.data.id}`);
+    await request(app).delete(`/api/glassware/pecah/${addP.body.data.id}`);
+  });
+
+  it('movement (tidak bergerak) per lab+jenis', async function () {
+    const res = await request(app).get('/api/glassware/movement').query({ lab: 1, jenis: 1 });
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(res.body.data) && res.body.data.length === 75, `harus 75, dapat ${res.body.data && res.body.data.length}`);
+    const r = res.body.data[0];
+    assert.ok(r.nama_barang && r.kode_barang, 'row harus punya nama & kode');
+    assert.ok(typeof r.pernah_bergerak === 'boolean', 'pernah_bergerak harus boolean');
+    if (r.pernah_bergerak) assert.ok(r.last_movement, 'pernah bergerak harus punya last_movement');
+    if (!r.pernah_bergerak) assert.strictEqual(r.hari_tidak_bergerak, null);
+  });
+
+  it('hapus periode tidak ada -> 404 (tidak crash)', async function () {
+    const res = await request(app).delete('/api/glassware/periode/999999');
+    assert.strictEqual(res.status, 404, `harus 404, dapat ${res.status}`);
   });
 });
