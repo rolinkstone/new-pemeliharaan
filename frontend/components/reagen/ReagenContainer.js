@@ -19,6 +19,7 @@ import * as api from './api/reagenApi';
 import PolishedPageShell from '../common/PolishedPageShell';
 import ConfirmDialog from '../common/ConfirmDialog';
 import RejectDialog from '../common/RejectDialog';
+import MovementSummaryCard from '../common/MovementSummaryCard';
 import KirimKeKatimModal from './modals/KirimKeKatimModal';
 import ImportStokModal from './modals/ImportStokModal';
 import { formatDateForDisplay } from '../../utils/formatters';
@@ -109,6 +110,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
   const [pemakaianList, setPemakaianList] = useState([]);
   const [opnameList, setOpnameList] = useState([]);
   const [mutasiList, setMutasiList] = useState([]);
+  const [movementList, setMovementList] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({ search: '', kategori: '', lab: '' });
@@ -179,7 +181,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
       if (mutasiDateRange.mulai) opnameParams.tanggal_mulai = mutasiDateRange.mulai;
       if (mutasiDateRange.akhir) opnameParams.tanggal_akhir = mutasiDateRange.akhir;
 
-      const [reagen, stok, masuk, pengeluaran, lab, pemakaian, opname, mutasi] = await Promise.all([
+      const [reagen, stok, masuk, pengeluaran, lab, pemakaian, opname, mutasi, movement] = await Promise.all([
         api.fetchReagen(session, params),
         api.fetchStokGudang(session, stokParams),
         api.fetchMasuk(session),
@@ -188,6 +190,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
         api.fetchPemakaianLab(session, filters.lab ? { lab_tujuan: filters.lab } : {}),
         api.fetchOpname(session, opnameParams),
         api.fetchMutasiStok(session, opnameParams),
+        api.fetchMovement(session),
       ]);
       if (reagen.success) {
         setReagenList(reagen.data);
@@ -200,6 +203,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
       if (pemakaian.success) setPemakaianList(pemakaian.data);
       if (opname.success) setOpnameList(opname.data);
       if (mutasi.success) setMutasiList(mutasi.data);
+      if (movement.success) setMovementList(movement.data);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -292,10 +296,10 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
   // ========== BARANG MASUK ==========
   const [masukOpen, setMasukOpen] = useState(false);
   const [masukUploading, setMasukUploading] = useState(false);
-  const [masukForm, setMasukForm] = useState({ reagen_id: '', no_batch: '', jumlah_botol: '', tanggal_kadaluarsa: '', kuitansi_url: '', catatan: '', tanggal_pembelian: '' });
+  const [masukForm, setMasukForm] = useState({ reagen_id: '', no_batch: '', jumlah_botol: '', tanggal_kadaluarsa: '', kuitansi_url: '', foto_url: '', catatan: '', tanggal_pembelian: '' });
 
   const openMasukModal = () => {
-    setMasukForm({ reagen_id: '', no_batch: '', jumlah_botol: '', tanggal_kadaluarsa: '', kuitansi_url: '', catatan: '', tanggal_pembelian: new Date().toISOString().split('T')[0] });
+    setMasukForm({ reagen_id: '', no_batch: '', jumlah_botol: '', tanggal_kadaluarsa: '', kuitansi_url: '', foto_url: '', catatan: '', tanggal_pembelian: new Date().toISOString().split('T')[0] });
     setMasukUploading(false);
     setMasukOpen(true);
   };
@@ -316,6 +320,55 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
       showSnackbar(e?.response?.data?.message || e.message, 'error');
     } finally {
       setMasukUploading(false);
+    }
+  };
+
+  const handleMasukFotoUpload = async (file) => {
+    if (!file) return;
+    setMasukUploading(true);
+    try {
+      const res = await api.uploadFile(session, file);
+      if (res?.success && res.data?.[0]?.url) {
+        const url = `${api.BACKEND_HOST}${res.data[0].url}`;
+        setMasukForm(prev => ({ ...prev, foto_url: url }));
+        showSnackbar('Foto barang berhasil diupload', 'success');
+      } else showSnackbar('Gagal upload foto barang', 'error');
+    } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
+    finally { setMasukUploading(false); }
+  };
+
+  const downloadBlob = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadMasukMerge = async (nota, foto) => {
+    if (!nota && !foto) return;
+    try {
+      const blob = await api.downloadMasukMerge(session, { nota: nota || '', foto: foto || '' });
+      downloadBlob(blob, `lampiran-masuk-reagen-${new Date().toISOString().slice(0, 10)}.pdf`);
+      showSnackbar('Lampiran berhasil diunduh (PDF gabungan)', 'success');
+    } catch (e) {
+      let msg = 'Gagal menggabungkan/mengunduh lampiran';
+      try {
+        const d = e?.response?.data;
+        if (d && typeof d.text === 'function') {
+          const txt = await d.text();
+          try { const j = JSON.parse(txt); if (j?.message) msg = j.message; }
+          catch (_) { if (txt) msg = txt.slice(0, 300); }
+        } else if (e?.response?.data?.message) {
+          msg = e.response.data.message;
+        } else if (e?.message) {
+          msg = e.message;
+        }
+      } catch (_) {}
+      showSnackbar(msg, 'error');
     }
   };
 
@@ -611,6 +664,15 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
         </Box>
       }
     >
+      {(isPicGudang || isKabagTu) && (
+        <MovementSummaryCard
+          rows={movementList}
+          loading={loading}
+          title="Pemantauan Reagen Tidak Bergerak"
+          emptyText="Tidak ada reagen tanpa pergerakan"
+        />
+      )}
+
       {/* TABS */}
       <Box sx={{ mb: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         {tabs.map((t, i) => canSeeTab(i) ? <TabButton key={i} idx={i} label={t} /> : null)}
@@ -833,6 +895,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
                   <TableCell>Tgl Kadaluarsa</TableCell>
                   <TableCell align="right">Jumlah (Botol)</TableCell>
                   <TableCell>Penginput</TableCell>
+                  <TableCell>Lampiran</TableCell>
                   {isAdminPemeliharaan && <TableCell align="center">Aksi</TableCell>}
                 </TableRow>
               </TableHead>
@@ -849,6 +912,22 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
                     <TableCell><ExpiryChip date={m.tanggal_kadaluarsa} /></TableCell>
                     <TableCell align="right"><Typography variant="body2" fontWeight={600}>{m.jumlah_botol} botol</Typography></TableCell>
                     <TableCell>{m.created_by}</TableCell>
+                    <TableCell>
+                      <Box display="flex" alignItems="center" gap={0.5} flexWrap="wrap">
+                        {m.kuitansi_url ? (
+                          <a href={m.kuitansi_url.startsWith('/uploads') ? `${api.BACKEND_HOST}${m.kuitansi_url}` : m.kuitansi_url} target="_blank" rel="noreferrer">
+                            <Chip icon={<DownloadIcon />} label="Nota" size="small" clickable color="primary" variant="outlined" />
+                          </a>
+                        ) : null}
+                        {(m.kuitansi_url || m.foto_url) && (
+                          <Tooltip title="Download gabungan Nota + Foto (PDF)">
+                            <IconButton size="small" color="success" onClick={() => handleDownloadMasukMerge(m.kuitansi_url, m.foto_url)}>
+                              <DownloadIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </Box>
+                    </TableCell>
                     {isAdminPemeliharaan && (
                       <TableCell align="center">
                         <Tooltip title="Hapus"><IconButton size="small" onClick={() => handleDeleteMasuk(m.id)} sx={{ color: '#ef4444' }}><DeleteIcon fontSize="small" /></IconButton></Tooltip>
@@ -857,7 +936,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
                   </TableRow>
                 ))}
                 {masukList.length === 0 && !loading && (
-                  <TableRow><TableCell colSpan={isAdminPemeliharaan ? 8 : 7} align="center" sx={{ py: 4, color: '#94a3b8' }}>Belum ada barang masuk</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={isAdminPemeliharaan ? 9 : 8} align="center" sx={{ py: 4, color: '#94a3b8' }}>Belum ada barang masuk</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -1374,8 +1453,31 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
               </Box>
             </Box>
 
+            {/* Upload Foto Barang */}
+            <Box sx={{ p: 2, bgcolor: '#fff7ed', borderRadius: 2, border: '1px dashed', borderColor: '#fdba74' }}>
+              <Typography variant="subtitle2" gutterBottom fontWeight={600}>2. Upload Foto Barang</Typography>
+              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+                <Button variant="contained" color="warning" component="label" disabled={masukUploading}>
+                  {masukUploading ? 'Mengupload...' : 'Pilih Foto'}
+                  <input type="file" hidden accept="image/*" onChange={(e) => { if (e.target.files[0]) handleMasukFotoUpload(e.target.files[0]); e.target.value = ''; }} />
+                </Button>
+                {masukUploading && <CircularProgress size={20} />}
+                {masukForm.foto_url && (
+                  <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                    <Chip icon={<CheckCircleIcon />} label="Foto terupload" color="success" size="small" />
+                    <a href={masukForm.foto_url} target="_blank" rel="noreferrer">
+                      <Button size="small" startIcon={<DownloadIcon />}>Lihat</Button>
+                    </a>
+                    <IconButton size="small" onClick={() => setMasukForm(prev => ({ ...prev, foto_url: '' }))} sx={{ color: '#ef4444' }}>
+                      <CancelIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+
             {/* Detail Stok */}
-            <Typography variant="subtitle2" fontWeight={600}>2. Detail Stok Reagen</Typography>
+            <Typography variant="subtitle2" fontWeight={600}>3. Detail Stok Reagen</Typography>
             <Autocomplete
               size="small"
               options={allReagen}

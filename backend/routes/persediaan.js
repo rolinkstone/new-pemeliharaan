@@ -5,6 +5,7 @@ const fs = require('fs');
 const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { getUsernameFromToken, hasRole } = require('../utils/routeHelpers');
+const { mergeFilesToPdf, safeFileName } = require('../utils/pdfMerge');
 let XLSX = null;
 try { XLSX = require('xlsx-js-style'); } catch (e) {
     try { XLSX = require('xlsx'); } catch (e2) { console.log('⚠️ xlsx not installed, upload disabled'); }
@@ -433,7 +434,7 @@ router.post('/barang-masuk', keycloakAuth, async (req, res) => {
     const conn = await db.pool.getConnection();
     try {
         await conn.beginTransaction();
-        const { barang_id, jumlah, kuitansi_url, catatan, tanggal_pembelian } = req.body;
+        const { barang_id, jumlah, kuitansi_url, foto_url, catatan, tanggal_pembelian } = req.body;
         if (!barang_id || !jumlah || !kuitansi_url) {
             await conn.rollback(); conn.release();
             return res.status(400).json({ success: false, message: 'Barang, jumlah, dan kuitansi wajib diisi' });
@@ -441,8 +442,8 @@ router.post('/barang-masuk', keycloakAuth, async (req, res) => {
         const username = getUsername(req);
         // Insert record
         await conn.query(
-            'INSERT INTO barang_masuk (barang_id, jumlah, kuitansi_url, catatan, status, created_by, tanggal_pembelian) VALUES (?, ?, ?, ?, "disetujui", ?, ?)',
-            [barang_id, jumlah, kuitansi_url, catatan || '', username, tanggal_pembelian || null]
+            'INSERT INTO barang_masuk (barang_id, jumlah, kuitansi_url, foto_url, catatan, status, created_by, tanggal_pembelian) VALUES (?, ?, ?, ?, ?, "disetujui", ?, ?)',
+            [barang_id, jumlah, kuitansi_url, foto_url || '', catatan || '', username, tanggal_pembelian || null]
         );
         // Langsung tambah stok
         await conn.query('UPDATE barang_persediaan SET saldo = saldo + ? WHERE id=?', [jumlah, barang_id]);
@@ -465,7 +466,7 @@ router.post('/barang-masuk/batch', keycloakAuth, async (req, res) => {
     const conn = await db.pool.getConnection();
     try {
         await conn.beginTransaction();
-        const { kuitansi_url, items, catatan_global, tanggal_pembelian } = req.body;
+        const { kuitansi_url, foto_url, items, catatan_global, tanggal_pembelian } = req.body;
         if (!kuitansi_url || !items || !Array.isArray(items) || items.length === 0) {
             await conn.rollback(); conn.release();
             return res.status(400).json({ success: false, message: 'Kuitansi dan daftar barang wajib diisi' });
@@ -475,8 +476,8 @@ router.post('/barang-masuk/batch', keycloakAuth, async (req, res) => {
         for (const item of items) {
             if (!item.barang_id || !item.jumlah) continue;
             await conn.query(
-                'INSERT INTO barang_masuk (barang_id, jumlah, kuitansi_url, catatan, status, created_by, tanggal_pembelian) VALUES (?, ?, ?, ?, "disetujui", ?, ?)',
-                [item.barang_id, item.jumlah, kuitansi_url, item.catatan || catatan_global || '', username, tanggal_pembelian || null]
+                'INSERT INTO barang_masuk (barang_id, jumlah, kuitansi_url, foto_url, catatan, status, created_by, tanggal_pembelian) VALUES (?, ?, ?, ?, ?, "disetujui", ?, ?)',
+                [item.barang_id, item.jumlah, kuitansi_url, foto_url || '', item.catatan || catatan_global || '', username, tanggal_pembelian || null]
             );
             // Langsung tambah stok
             await conn.query('UPDATE barang_persediaan SET saldo = saldo + ? WHERE id=?', [item.jumlah, item.barang_id]);
@@ -490,6 +491,32 @@ router.post('/barang-masuk/batch', keycloakAuth, async (req, res) => {
         res.status(500).json({ success: false, message: 'Gagal', error: error.message });
     } finally {
         conn.release();
+    }
+});
+
+// GET download gabungan nota/kuitansi + foto barang masuk -> SATU file PDF
+router.get('/barang-masuk/merge', keycloakAuth, async (req, res) => {
+    try {
+        const { nota, foto } = req.query;
+        const urls = [nota, foto].filter(Boolean);
+        if (urls.length === 0) {
+            return res.status(400).json({ success: false, message: 'Parameter nota/foto wajib diisi' });
+        }
+        const uploadsDir = path.join(__dirname, '../uploads');
+        const files = urls
+            .map(u => path.join(uploadsDir, safeFileName(u)))
+            .filter(fp => fs.existsSync(fp));
+        if (files.length === 0) {
+            return res.status(404).json({ success: false, message: 'File lampiran tidak ditemukan' });
+        }
+        const pdf = await mergeFilesToPdf(files);
+        const today = new Date().toISOString().slice(0, 10);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="lampiran-barang-masuk-${today}.pdf"`);
+        res.send(pdf);
+    } catch (error) {
+        console.error('Error merge barang masuk:', error);
+        res.status(500).json({ success: false, message: 'Gagal menggabungkan lampiran', error: error.message });
     }
 });
 
@@ -1170,6 +1197,74 @@ router.post('/opname', keycloakAuth, async (req, res) => {
         res.status(500).json({ success: false, message: 'Gagal mencatat opname', error: error.message });
     } finally {
         conn.release();
+    }
+});
+
+// ========== PEMANTAUAN BARANG TIDAK BERGERAK ==========
+// Mendeteksi barang yang tidak mengalami pergerakan masuk/keluar dalam jangka waktu lama
+// (mis. 6 bulan / 1 tahun). Setiap barang dikembalikan lengkap beserta tanggal terakhir
+// masuk/keluar & jumlah hari tanpa pergerakan, sehingga frontend bisa memfilter.
+router.get('/movement', keycloakAuth, async (req, res) => {
+    try {
+        // Semua master barang persediaan
+        const [semuaBarang] = await db.query(
+            'SELECT id, nama_barang, jenis, kategori, satuan, saldo FROM barang_persediaan ORDER BY nama_barang ASC'
+        );
+
+        // Tanggal terakhir MASUK (hanya yang disetujui = stok bertambah)
+        const [masukRows] = await db.query(
+            `SELECT barang_id, DATE_FORMAT(MAX(tanggal_pembelian), '%Y-%m-%d') AS last_masuk
+             FROM barang_masuk WHERE status = 'disetujui' GROUP BY barang_id`
+        );
+        const masukMap = {};
+        masukRows.forEach(r => { masukMap[r.barang_id] = r.last_masuk; });
+
+        // Tanggal terakhir KELUAR (status yang sudah mengurangi stok)
+        const [keluarRows] = await db.query(
+            `SELECT barang_id, DATE_FORMAT(MAX(delivered_at), '%Y-%m-%d') AS last_keluar
+             FROM permintaan_barang
+             WHERE status IN ('diserahkan','diserahkan_sebagian','disetujui_kabag')
+             GROUP BY barang_id`
+        );
+        const keluarMap = {};
+        keluarRows.forEach(r => { keluarMap[r.barang_id] = r.last_keluar; });
+
+        // Hari ini (UTC, agar selisih hari konsisten tanpa pengaruh timezone)
+        const now = new Date();
+        const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        const parseUTC = (s) => {
+            const p = String(s).split('-').map(Number);
+            return Date.UTC(p[0], p[1] - 1, p[2]);
+        };
+        const diffDays = (dateStr) => {
+            try { return Math.max(0, Math.floor((todayUTC - parseUTC(dateStr)) / 86400000)); }
+            catch (e) { return null; }
+        };
+
+        const data = semuaBarang.map(b => {
+            const lastMasuk = masukMap[b.id] || null;
+            const lastKeluar = keluarMap[b.id] || null;
+            // Pergerakan terakhir = tanggal terbaru antara masuk & keluar
+            const lastMovement = [lastMasuk, lastKeluar].filter(Boolean).sort().pop() || null;
+            return {
+                id: b.id,
+                nama_barang: b.nama_barang,
+                jenis: b.jenis,
+                kategori: b.kategori,
+                satuan: b.satuan,
+                stok: Number(b.saldo) || 0,
+                last_masuk: lastMasuk,
+                last_keluar: lastKeluar,
+                last_movement: lastMovement,
+                hari_tidak_bergerak: lastMovement ? diffDays(lastMovement) : null,
+                pernah_bergerak: !!lastMovement,
+            };
+        });
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetch movement:', error);
+        res.status(500).json({ success: false, message: 'Gagal mengambil data pemantauan barang tidak bergerak', error: error.message });
     }
 });
 

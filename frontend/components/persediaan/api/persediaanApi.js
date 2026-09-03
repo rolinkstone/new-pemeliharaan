@@ -134,6 +134,11 @@ export const fetchMutasiStok = async (session, params = {}) => {
   return data;
 };
 
+export const fetchMovement = async (session) => {
+  const { data } = await axios.get(`${API_URL}/movement`, { headers: getHeaders(session) });
+  return data;
+};
+
 export const createOpname = async (session, body) => {
   const { data } = await axios.post(`${API_URL}/opname`, body, { headers: getHeaders(session) });
   return data;
@@ -169,4 +174,14 @@ export const importXLSX = async (session, file) => {
     reader.onerror = () => reject(new Error('Gagal membaca file'));
     reader.readAsDataURL(file);
   });
+};
+
+// ========== MERGE LAMPIRAN BARANG MASUK (nota + foto -> 1 PDF) ==========
+export const downloadBarangMasukMerge = async (session, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/barang-masuk/merge`, {
+    headers: { Authorization: `Bearer ${session?.accessToken}` },
+    params,
+    responseType: 'blob',
+  });
+  return data;
 };

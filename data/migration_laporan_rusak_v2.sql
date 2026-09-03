@@ -50,12 +50,3 @@ ALTER TABLE laporan_rusak
 -- 4. Tambahkan kolom catatan pada detail_perbaikan (dipakai saat mencatat perbaikan selesai)
 ALTER TABLE detail_perbaikan
   ADD COLUMN catatan TEXT DEFAULT NULL AFTER no_kontrak;
-
--- 3. Arsipkan laporan lama yang masih berjalan (status lama tidak ada lagi di enum baru)
---    Laporan yang sudah selesai/ditolak tetap dipertahankan.
-UPDATE laporan_rusak
-  SET status = 'ditolak'
-  WHERE status NOT IN ('selesai', 'ditolak');
-
--- 4. Perbaikan detail perbaikan agar status bisa menandai tahap konfirmasi
---    (tabel detail_perbaikan tetap dipakai untuk mencatat hasil perbaikan)

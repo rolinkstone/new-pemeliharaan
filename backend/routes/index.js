@@ -23,6 +23,7 @@ const routeModules = [
     { name: 'upload', path: '/upload', file: './upload' },
     { name: 'persediaan', path: '/persediaan', file: './persediaan' },
     { name: 'reagen', path: '/reagen', file: './reagen' },
+    { name: 'pencatatan', path: '/pencatatan', file: './pencatatan' },
     { name: 'notifications', path: '/notifications', file: './notifications' }
 ];
 

@@ -151,6 +151,11 @@ export const fetchMutasiStok = async (session, params = {}) => {
   return data;
 };
 
+export const fetchMovement = async (session) => {
+  const { data } = await axios.get(`${API_URL}/reagen/movement`, { headers: getHeaders(session) });
+  return data;
+};
+
 export const createOpname = async (session, body) => {
   const { data } = await axios.post(`${API_URL}/reagen/opname`, body, { headers: getHeaders(session) });
   return data;
@@ -168,6 +173,16 @@ export const uploadFile = async (session, file) => {
   formData.append('foto_kerusakan', file);
   const { data } = await axios.post(UPLOAD_URL, formData, {
     headers: { Authorization: `Bearer ${session?.accessToken}`, 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+};
+
+// ========== MERGE LAMPIRAN MASUK REAGEN (nota + foto -> 1 PDF) ==========
+export const downloadMasukMerge = async (session, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/reagen/masuk/merge`, {
+    headers: { Authorization: `Bearer ${session?.accessToken}` },
+    params,
+    responseType: 'blob',
   });
   return data;
 };

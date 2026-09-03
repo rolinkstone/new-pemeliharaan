@@ -8,10 +8,11 @@ import {
   FaMapMarkerAlt, FaDatabase, FaChartLine, FaDoorOpen,   
   FaUserTie, FaChevronDown, FaChevronUp, FaBox, FaBuilding, FaLocationArrow,
   FaShieldAlt, FaBell, FaSearch, FaWarehouse, FaCheckCircle, FaClock, FaInfoCircle,
-  FaFlask
+  FaFlask, FaClipboardList, FaSignInAlt, FaShareSquare
 } from 'react-icons/fa';
 import { useSession, signOut } from 'next-auth/react';
 import notificationsApi from '../utils/notificationsApi';
+import pencatatanApi from './pencatatan/api/pencatatanApi';
 
 const menuItems = [
   {
@@ -50,6 +51,17 @@ const menuItems = [
       { label: 'Persediaan Reagen', href: '/persediaan/reagen', icon: FaFlask, color: 'from-violet-500 to-purple-500' },
     ],
   },
+  {
+    label: 'Pencatatan',
+    icon: FaClipboardList,
+    color: 'from-sky-500 to-blue-600',
+    glowColor: 'rgba(14,165,233,0.3)',
+    roles: ['pic_gudang', 'admin', 'superadmin'],
+    children: [
+      { label: 'Diterima Belum Diinput', href: '/pencatatan/diterima', icon: FaSignInAlt, color: 'from-cyan-500 to-blue-500', counterKey: 'diterima' },
+      { label: 'Diambil User Belum Diinput', href: '/pencatatan/diambil', icon: FaShareSquare, color: 'from-orange-500 to-amber-500', counterKey: 'diambil' },
+    ],
+  },
 ];
 
 export default function DashboardLayout({ children }) {
@@ -61,10 +73,11 @@ export default function DashboardLayout({ children }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [expandedMenus, setExpandedMenus] = useState({ Aset: true, Persediaan: true });
+  const [expandedMenus, setExpandedMenus] = useState({ Aset: true, Persediaan: true, Pencatatan: true });
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+  const [pencatatanCounter, setPencatatanCounter] = useState({ diterima_belum: 0, diambil_belum: 0 });
 
   const userMenuRef = useRef(null);
   const notifRef = useRef(null);
@@ -116,10 +129,24 @@ export default function DashboardLayout({ children }) {
     }
   };
 
+  // Fetch counter pencatatan (badge sub-menu)
+  const fetchPencatatanCounter = async () => {
+    try {
+      const res = await pencatatanApi.fetchCounter(session);
+      if (res.success) setPencatatanCounter(res.data || {});
+    } catch (e) {
+      // silent
+    }
+  };
+
+  const getPencatatanCount = (key) =>
+    key === 'diterima' ? (pencatatanCounter.diterima_belum || 0) : (pencatatanCounter.diambil_belum || 0);
+
   useEffect(() => {
     if (session) {
       fetchNotifs();
-      const interval = setInterval(fetchNotifs, 30000); // refresh every 30s
+      fetchPencatatanCounter();
+      const interval = setInterval(() => { fetchNotifs(); fetchPencatatanCounter(); }, 30000); // refresh every 30s
       return () => clearInterval(interval);
     }
   }, [session]);
@@ -210,6 +237,13 @@ export default function DashboardLayout({ children }) {
 
   if (!session) return null;
 
+  // Menu hanya tampil utk role tertentu: item tanpa field `roles` tampil utk semua user
+  const userRoles = session?.user?.roles || (session?.user?.role ? [session.user.role] : []);
+  const visibleMenuItems = menuItems.filter((item) => {
+    if (!item.roles || item.roles.length === 0) return true;
+    return item.roles.some((r) => userRoles.includes(r));
+  });
+
   return (
     <div className={`flex h-screen ${isDarkMode ? 'dark' : ''}`}>
       {/* Mobile Overlay */}
@@ -291,11 +325,12 @@ export default function DashboardLayout({ children }) {
               </p>
             )}
 
-            {menuItems.map((item, idx) => {
+            {visibleMenuItems.map((item, idx) => {
               const Icon = item.icon;
               const hasChildren = item.children && item.children.length > 0;
               const active = hasChildren ? isChildActive(item.children) : isActive(item.href);
-              const expanded = expandedMenus[item.label];
+              // Auto-expand parent jika ada sub-menu yang aktif (agar menu tidak 'menghilang' saat navigasi)
+              const expanded = expandedMenus[item.label] ?? (hasChildren && isChildActive(item.children));
 
               return (
                 <div key={idx} className="mb-0.5">
@@ -370,6 +405,7 @@ export default function DashboardLayout({ children }) {
                       {item.children.map((child, cIdx) => {
                         const ChildIcon = child.icon;
                         const childActive = isActive(child.href);
+                        const count = child.counterKey ? getPencatatanCount(child.counterKey) : 0;
                         return (
                           <Link
                             key={cIdx}
@@ -386,9 +422,14 @@ export default function DashboardLayout({ children }) {
                             <div className={`w-1.5 h-1.5 rounded-full transition-all duration-200 ${
                               childActive ? 'bg-blue-400 shadow-sm shadow-blue-400/50' : 'bg-white/20 group-hover:bg-white/40'
                             }`}></div>
-                            <span>{child.label}</span>
+                            <span className="flex-1">{child.label}</span>
+                            {count > 0 && (
+                              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-orange-500 text-white leading-none">
+                                {count}
+                              </span>
+                            )}
                             {childActive && (
-                              <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-300">
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-500/20 text-blue-300">
                                 Active
                               </span>
                             )}
@@ -404,6 +445,7 @@ export default function DashboardLayout({ children }) {
                       {item.children.map((child, cIdx) => {
                         const ChildIcon = child.icon;
                         const childActive = isActive(child.href);
+                        const count = child.counterKey ? getPencatatanCount(child.counterKey) : 0;
                         return (
                           <Link
                             key={cIdx}
@@ -420,6 +462,11 @@ export default function DashboardLayout({ children }) {
                             }`}>
                               <ChildIcon className="w-3.5 h-3.5" />
                             </div>
+                            {count > 0 && (
+                              <span className="absolute top-0 right-0 w-4 h-4 flex items-center justify-center rounded-full bg-orange-500 text-white text-[9px] font-bold leading-none">
+                                {count}
+                              </span>
+                            )}
                             {childActive && (
                               <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 bg-blue-400 rounded-r-full"></div>
                             )}

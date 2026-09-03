@@ -1,8 +1,11 @@
 const express = require('express');
 const router = express.Router();
+const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { getUsernameFromToken, hasRole } = require('../utils/routeHelpers');
+const { mergeFilesToPdf, safeFileName } = require('../utils/pdfMerge');
 let XLSX = null;
 try { XLSX = require('xlsx-js-style'); } catch (e) {
     try { XLSX = require('xlsx'); } catch (e2) { console.log('⚠️ xlsx not installed, import disabled'); }
@@ -407,7 +410,7 @@ router.post('/reagen/masuk', keycloakAuth, async (req, res) => {
     const conn = await db.pool.getConnection();
     try {
         await conn.beginTransaction();
-        const { reagen_id, no_batch, jumlah_botol, tanggal_kadaluarsa, kuitansi_url, catatan, tanggal_pembelian } = req.body;
+        const { reagen_id, no_batch, jumlah_botol, tanggal_kadaluarsa, kuitansi_url, foto_url, catatan, tanggal_pembelian } = req.body;
         if (!reagen_id || !jumlah_botol || jumlah_botol <= 0) {
             await conn.rollback(); conn.release();
             return res.status(400).json({ success: false, message: 'Reagen dan jumlah botol wajib diisi' });
@@ -417,9 +420,9 @@ router.post('/reagen/masuk', keycloakAuth, async (req, res) => {
 
         // Insert record masuk
         await conn.query(
-            `INSERT INTO reagen_masuk (reagen_id, no_batch, jumlah_botol, tanggal_kadaluarsa, kuitansi_url, catatan, status, created_by, tanggal_pembelian)
-             VALUES (?, ?, ?, ?, ?, ?, 'disetujui', ?, ?)`,
-            [reagen_id, batch, jumlah_botol, tanggal_kadaluarsa || null, kuitansi_url || '', catatan || '', username, tanggal_pembelian || null]
+            `INSERT INTO reagen_masuk (reagen_id, no_batch, jumlah_botol, tanggal_kadaluarsa, kuitansi_url, foto_url, catatan, status, created_by, tanggal_pembelian)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'disetujui', ?, ?)`,
+            [reagen_id, batch, jumlah_botol, tanggal_kadaluarsa || null, kuitansi_url || '', foto_url || '', catatan || '', username, tanggal_pembelian || null]
         );
 
         // Upsert batch stock (satu reagen + satu no_batch/expiry diakumulasi)
@@ -450,6 +453,32 @@ router.post('/reagen/masuk', keycloakAuth, async (req, res) => {
         res.status(500).json({ success: false, message: 'Gagal mencatat barang masuk', error: error.message });
     } finally {
         conn.release();
+    }
+});
+
+// GET download gabungan nota/kuitansi + foto barang masuk reagen -> SATU file PDF
+router.get('/reagen/masuk/merge', keycloakAuth, async (req, res) => {
+    try {
+        const { nota, foto } = req.query;
+        const urls = [nota, foto].filter(Boolean);
+        if (urls.length === 0) {
+            return res.status(400).json({ success: false, message: 'Parameter nota/foto wajib diisi' });
+        }
+        const uploadsDir = path.join(__dirname, '../uploads');
+        const files = urls
+            .map(u => path.join(uploadsDir, safeFileName(u)))
+            .filter(fp => fs.existsSync(fp));
+        if (files.length === 0) {
+            return res.status(404).json({ success: false, message: 'File lampiran tidak ditemukan' });
+        }
+        const pdf = await mergeFilesToPdf(files);
+        const today = new Date().toISOString().slice(0, 10);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="lampiran-masuk-reagen-${today}.pdf"`);
+        res.send(pdf);
+    } catch (error) {
+        console.error('Error merge masuk reagen:', error);
+        res.status(500).json({ success: false, message: 'Gagal menggabungkan lampiran', error: error.message });
     }
 });
 
@@ -1132,6 +1161,72 @@ router.post('/reagen/opname', keycloakAuth, async (req, res) => {
         res.status(500).json({ success: false, message: 'Gagal mencatat opname', error: error.message });
     } finally {
         conn.release();
+    }
+});
+
+// ========== PEMANTAUAN REAGEN TIDAK BERGERAK ==========
+// Deteksi reagen yang tidak mengalami pergerakan masuk (gudang) / keluar (ke LAB)
+// dalam jangka waktu lama (mis. 6 bulan / 1 tahun). Efektif: /api/reagen/reagen/movement
+router.get('/reagen/movement', keycloakAuth, async (req, res) => {
+    try {
+        // Semua master reagen
+        const [semuaReagen] = await db.query(
+            'SELECT id, kode_barang, nama_barang, kategori, satuan, saldo_botol FROM reagen ORDER BY kategori ASC, no_urut ASC'
+        );
+
+        // Tanggal terakhir MASUK gudang (disetujui = stok bertambah)
+        const [masukRows] = await db.query(
+            `SELECT reagen_id, DATE_FORMAT(MAX(tanggal_pembelian), '%Y-%m-%d') AS last_masuk
+             FROM reagen_masuk WHERE status = 'disetujui' GROUP BY reagen_id`
+        );
+        const masukMap = {};
+        masukRows.forEach(r => { masukMap[r.reagen_id] = r.last_masuk; });
+
+        // Tanggal terakhir KELUAR ke LAB (status yang sudah mengurangi stok gudang)
+        const [keluarRows] = await db.query(
+            `SELECT reagen_id, DATE_FORMAT(MAX(delivered_at), '%Y-%m-%d') AS last_keluar
+             FROM reagen_pengeluaran
+             WHERE status IN ('diserahkan','diserahkan_sebagian','disetujui_kabag')
+             GROUP BY reagen_id`
+        );
+        const keluarMap = {};
+        keluarRows.forEach(r => { keluarMap[r.reagen_id] = r.last_keluar; });
+
+        // Hari ini (UTC, agar selisih hari konsisten tanpa pengaruh timezone)
+        const now = new Date();
+        const todayUTC = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+        const parseUTC = (s) => {
+            const p = String(s).split('-').map(Number);
+            return Date.UTC(p[0], p[1] - 1, p[2]);
+        };
+        const diffDays = (dateStr) => {
+            try { return Math.max(0, Math.floor((todayUTC - parseUTC(dateStr)) / 86400000)); }
+            catch (e) { return null; }
+        };
+
+        const data = semuaReagen.map(b => {
+            const lastMasuk = masukMap[b.id] || null;
+            const lastKeluar = keluarMap[b.id] || null;
+            const lastMovement = [lastMasuk, lastKeluar].filter(Boolean).sort().pop() || null;
+            return {
+                id: b.id,
+                kode_barang: b.kode_barang,
+                nama_barang: b.nama_barang,
+                kategori: b.kategori,
+                satuan: b.satuan,
+                stok: Number(b.saldo_botol) || 0,
+                last_masuk: lastMasuk,
+                last_keluar: lastKeluar,
+                last_movement: lastMovement,
+                hari_tidak_bergerak: lastMovement ? diffDays(lastMovement) : null,
+                pernah_bergerak: !!lastMovement,
+            };
+        });
+
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error fetch movement reagen:', error);
+        res.status(500).json({ success: false, message: 'Gagal mengambil data pemantauan reagen tidak bergerak', error: error.message });
     }
 });
 

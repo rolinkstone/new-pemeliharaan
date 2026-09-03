@@ -206,6 +206,7 @@ const routes = [
     { name: 'upload', path: '/api/upload', file: './routes/upload' },
     { name: 'persediaan', path: '/api/persediaan', file: './routes/persediaan' },
     { name: 'reagen', path: '/api/reagen', file: './routes/reagen' },
+    { name: 'pencatatan', path: '/api/pencatatan', file: './routes/pencatatan' },
     { name: 'notifications', path: '/api/notifications', file: './routes/notifications' }
 ];
 

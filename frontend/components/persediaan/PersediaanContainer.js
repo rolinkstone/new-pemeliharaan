@@ -23,6 +23,7 @@ import KirimKeKatimModal from './modals/KirimKeKatimModal';
 import ProsesSerahkanModal from './modals/ProsesSerahkanModal';
 import ConfirmDialog from '../common/ConfirmDialog';
 import RejectDialog from '../common/RejectDialog';
+import MovementSummaryCard from '../common/MovementSummaryCard';
 import { formatDateForDisplay } from '../../utils/formatters';
 import { cetakSPBSBBK } from '../../utils/cetakSPBSBBK';
 
@@ -126,12 +127,13 @@ const PersediaanContainer = ({ session }) => {
       if (mutasiDateRange.akhir) mutasiParams.tanggal_akhir = mutasiDateRange.akhir;
 
       const bmParams = { page: bmPagination.currentPage, limit: bmPagination.perPage };
-      const [barang, masuk, permintaan, opname, mutasi] = await Promise.all([
+      const [barang, masuk, permintaan, opname, mutasi, movement] = await Promise.all([
         api.fetchBarang(session, params),
         api.fetchBarangMasuk(session, bmParams),
         api.fetchPermintaan(session),
         api.fetchOpname(session, mutasiParams),
         api.fetchMutasiStok(session, mutasiParams),
+        api.fetchMovement(session),
       ]);
       if (barang.success) {
         setBarangList(barang.data);
@@ -144,6 +146,7 @@ const PersediaanContainer = ({ session }) => {
       if (permintaan.success) setPermintaanList(permintaan.data);
       if (opname.success) setOpnameList(opname.data);
       if (mutasi.success) setMutasiList(mutasi.data);
+      if (movement.success) setMovementList(movement.data);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -204,6 +207,8 @@ const PersediaanContainer = ({ session }) => {
   const [bmUploading, setBmUploading] = useState(false);
   const [bmFile, setBmFile] = useState(null);
   const [bmKuitansiUrl, setBmKuitansiUrl] = useState('');
+  const [bmFotoUrl, setBmFotoUrl] = useState('');
+  const [bmFotoUploading, setBmFotoUploading] = useState(false);
   const [bmItems, setBmItems] = useState([{ barang_id: '', jumlah: '', catatan: '' }]);
   const [bmCatatan, setBmCatatan] = useState('');
   const [bmTanggalPembelian, setBmTanggalPembelian] = useState('');
@@ -241,18 +246,73 @@ const PersediaanContainer = ({ session }) => {
     }
   };
 
+  const handleBmFotoUpload = async (file) => {
+    if (!file) return;
+    setBmFotoUploading(true);
+    try {
+      const res = await api.uploadFile(session, file);
+      if (res?.success && res.data?.[0]?.url) {
+        const url = `${api.BACKEND_HOST}${res.data[0].url}`;
+        setBmFotoUrl(url);
+        showSnackbar('Foto barang berhasil diupload', 'success');
+      } else {
+        showSnackbar('Gagal upload foto barang', 'error');
+      }
+    } catch (e) {
+      showSnackbar(e?.response?.data?.message || e.message, 'error');
+    } finally {
+      setBmFotoUploading(false);
+    }
+  };
+
+  const downloadBlob = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadBmMerge = async (nota, foto) => {
+    if (!nota && !foto) return;
+    try {
+      const blob = await api.downloadBarangMasukMerge(session, { nota: nota || '', foto: foto || '' });
+      downloadBlob(blob, `lampiran-barang-masuk-${new Date().toISOString().slice(0, 10)}.pdf`);
+      showSnackbar('Lampiran berhasil diunduh (PDF gabungan)', 'success');
+    } catch (e) {
+      let msg = 'Gagal menggabungkan/mengunduh lampiran';
+      try {
+        const d = e?.response?.data;
+        if (d && typeof d.text === 'function') {
+          const txt = await d.text();
+          try { const j = JSON.parse(txt); if (j?.message) msg = j.message; }
+          catch (_) { if (txt) msg = txt.slice(0, 300); }
+        } else if (e?.response?.data?.message) {
+          msg = e.response.data.message;
+        } else if (e?.message) {
+          msg = e.message;
+        }
+      } catch (_) {}
+      showSnackbar(msg, 'error');
+    }
+  };
+
   const handleSubmitBarangMasuk = async () => {
     if (!bmKuitansiUrl) { showSnackbar('Upload nota/kuitansi terlebih dahulu', 'warning'); return; }
     const validItems = bmItems.filter(item => item.barang_id && item.jumlah);
     if (validItems.length === 0) { showSnackbar('Minimal 1 barang harus diisi', 'warning'); return; }
     try {
-      const res = await api.createBarangMasukBatch(session, { kuitansi_url: bmKuitansiUrl, items: validItems, catatan_global: bmCatatan, tanggal_pembelian: bmTanggalPembelian || null });
+      const res = await api.createBarangMasukBatch(session, { kuitansi_url: bmKuitansiUrl, foto_url: bmFotoUrl, items: validItems, catatan_global: bmCatatan, tanggal_pembelian: bmTanggalPembelian || null });
       if (res.success) {
         showSnackbar(res.message);
         fetchAll();
         setBmModalOpen(false);
         setBmFile(null);
         setBmKuitansiUrl('');
+        setBmFotoUrl('');
         setBmItems([{ barang_id: '', jumlah: '', catatan: '' }]);
         setBmCatatan('');
         setBmTanggalPembelian('');
@@ -334,6 +394,7 @@ const PersediaanContainer = ({ session }) => {
   const [mutasiList, setMutasiList] = useState([]);
   const [mutasiPage, setMutasiPage] = useState(0);
   const [mutasiRowsPerPage, setMutasiRowsPerPage] = useState(10);
+  const [movementList, setMovementList] = useState([]);
   const [opnamePage, setOpnamePage] = useState(0);
   const [opnameRowsPerPage, setOpnameRowsPerPage] = useState(10);
   const [opnameForm, setOpnameForm] = useState({ barang_id: '', stok_nyata: '', tanggal: today, catatan: '' });
@@ -558,6 +619,15 @@ const PersediaanContainer = ({ session }) => {
         </Box>
       }
     >
+      {(isPicGudang || isKabagTu) && (
+        <MovementSummaryCard
+          rows={movementList}
+          loading={loading}
+          title="Pemantauan Barang Tidak Bergerak"
+          emptyText="Tidak ada barang tanpa pergerakan"
+        />
+      )}
+
       {/* TABS */}
       <Box sx={{ mb: 3, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         {tabs.map((t, i) => {
@@ -678,7 +748,7 @@ const PersediaanContainer = ({ session }) => {
                   const groups = {};
                   barangMasukList.forEach(b => {
                     const key = b.kuitansi_url || '__no_kuitansi__';
-                    if (!groups[key]) groups[key] = { kuitansi_url: b.kuitansi_url, items: [], created_by: b.created_by };
+                    if (!groups[key]) groups[key] = { kuitansi_url: b.kuitansi_url, foto_url: b.foto_url || '', items: [], created_by: b.created_by };
                     groups[key].items.push(b);
                   });
                   return Object.entries(groups).map(([key, group]) => {
@@ -712,11 +782,18 @@ const PersediaanContainer = ({ session }) => {
                         <TableRow sx={{ bgcolor: '#f1f5f9', '& td': { borderBottom: 'none', py: 1 } }}>
                           <TableCell colSpan={6}>
                             <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
-                              {group.kuitansi_url ? (
-                                <a href={group.kuitansi_url.startsWith('/uploads') ? `${api.BACKEND_HOST}${group.kuitansi_url}` : group.kuitansi_url} target="_blank" rel="noreferrer">
-                                  <Chip icon={<DownloadIcon />} label="Lihat Nota" size="small" clickable color="primary" variant="outlined" />
-                                </a>
-                              ) : <Chip label="Tanpa Nota" size="small" />}
+                              {(group.kuitansi_url || group.foto_url) && (
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  color="success"
+                                  startIcon={<DownloadIcon />}
+                                  onClick={() => handleDownloadBmMerge(group.kuitansi_url, group.foto_url)}
+                                  sx={{ textTransform: 'none', fontSize: '0.72rem', py: 0.5, px: 1 }}
+                                >
+                                  Download (PDF)
+                                </Button>
+                              )}
                               <Typography variant="caption" color="text.secondary">
                                 {group.items.length} barang · {group.created_by}
                               </Typography>
@@ -1161,15 +1238,38 @@ const PersediaanContainer = ({ session }) => {
               </Box>
             </Box>
 
+            {/* Upload Foto Barang */}
+            <Box sx={{ p: 2, bgcolor: '#fff7ed', borderRadius: 2, border: '1px dashed', borderColor: '#fdba74' }}>
+              <Typography variant="subtitle2" gutterBottom fontWeight={600}>2. Upload Foto Barang</Typography>
+              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
+                <Button variant="contained" color="warning" component="label" disabled={bmFotoUploading}>
+                  {bmFotoUploading ? 'Mengupload...' : 'Pilih Foto'}
+                  <input type="file" hidden accept="image/*" onChange={(e) => { if (e.target.files[0]) handleBmFotoUpload(e.target.files[0]); e.target.value = ''; }} />
+                </Button>
+                {bmFotoUploading && <CircularProgress size={20} />}
+                {bmFotoUrl && (
+                  <Box display="flex" alignItems="center" gap={1} flexWrap="wrap">
+                    <Chip icon={<CheckCircleIcon />} label="Foto terupload" color="success" size="small" />
+                    <a href={bmFotoUrl} target="_blank" rel="noreferrer">
+                      <Button size="small" startIcon={<DownloadIcon />}>Lihat</Button>
+                    </a>
+                    <IconButton size="small" onClick={() => setBmFotoUrl('')} sx={{ color: '#ef4444' }}>
+                      <CancelIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+
             {/* Tanggal Pembelian (satu untuk semua barang dalam nota) */}
-            <Typography variant="subtitle2" fontWeight={600}>2. Tanggal Pembelian</Typography>
+            <Typography variant="subtitle2" fontWeight={600}>3. Tanggal Pembelian</Typography>
             <TextField label="Tanggal Pembelian" type="date" size="small" sx={{ maxWidth: 220 }}
               value={bmTanggalPembelian}
               onChange={(e) => setBmTanggalPembelian(e.target.value)}
               InputLabelProps={{ shrink: true }} />
 
             {/* Daftar Barang */}
-            <Typography variant="subtitle2" fontWeight={600}>3. Daftar Barang</Typography>
+            <Typography variant="subtitle2" fontWeight={600}>4. Daftar Barang</Typography>
             {bmItems.map((item, idx) => (
               <Box key={idx} display="flex" gap={1} alignItems="center">
                 <TextField select label={`Barang ${idx + 1}`} size="small" sx={{ flex: 2 }}
@@ -1203,7 +1303,7 @@ const PersediaanContainer = ({ session }) => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => { setBmModalOpen(false); setBmFile(null); setBmKuitansiUrl(''); setBmItems([{ barang_id: '', jumlah: '', catatan: '' }]); setBmCatatan(''); setBmTanggalPembelian(''); }}>Batal</Button>
+          <Button onClick={() => { setBmModalOpen(false); setBmFile(null); setBmKuitansiUrl(''); setBmFotoUrl(''); setBmItems([{ barang_id: '', jumlah: '', catatan: '' }]); setBmCatatan(''); setBmTanggalPembelian(''); }}>Batal</Button>
           <Button variant="contained" onClick={handleSubmitBarangMasuk}
             disabled={!bmKuitansiUrl || bmItems.every(i => !i.barang_id || !i.jumlah)}
             startIcon={<CheckCircleIcon />}>
