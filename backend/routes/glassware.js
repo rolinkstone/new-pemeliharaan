@@ -20,6 +20,8 @@ const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { hasRole } = require('../utils/routeHelpers');
 
 const EDIT_ROLES = ['pic_gudang', 'pic_lab', 'admin', 'superadmin'];
+// Menambah periode & master glassware: pic_lab TIDAK boleh
+const MANAGE_ROLES = ['pic_gudang', 'admin', 'superadmin'];
 const getUsername = (req) => req.user?.name || req.user?.username || req.user?.preferred_username || req.user?.email || 'system';
 const toInt = (v, def = 0) => {
     const n = Number(v);
@@ -104,8 +106,8 @@ router.get('/periode', keycloakAuth, async (req, res) => {
 // POST buat periode baru + salin stok periode sebelumnya (carryover)
 // stok_sebelumnya(baru) = stok_saat_ini(lama) = stok_sebelumnya + sum(masuk) - sum(pecah)
 router.post('/periode', keycloakAuth, async (req, res) => {
-    if (!hasRole(req, EDIT_ROLES)) {
-        return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya pic_gudang/pic_lab/admin yang dapat membuat periode.' });
+    if (!hasRole(req, MANAGE_ROLES)) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya pic_gudang/admin yang dapat membuat periode.' });
     }
     const conn = await db.pool.getConnection();
     try {
@@ -463,8 +465,8 @@ router.delete('/periode/:id', keycloakAuth, async (req, res) => {
 // item juga didaftarkan ke lab/p Periode tsb (baris stok dibuat) & stok_awal
 // (opsional) dicatat sebagai transaksi barang masuk pada tanggal yg ditentukan.
 router.post('/master', keycloakAuth, async (req, res) => {
-    if (!hasRole(req, EDIT_ROLES)) {
-        return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya pic_gudang/pic_lab/admin yang dapat menambah glassware.' });
+    if (!hasRole(req, MANAGE_ROLES)) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya pic_gudang/admin yang dapat menambah glassware.' });
     }
     const { nomor_kontrol, nama, jenis_id, ukuran, satuan, periode_id, laboratorium_id, stok_awal, tanggal } = req.body;
     if (!nama || !jenis_id) {

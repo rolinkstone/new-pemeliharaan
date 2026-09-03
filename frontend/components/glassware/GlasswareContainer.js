@@ -69,6 +69,8 @@ export default function GlasswareContainer({ session }) {
   const roles = session?.user?.roles || (session?.user?.role ? [session.user.role] : []);
   const canEdit = ['pic_gudang', 'pic_lab', 'admin', 'superadmin'].some((r) => roles.includes(r));
   const isAdmin = ['admin', 'superadmin'].some((r) => roles.includes(r));
+  // Menambah periode & master glassware: pic_lab TIDAK boleh
+  const canManage = ['pic_gudang', 'admin', 'superadmin'].some((r) => roles.includes(r));
   const showSnackbar = (msg, sev = 'success') => setSnackbar({ open: true, message: msg, severity: sev });
 
   const fetchMeta = useCallback(async () => {
@@ -269,11 +271,13 @@ export default function GlasswareContainer({ session }) {
           </Button>
           {canEdit && (
             <>
-              <Button variant="outlined" startIcon={<AddCircleOutlineIcon />} onClick={() => setPeriodModal({ open: true, nama: '', tanggal: '', loading: false })}
-                sx={{ borderColor: 'rgba(255,255,255,0.3)', color: '#fff', '&:hover': { borderColor: 'rgba(255,255,255,0.6)', bgcolor: 'rgba(255,255,255,0.08)' } }}>
-                Buat Periode Baru
-              </Button>
-              {page === 'rekap' && (
+              {canManage && (
+                <Button variant="outlined" startIcon={<AddCircleOutlineIcon />} onClick={() => setPeriodModal({ open: true, nama: '', tanggal: '', loading: false })}
+                  sx={{ borderColor: 'rgba(255,255,255,0.3)', color: '#fff', '&:hover': { borderColor: 'rgba(255,255,255,0.6)', bgcolor: 'rgba(255,255,255,0.08)' } }}>
+                  Buat Periode Baru
+                </Button>
+              )}
+              {canManage && page === 'rekap' && (
                 <Button variant="contained" startIcon={<AddIcon />} onClick={openGlassware}
                   sx={{ bgcolor: '#fff', color: 'primary.main', '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' } }}>
                   Tambah Glassware
