@@ -30,6 +30,7 @@ import DialogActions from '@mui/material/DialogActions';
 import * as api from './api/glasswareApi';
 import PolishedPageShell from '../common/PolishedPageShell';
 import MovementSummaryCard from '../common/MovementSummaryCard';
+import PengajuanMt from './PengajuanMt';
 import { formatDateForDisplay } from '../../utils/formatters';
 
 const JENIS_OPTIONS = [
@@ -43,7 +44,7 @@ const stokColor = (v) => {
   return 'success';
 };
 
-const PAGE_LABELS = { rekap: 'Rekap Stok', masuk: 'Barang Masuk', pecah: 'Glassware Pecah' };
+const PAGE_LABELS = { rekap: 'Rekap Stok', masuk: 'Barang Masuk', pecah: 'Glassware Pecah', pengajuan: 'Pengajuan MT' };
 
 export default function GlasswareContainer({ session }) {
   const [labs, setLabs] = useState([]);
@@ -65,12 +66,21 @@ export default function GlasswareContainer({ session }) {
   const [movementLoading, setMovementLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [gwModal, setGwModal] = useState({ open: false, nomor_kontrol: '', nama: '', jenis_id: 1, ukuran: '', satuan: '', stok_awal: '', loading: false });
+  // Status pengajuan MT utk (periode, lab) yang sedang dipilih: row atau null
+  const [pengajuan, setPengajuan] = useState(null);
 
   const roles = session?.user?.roles || (session?.user?.role ? [session.user.role] : []);
   const canEdit = ['pic_gudang', 'pic_lab', 'admin', 'superadmin'].some((r) => roles.includes(r));
   const isAdmin = ['admin', 'superadmin'].some((r) => roles.includes(r));
   // Menambah periode & master glassware: pic_lab TIDAK boleh
   const canManage = ['pic_gudang', 'admin', 'superadmin'].some((r) => roles.includes(r));
+  // Pengajuan semester ke MT: pic_lab yang mengirim; mt yang menyetujui
+  const isMt = roles.includes('mt');
+  const canKirimMt = ['pic_lab', 'admin', 'superadmin'].some((r) => roles.includes(r));
+  const showPengajuanTab = canKirimMt || isMt;
+  const locked = !!pengajuan && (pengajuan.status === 'menunggu_mt' || pengajuan.status === 'disetujui');
+  // Pemantauan tidak bergerak: admin/MT
+  const canSeeMovement = isAdmin || isMt;
   const showSnackbar = (msg, sev = 'success') => setSnackbar({ open: true, message: msg, severity: sev });
 
   const fetchMeta = useCallback(async () => {
@@ -91,10 +101,16 @@ export default function GlasswareContainer({ session }) {
     setLoading(true);
     try {
       const params = { periode_id: periodeId, lab: labId, jenis: jenisId };
-      const [r, m, p] = await Promise.all([api.fetchStok(session, params), api.fetchMasuk(session, params), api.fetchPecah(session, params)]);
+      const [r, m, p, pj] = await Promise.all([
+        api.fetchStok(session, params),
+        api.fetchMasuk(session, params),
+        api.fetchPecah(session, params),
+        api.fetchPengajuan(session, { periode_id: periodeId, lab: labId }),
+      ]);
       if (r.success) setRekap(r.data || []);
       if (m.success) setMasukList(m.data || []);
       if (p.success) setPecahList(p.data || []);
+      if (pj.success) setPengajuan(pj.data || null);
       setTblPage(0);
     } catch (e) {
       showSnackbar(e?.response?.data?.message || e.message, 'error');
@@ -104,22 +120,27 @@ export default function GlasswareContainer({ session }) {
   }, [session, periodeId, labId, jenisId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  // Jangan bawa status pengajuan periode/lab lama saat berpindah periode/lab
+  useEffect(() => { setPengajuan(null); }, [periodeId, labId]);
 
-  // Pemantauan glassware tidak bergerak (per lab + jenis)
+  // Pemantauan glassware tidak bergerak (per lab + jenis) — khusus admin/MT
   const fetchMovement = useCallback(async () => {
-    if (!session || !labId) return;
+    if (!session || !labId || !canSeeMovement) return;
     setMovementLoading(true);
     try {
       const res = await api.fetchMovement(session, { lab: labId, jenis: jenisId });
       if (res.success) setMovementRows(res.data || []);
     } catch (e) { /* silent */ }
     finally { setMovementLoading(false); }
-  }, [session, labId, jenisId]);
+  }, [session, labId, jenisId, isAdmin]);
 
   useEffect(() => { fetchMovement(); }, [fetchMovement]);
 
   const curLab = labs.find(l => l.id === labId);
   const curJenis = JENIS_OPTIONS.find(j => j.id === jenisId);
+  const curPeriod = periods.find(x => x.id === periodeId);
+  const periodeLabel = curPeriod ? `${curPeriod.nama} (${curPeriod.tanggal})` : '-';
+  const labLabel = curLab ? curLab.nama : '-';
 
   // ===== Pencarian & REKAP totals =====
   const q = search.trim().toLowerCase();
@@ -140,6 +161,10 @@ export default function GlasswareContainer({ session }) {
   const openTrans = (tipe) => setTransModal({ open: true, tipe, item: null, tanggal: '', jumlah: '', keterangan: '', loading: false });
 
   const submitTrans = async () => {
+    if (locked) {
+      showSnackbar('Catatan periode ini terkunci (menunggu / disetujui MT).', 'warning');
+      return;
+    }
     const { tipe, item, tanggal, jumlah, keterangan } = transModal;
     if (!item || !tanggal || !jumlah || Number(jumlah) <= 0) {
       showSnackbar('Item, tanggal, dan jumlah (>0) wajib diisi', 'warning');
@@ -164,6 +189,10 @@ export default function GlasswareContainer({ session }) {
   };
 
   const removeTrans = async (tipe, id) => {
+    if (locked) {
+      showSnackbar('Catatan periode ini terkunci (menunggu / disetujui MT).', 'warning');
+      return;
+    }
     if (!window.confirm(`Hapus catatan ${PAGE_LABELS[tipe]} ini?`)) return;
     try {
       const res = tipe === 'masuk' ? await api.deleteMasuk(session, id) : await api.deletePecah(session, id);
@@ -197,7 +226,7 @@ export default function GlasswareContainer({ session }) {
         setGwModal({ open: false, nomor_kontrol: '', nama: '', jenis_id: jenisId, ukuran: '', satuan: '', stok_awal: '', loading: false });
         setJenisId(g.jenis_id);
         fetchData();
-        fetchMovement();
+        if (canSeeMovement) fetchMovement();
       } else {
         showSnackbar(res.message, 'error');
         setGwModal(prev => ({ ...prev, loading: false }));
@@ -269,7 +298,7 @@ export default function GlasswareContainer({ session }) {
             sx={{ borderColor: 'rgba(255,255,255,0.3)', color: '#fff', '&:hover': { borderColor: 'rgba(255,255,255,0.6)', bgcolor: 'rgba(255,255,255,0.08)' } }}>
             Refresh
           </Button>
-          {canEdit && (
+          {canEdit && page !== 'pengajuan' && (
             <>
               {canManage && (
                 <Button variant="outlined" startIcon={<AddCircleOutlineIcon />} onClick={() => setPeriodModal({ open: true, nama: '', tanggal: '', loading: false })}
@@ -277,16 +306,22 @@ export default function GlasswareContainer({ session }) {
                   Buat Periode Baru
                 </Button>
               )}
-              {canManage && page === 'rekap' && (
+              {canManage && page === 'rekap' && !locked && (
                 <Button variant="contained" startIcon={<AddIcon />} onClick={openGlassware}
                   sx={{ bgcolor: '#fff', color: 'primary.main', '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' } }}>
                   Tambah Glassware
                 </Button>
               )}
-              {page !== 'rekap' && (
+              {page !== 'rekap' && !locked && (
                 <Button variant="contained" startIcon={<AddIcon />} onClick={() => openTrans(page)}
                   sx={{ bgcolor: '#fff', color: 'primary.main', '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' } }}>
                   Tambah {PAGE_LABELS[page]}
+                </Button>
+              )}
+              {page !== 'rekap' && locked && (
+                <Button variant="contained" disabled startIcon={<AddIcon />}
+                  sx={{ bgcolor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)' }}>
+                  Catatan Terkunci (Pengajuan MT)
                 </Button>
               )}
             </>
@@ -294,13 +329,22 @@ export default function GlasswareContainer({ session }) {
         </Box>
       }
     >
-      {labId && (
+      {canSeeMovement && labId && (
         <MovementSummaryCard
           rows={movementRows}
           loading={movementLoading}
           title="Glassware Tidak Bergerak"
           emptyText="Tidak ada glassware tanpa pergerakan"
         />
+      )}
+
+      {/* Banner status pengajuan MT (periode+lab terkunci) */}
+      {locked && page !== 'pengajuan' && (
+        <Alert severity={pengajuan?.status === 'disetujui' ? 'success' : 'info'} sx={{ mb: 2 }}>
+          {pengajuan?.status === 'disetujui'
+            ? `Catatan periode ini telah DISETUJUI MT (${pengajuan.disetujui_by || '-'} · ${pengajuan.disetujui_at || ''}). Transaksi terkunci.`
+            : `Catatan periode ini sedang MENUNGGU persetujuan MT (${pengajuan.mt_nama || 'MT'} · diajukan ${pengajuan.diajukan_at || ''}). Transaksi terkunci hingga ada keputusan MT.`}
+        </Alert>
       )}
 
       {/* Filter bar */}
@@ -330,7 +374,9 @@ export default function GlasswareContainer({ session }) {
           />
           <Chip color="secondary" label={curLab ? curLab.kode : '-'} variant="outlined" />
           <Typography variant="caption" color="text.secondary" sx={{ ml: 'auto' }}>
-            {canEdit ? 'Mode: bisa menambah / menghapus transaksi' : 'Mode: hanya lihat'}
+            {locked
+              ? 'Catatan terkunci (pengajuan MT sedang diproses/disetujui)'
+              : (canEdit ? 'Mode: bisa menambah / menghapus transaksi' : 'Mode: hanya lihat')}
           </Typography>
         </Box>
       </Paper>
@@ -349,9 +395,9 @@ export default function GlasswareContainer({ session }) {
         <Chip label={curJenis ? curJenis.label : ''} size="small" sx={{ alignSelf: 'center' }} color="info" variant="outlined" />
       </Box>
 
-      {/* Main tab: Rekap | Masuk | Pecah */}
+      {/* Main tab: Rekap | Masuk | Pecah | Pengajuan MT */}
       <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap', borderBottom: '1px solid', borderColor: 'divider', pb: 1 }}>
-        {Object.entries(PAGE_LABELS).map(([key, label]) => (
+        {Object.entries(PAGE_LABELS).filter(([key]) => key !== 'pengajuan' || showPengajuanTab).map(([key, label]) => (
           <button key={key} onClick={() => { setPage(key); setTblPage(0); }} style={{
             padding: '8px 18px', borderRadius: 10, border: 'none', cursor: 'pointer', fontWeight: 600,
             fontSize: '0.85rem', background: page === key ? '#0284c7' : 'transparent',
@@ -366,6 +412,23 @@ export default function GlasswareContainer({ session }) {
       </Box>
 
       {loading && <LinearProgress sx={{ mb: 2, borderRadius: 1 }} />}
+
+      {/* ================= PENGAJUAN MT ================= */}
+      {page === 'pengajuan' && (
+        <PengajuanMt
+          session={session}
+          periodeId={periodeId}
+          labId={labId}
+          pengajuan={pengajuan}
+          canKirimMt={canKirimMt}
+          isMt={isMt}
+          isAdmin={isAdmin}
+          periodeLabel={periodeLabel}
+          labLabel={labLabel}
+          onChanged={fetchData}
+          onOpenRecords={(pid, lid) => { setPeriodeId(pid); setLabId(lid); setPage('rekap'); setTblPage(0); setSearch(''); }}
+        />
+      )}
 
       {/* ================= REKAP ================= */}
       {page === 'rekap' && (
@@ -442,7 +505,7 @@ export default function GlasswareContainer({ session }) {
                 <TableCell>Nama Glassware</TableCell>
                 <TableCell align="right">Jumlah</TableCell>
                 <TableCell>Keterangan</TableCell>
-                {canEdit && <TableCell align="center">Aksi</TableCell>}
+                {canEdit && !locked && <TableCell align="center">Aksi</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
@@ -459,7 +522,7 @@ export default function GlasswareContainer({ session }) {
                       color={page === 'masuk' ? 'success' : 'error'} variant="outlined" sx={{ fontWeight: 700 }} />
                   </TableCell>
                   <TableCell><Typography variant="body2" color="text.secondary">{t.keterangan || '-'}</Typography></TableCell>
-                  {canEdit && (
+                  {canEdit && !locked && (
                     <TableCell align="center">
                       <IconButton size="small" color="error" onClick={() => removeTrans(page, t.id)}>
                         <DeleteIcon fontSize="small" />
@@ -470,10 +533,12 @@ export default function GlasswareContainer({ session }) {
               ))}
               {!loading && (page === 'masuk' ? filteredMasuk : filteredPecah).length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={canEdit ? 7 : 6} align="center" sx={{ py: 4, color: '#94a3b8' }}>
+                  <TableCell colSpan={(canEdit && !locked) ? 7 : 6} align="center" sx={{ py: 4, color: '#94a3b8' }}>
                     {q
                       ? 'Tidak ada transaksi yang cocok dengan pencarian'
-                      : `Belum ada catatan ${page === 'masuk' ? 'barang masuk' : 'pecah'}${canEdit ? ' — klik "Tambah" untuk mencatat' : ''}`}
+                      : locked
+                        ? `Belum ada catatan ${page === 'masuk' ? 'barang masuk' : 'pecah'} — catatan terkunci (pengajuan MT)`
+                        : `Belum ada catatan ${page === 'masuk' ? 'barang masuk' : 'pecah'}${canEdit ? ' — klik "Tambah" untuk mencatat' : ''}`}
                   </TableCell>
                 </TableRow>
               )}

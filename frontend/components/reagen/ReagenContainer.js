@@ -132,6 +132,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
   const isPicPersediaan = hasRole('pic_persediaan');
   const isKatim = hasRole('katim');
   const isKabagTu = hasRole('kabag_tu');
+  const isMt = hasRole('mt');
   const isAdminPemeliharaan = hasRole('admin_pemeliharaan');
   const canManage = isPicGudang || isKabagTu;
 
@@ -141,7 +142,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
   //  - pic_gudang     : semua tab
   //  - katim/kabag_tu : mengikuti alur persetujuannya
   const canSeeTab = (i) => {
-    if (i === 0) return isPicPersediaan || isPicLab || isPicGudang || isKatim || isKabagTu; // Master Reagen
+    if (i === 0) return isPicPersediaan || isPicLab || isPicGudang || isKatim || isKabagTu || isMt; // Master Reagen
     if (i === 1) return isPicPersediaan || isPicLab || isPicGudang || isKabagTu; // Stok Gudang
     if (i === 2) return isPicGudang || isKabagTu; // Barang Masuk
     if (i === 3) return isPicLab || isPicGudang || isKatim || isKabagTu; // Permohonan Reagen
@@ -664,7 +665,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
         </Box>
       }
     >
-      {(isPicGudang || isKabagTu) && (
+      {(isPicGudang || isKabagTu || isMt) && (
         <MovementSummaryCard
           rows={movementList}
           loading={loading}

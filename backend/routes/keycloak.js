@@ -487,4 +487,43 @@ router.get('/katim/list', keycloakAuth, async (req, res) => {
     }
 });
 
+// ========== MT MANAGEMENT (role "mt") ==========
+// Mirip katim/list — daftar user ber-role "mt" di Keycloak,
+// dipakai pic_lab saat memilih MT tujuan pengajuan glassware semester.
+router.get('/mt/list', keycloakAuth, async (req, res) => {
+    console.log(`📋 ${getUsername(req.user)} mengakses daftar MT`);
+
+    try {
+        const axios = require('axios');
+        const { getAdminCliToken } = require('../utils/keycloakHelpers');
+        const adminToken = await getAdminCliToken();
+        if (!adminToken) return res.json({ success: true, data: [], count: 0 });
+
+        // Ambil langsung user dengan role "mt"
+        const rolesRes = await axios.get(
+            `${process.env.KEYCLOAK_SERVER_URL}/admin/realms/${process.env.KEYCLOAK_REALM}/roles/mt/users`,
+            { headers: { Authorization: `Bearer ${adminToken}` }, params: { max: 100 }, timeout: 15000 }
+        );
+
+        const getAttr = (u, a) => u.attributes?.[a] ? (Array.isArray(u.attributes[a]) ? u.attributes[a][0] : String(u.attributes[a])) : '';
+
+        const mtUsers = rolesRes.data
+            .filter(user => user.enabled !== false)
+            .map(user => {
+                const nama = [user.firstName, user.lastName].filter(Boolean).join(' ').trim() || getAttr(user, 'nama') || user.username || '';
+                return {
+                    id: user.id, user_id: user.id, username: user.username, email: user.email,
+                    nama, nip: getAttr(user, 'nip') || '', jabatan: getAttr(user, 'jabatan') || 'MT',
+                    role: 'mt',
+                };
+            });
+
+        console.log(`✅ ${mtUsers.length} MT ditemukan`);
+        res.json({ success: true, data: mtUsers, count: mtUsers.length });
+    } catch (error) {
+        console.error('Error fetch mt:', error.message);
+        res.json({ success: true, data: [], count: 0, error: error.message });
+    }
+});
+
 module.exports = router;

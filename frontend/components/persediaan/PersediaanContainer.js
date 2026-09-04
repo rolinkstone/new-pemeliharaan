@@ -85,6 +85,7 @@ const PersediaanContainer = ({ session }) => {
   const isPicPersediaan = hasRole('pic_persediaan');
   const isKatim = hasRole('katim');
   const isKabagTu = hasRole('kabag_tu');
+  const isMt = hasRole('mt');
 
   // Tab yang boleh dilihat per role:
   //  - pic_persediaan : Barang + Permintaan saja
@@ -619,7 +620,7 @@ const PersediaanContainer = ({ session }) => {
         </Box>
       }
     >
-      {(isPicGudang || isKabagTu) && (
+      {(isPicGudang || isKabagTu || isMt) && (
         <MovementSummaryCard
           rows={movementList}
           loading={loading}

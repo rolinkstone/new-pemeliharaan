@@ -88,3 +88,50 @@ export const fetchMovement = async (session, params = {}) => {
   const { data } = await axios.get(`${API_URL}/movement`, { headers: getHeaders(session), params });
   return data;
 };
+
+// ========== DAFTAR USER ROLE MT (Keycloak) ==========
+export const fetchMtList = async (session) => {
+  const { data } = await axios.get(`${BASE}/keycloak/mt/list`, { headers: getHeaders(session) });
+  return data;
+};
+
+// ========== PENGAJUAN SEMESTER KE MT ==========
+// Status satu (periode, lab): data pengajuan atau null (belum diajukan)
+export const fetchPengajuan = async (session, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/pengajuan`, { headers: getHeaders(session), params });
+  return data;
+};
+
+// Ringkasan transaksi periode+lab (semua jenis) utk kartu pengajuan
+export const fetchPengajuanSummary = async (session, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/pengajuan/summary`, { headers: getHeaders(session), params });
+  return data;
+};
+
+// Daftar pengajuan (di-scope per role: admin semua, mt miliknya, pic_lab kirimannya)
+export const fetchPengajuanList = async (session, params = {}) => {
+  const { data } = await axios.get(`${API_URL}/pengajuan/list`, { headers: getHeaders(session), params });
+  return data;
+};
+
+// Kirim / kirim ulang pengajuan ke MT: { periode_id, laboratorium_id, mt_id, mt_nama, catatan }
+export const kirimPengajuan = async (session, body) => {
+  const { data } = await axios.post(`${API_URL}/pengajuan/kirim`, body, { headers: getHeaders(session) });
+  return data;
+};
+
+export const setujuiPengajuan = async (session, id) => {
+  const { data } = await axios.put(`${API_URL}/pengajuan/${id}/setujui`, {}, { headers: getHeaders(session) });
+  return data;
+};
+
+export const tolakPengajuan = async (session, id, catatan_tolak) => {
+  const { data } = await axios.put(`${API_URL}/pengajuan/${id}/tolak`, { catatan_tolak }, { headers: getHeaders(session) });
+  return data;
+};
+
+// Hapus pengajuan dari riwayat — khusus role admin
+export const deletePengajuan = async (session, id) => {
+  const { data } = await axios.delete(`${API_URL}/pengajuan/${id}`, { headers: getHeaders(session) });
+  return data;
+};

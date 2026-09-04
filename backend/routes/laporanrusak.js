@@ -192,11 +192,13 @@ router.get('/', keycloakAuth, async (req, res) => {
         if (isAdmin || isPIC || isKabag) {
             // Admin / PIC Ruangan / Kabag TU: melihat semua
         } else if (isKatimRole) {
-            query += ' AND lr.katim_id = ?';
-            params.push(userId);
+            // Katim: laporan yang ditujukan ke dirinya ATAU yang ia buat sendiri
+            query += ' AND (lr.katim_id = ? OR lr.pelapor_id = ?)';
+            params.push(userId, userId);
         } else if (isPPKRole) {
-            query += ' AND lr.ppk_id = ?';
-            params.push(userId);
+            // PPK: laporan yang ditujukan ke dirinya ATAU yang ia buat sendiri
+            query += ' AND (lr.ppk_id = ? OR lr.pelapor_id = ?)';
+            params.push(userId, userId);
         } else {
             // User biasa: hanya laporan miliknya sendiri
             query += ' AND lr.pelapor_id = ?';
@@ -218,8 +220,8 @@ router.get('/', keycloakAuth, async (req, res) => {
             LEFT JOIN master_aset a ON lr.aset_id = a.id WHERE 1=1`;
         const countParams = [];
         if (!(isAdmin || isPIC || isKabag)) {
-            if (isKatimRole) { countQuery += ' AND lr.katim_id = ?'; countParams.push(userId); }
-            else if (isPPKRole) { countQuery += ' AND lr.ppk_id = ?'; countParams.push(userId); }
+            if (isKatimRole) { countQuery += ' AND (lr.katim_id = ? OR lr.pelapor_id = ?)'; countParams.push(userId, userId); }
+            else if (isPPKRole) { countQuery += ' AND (lr.ppk_id = ? OR lr.pelapor_id = ?)'; countParams.push(userId, userId); }
             else { countQuery += ' AND lr.pelapor_id = ?'; countParams.push(userId); }
         }
         if (status) { countQuery += ' AND lr.status = ?'; countParams.push(status); }
