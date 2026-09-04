@@ -1,5 +1,6 @@
 // pages/login.js
 import { useState, useEffect, useRef } from 'react';
+import { useRouter } from 'next/router';
 import { signIn } from 'next-auth/react';
 import Head from 'next/head';
 
@@ -7,6 +8,14 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const canvasRef = useRef(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    // Jika diarahkan ke sini karena sesi kedaluwarsa (token invalid/expired)
+    if (router.query.error === 'session_expired') {
+      setError('Sesi Anda telah berakhir karena token kedaluwarsa. Silakan masuk kembali menggunakan SSO.');
+    }
+  }, [router.query.error]);
 
   useEffect(() => {
     // Animated Background Particles

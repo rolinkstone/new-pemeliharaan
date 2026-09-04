@@ -1,5 +1,6 @@
 // utils/axiosInstance.js
 import axios from 'axios';
+import { handleAuthFailure, isSessionFailure } from './authInterceptor';
 
 // Buat axios instance dengan interceptor
 const createAxiosInstance = (baseURL = 'http://localhost:5000/api') => {
@@ -27,22 +28,20 @@ const createAxiosInstance = (baseURL = 'http://localhost:5000/api') => {
     }
   );
 
-  // Response interceptor untuk handle error
+  // Response interceptor untuk handle error autentikasi
   instance.interceptors.response.use(
     (response) => {
       return response;
     },
     (error) => {
       if (error.response) {
-        // Handle error responses
-        if (error.response.status === 401) {
-          // Token expired atau tidak valid
-          console.error('Unauthorized access - token mungkin expired');
-          // Bisa dispatch event untuk logout atau refresh token
-          window.dispatchEvent(new Event('unauthorized'));
-        } else if (error.response.status === 403) {
-          console.error('Forbidden access');
-        } else if (error.response.status === 404) {
+        const { status } = error.response;
+        // Hanya anggap 401/403 (yang bukan penolakan peran FORBIDDEN)
+        // sebagai kegagalan sesi -> logout & redirect ke /login.
+        if ((status === 401 || status === 403) && isSessionFailure(status, error.response.data)) {
+          console.warn(`Unauthorized access (${status}) - token mungkin expired`);
+          handleAuthFailure();
+        } else if (status === 404) {
           console.error('Endpoint tidak ditemukan');
         }
       } else if (error.request) {
