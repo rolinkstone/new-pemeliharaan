@@ -1,0 +1,73 @@
+# ============================================
+# ROOT .gitignore — monorepo (backend + frontend)
+# ============================================
+
+# ---------- Secrets / environment ----------
+# Semua file .env di-ignore, KECUALI contoh template
+.env
+.env.*
+!.env.example
+!.env.*.example
+.env*.local
+
+# ---------- OS / Editor ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*~
+
+# ---------- Node ----------
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.tsbuildinfo
+
+# ---------- Next.js ----------
+frontend/.next/
+frontend/out/
+frontend/build/
+.vercel/
+next-env.d.ts
+
+# ---------- Testing / coverage ----------
+coverage/
+.nyc_output/
+
+# ---------- Runtime data, uploads & logs ----------
+data/backend/
+data/frontend/
+backend/uploads/
+frontend/public/uploads/
+logs/
+*.log
+
+# ---------- Keys / certificates ----------
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+*.keystore
+
+# ---------- Generated / scratch ----------
+frontend/preview_spb_sbbk.html
+*-tmp.js
+*-tmp.mjs
+*.bak
+*.orig
+
+# ---------- DB dumps / backup ----------
+*.sql.gz
+*.dump
+*.sql.bak
