@@ -44,6 +44,7 @@ import {
   Description as DescriptionIcon,
   ThumbUp as ThumbUpIcon,
   MonetizationOn as MonetizationOnIcon,
+  Print as PrintIcon,
 } from '@mui/icons-material';
 import LaporanRusakForm from '../LaporanRusakForm';
 import { format } from 'date-fns';
@@ -260,6 +261,7 @@ const LaporanRusakModal = ({
   title = 'Laporan Kerusakan',
   readOnly = false,
   loading = false,
+  onPrint,
 }) => {
   const theme = useTheme();
   const [formData, setFormData] = useState({});
@@ -902,6 +904,17 @@ const LaporanRusakModal = ({
         >
           {readOnly ? 'Tutup' : 'Batal'}
         </Button>
+        {readOnly && onPrint && formData?.id && (
+          <Button
+            onClick={() => onPrint(formData)}
+            variant="contained"
+            startIcon={<PrintIcon />}
+            disabled={loading}
+            sx={{ borderRadius: 2 }}
+          >
+            Cetak / PDF
+          </Button>
+        )}
         {!readOnly && (
           <Button
             onClick={handleSubmit}

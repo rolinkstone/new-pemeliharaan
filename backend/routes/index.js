@@ -25,6 +25,7 @@ const routeModules = [
     { name: 'reagen', path: '/reagen', file: './reagen' },
     { name: 'pencatatan', path: '/pencatatan', file: './pencatatan' },
     { name: 'glassware', path: '/glassware', file: './glassware' },
+    { name: 'ttd', path: '/ttd', file: './ttd' },
     { name: 'notifications', path: '/notifications', file: './notifications' }
 ];
 

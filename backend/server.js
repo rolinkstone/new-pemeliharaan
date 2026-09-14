@@ -221,6 +221,7 @@ const routes = [
     { name: 'reagen', path: '/api/reagen', file: './routes/reagen' },
     { name: 'pencatatan', path: '/api/pencatatan', file: './routes/pencatatan' },
     { name: 'glassware', path: '/api/glassware', file: './routes/glassware' },
+    { name: 'ttd', path: '/api/ttd', file: './routes/ttd' },
     { name: 'notifications', path: '/api/notifications', file: './routes/notifications' }
 ];
 

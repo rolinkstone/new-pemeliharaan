@@ -1434,6 +1434,47 @@ const uploadFoto = async (session, files) => {
     }
 };
 
+// ========== TTD PENANDATANGAN (dari aplikasi Talawang) ==========
+
+/**
+ * POST /api/ttd/penandatangan
+ * Cari TTD berdasarkan daftar kunci identitas (user_id / NIP / username / nama).
+ * @param {object} session
+ * @param {string[]} keys
+ * @returns {Promise<{success:boolean, data:Array<{kunci:string,ketemu:boolean,nama?:string,jabatan?:string,nip?:string,ttd_url?:string}>}>}
+ */
+const fetchTtdPenandatangan = async (session, keys = []) => {
+    const daftar = (Array.isArray(keys) ? keys : [keys])
+        .map((k) => String(k ?? '').trim())
+        .filter(Boolean);
+
+    if (daftar.length === 0) {
+        return { success: true, data: [] };
+    }
+
+    const token = getToken(session);
+    if (!token) {
+        return { success: false, message: 'Token tidak ditemukan', data: [] };
+    }
+
+    try {
+        const response = await fetch(`${getBaseUrl()}/ttd/penandatangan`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ keys: daftar }),
+        });
+
+        const data = await handleResponse(response);
+        return data;
+    } catch (error) {
+        console.warn('⚠️ Gagal mengambil data TTD penandatangan:', error.message);
+        return { success: false, message: error.message, data: [] };
+    }
+};
+
 // ========== NAMED EXPORTS ==========
 export {
     fetchAllLaporanRusak,
@@ -1457,7 +1498,8 @@ export {
     fetchRuanganOptions,
     fetchAsetByRuangan,
     fetchPicByRuangan,
-    uploadFoto
+    uploadFoto,
+    fetchTtdPenandatangan
 };
 
 // ========== ALIASES ==========
@@ -1481,6 +1523,7 @@ export const getAsetOptions = fetchAsetOptions;
 export const getAsetByRuangan = fetchAsetByRuangan;
 export const getRuanganOptions = fetchRuanganOptions;
 export const upload = uploadFoto;
+export const getTtdPenandatangan = fetchTtdPenandatangan;
 
 // ========== DEFAULT EXPORT ==========
 const laporanApi = {
@@ -1533,7 +1576,9 @@ const laporanApi = {
     getAsetOptions: fetchAsetOptions,
     getAsetByRuangan: fetchAsetByRuangan,
     getRuanganOptions: fetchRuanganOptions,
-    upload: uploadFoto
+    upload: uploadFoto,
+    fetchTtdPenandatangan,
+    getTtdPenandatangan: fetchTtdPenandatangan
 };
 
 export default laporanApi;

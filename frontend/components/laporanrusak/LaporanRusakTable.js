@@ -57,6 +57,7 @@ import {
   ArrowForward as ArrowForwardIcon,
   AttachMoney as AttachMoneyIcon,
   CheckCircleOutline as CheckCircleOutlineIcon,
+  Print as PrintIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { id } from 'date-fns/locale';
@@ -311,6 +312,7 @@ const LaporanRusakTable = ({
   onCatatPerbaikan,
   onKonfirmasiKabag,
   onKonfirmasiUser,
+  onPrint,
   pagination = { currentPage: 1, perPage: 10, total: 0 },
   onPageChange,
   sortConfig = { field: 'tgl_laporan', direction: 'desc' },
@@ -479,6 +481,7 @@ const LaporanRusakTable = ({
         case 'catat-perbaikan': onCatatPerbaikan?.(selectedRow); break;
         case 'konfirmasi-kabag': onKonfirmasiKabag?.(selectedRow); break;
         case 'konfirmasi-user': onKonfirmasiUser?.(selectedRow); break;
+        case 'print': onPrint?.(selectedRow); break;
         default: break;
       }
     }
@@ -793,6 +796,11 @@ const LaporanRusakTable = ({
           <MenuItem onClick={() => handleAction('view')}>
             <ListItemIcon><VisibilityIcon fontSize="small" /></ListItemIcon>
             <ListItemText>Detail</ListItemText>
+          </MenuItem>
+
+          <MenuItem onClick={() => handleAction('print')}>
+            <ListItemIcon><PrintIcon fontSize="small" color="info" /></ListItemIcon>
+            <ListItemText>Cetak / PDF</ListItemText>
           </MenuItem>
 
           {selectedRow && canVerifikasi(selectedRow.status) && (

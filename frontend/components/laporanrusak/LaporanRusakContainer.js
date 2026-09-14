@@ -27,6 +27,7 @@ import {
   Build as BuildIcon,
   DoneAll as DoneAllIcon,
   AttachMoney as AttachMoneyIcon,
+  Print as PrintIcon,
 } from '@mui/icons-material';
 import { useSession } from 'next-auth/react';
 import * as laporanApi from './api/laporanRusakApi';
@@ -41,6 +42,7 @@ import KonfirmasiKabagModal from './modals/KonfirmasiKabagModal';
 import KonfirmasiUserModal from './modals/KonfirmasiUserModal';
 import DeleteConfirmationModal from './modals/DeleteConfirmationModal';
 import PolishedPageShell from '../common/PolishedPageShell';
+import { cetakLaporanRusak, cetakDaftarLaporanRusak, kunciPenandatangan } from '../../utils/cetakLaporanRusak';
 
 const LaporanRusakContainer = () => {
   const { data: session, status } = useSession();
@@ -349,6 +351,99 @@ const LaporanRusakContainer = () => {
   const handleDelete = (item) => {
     setSelectedItem(item);
     setDeleteModalOpen(true);
+  };
+
+  // ========== CETAK / PDF ==========
+  // Ambil TTD penandatangan dari aplikasi Talawang (read-only). TTD hanya
+  // pelengkap: kalau gagal, dokumen tetap dicetak dengan garis tanda tangan.
+  const ambilTtdPenandatangan = async (laporan) => {
+    const ttd = {};
+    try {
+      const keys = kunciPenandatangan(laporan);
+      if (!session || keys.length === 0) return ttd;
+
+      const result = await laporanApi.fetchTtdPenandatangan(session, keys);
+      if (result?.success && Array.isArray(result.data)) {
+        result.data.forEach((item) => {
+          if (item?.ketemu && item?.ttd_url) {
+            ttd[String(item.kunci).trim()] = item.ttd_url;
+          }
+        });
+      }
+    } catch (error) {
+      console.warn('⚠️ TTD tidak dapat dimuat:', error.message);
+    }
+    return ttd;
+  };
+
+  // Cetak satu laporan (formulir lengkap: identitas, aset, kerusakan, foto,
+  // alur persetujuan, detail perbaikan, tanda tangan + TTD dari Talawang).
+  const handlePrint = async (item) => {
+    const data = item || selectedItem;
+    if (!data) {
+      showSnackbar('Data laporan tidak ditemukan', 'error');
+      return;
+    }
+    try {
+      setLoading(true);
+      const ttd = await ambilTtdPenandatangan(data);
+      // Hitung jumlah TTD unik (satu orang bisa jadi beberapa penandatangan)
+      const jumlahTtd = new Set(Object.values(ttd).filter(Boolean)).size;
+
+      cetakLaporanRusak(data, { ttd });
+      showSnackbar(
+        jumlahTtd > 0
+          ? `Menyiapkan dokumen PDF dengan ${jumlahTtd} TTD... pilih "Save as PDF"`
+          : 'Menyiapkan dokumen PDF... pilih "Save as PDF" pada dialog cetak',
+        'info'
+      );
+    } catch (error) {
+      console.error('Gagal cetak laporan:', error);
+      showSnackbar(error.message || 'Gagal mencetak laporan', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Cetak rekapitulasi sesuai filter yang aktif (ambil semua data, bukan hanya halaman ini).
+  const handlePrintRekap = async () => {
+    if (!session) {
+      showSnackbar('Session tidak ditemukan', 'error');
+      return;
+    }
+    try {
+      setLoading(true);
+      const result = await laporanApi.getAll(session, {
+        ...filters,
+        page: 1,
+        limit: 1000,
+      });
+
+      const rows = result?.success ? processData(result.data || []) : dataList;
+      const pakaiHalamanIniSaja = !result?.success;
+
+      if (!rows || rows.length === 0) {
+        showSnackbar('Tidak ada data untuk dicetak', 'warning');
+        return;
+      }
+
+      cetakDaftarLaporanRusak({
+        data: rows,
+        filters,
+        statistics,
+      });
+      showSnackbar(
+        pakaiHalamanIniSaja
+          ? `Gagal memuat semua data, mencetak ${rows.length} laporan pada halaman ini`
+          : `Menyiapkan rekapitulasi ${rows.length} laporan... pilih "Save as PDF"`,
+        pakaiHalamanIniSaja ? 'warning' : 'info'
+      );
+    } catch (error) {
+      console.error('Gagal cetak rekapitulasi:', error);
+      showSnackbar(error.message || 'Gagal mencetak rekapitulasi', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (formData) => {
@@ -685,6 +780,19 @@ const LaporanRusakContainer = () => {
           >
             Refresh
           </Button>
+          <Button
+            variant="outlined"
+            startIcon={<PrintIcon />}
+            onClick={handlePrintRekap}
+            disabled={loading}
+            title="Cetak rekapitulasi laporan sesuai filter aktif"
+            sx={{
+              borderColor: 'rgba(255,255,255,0.3)', color: '#fff',
+              '&:hover': { borderColor: 'rgba(255,255,255,0.6)', bgcolor: 'rgba(255,255,255,0.08)' },
+            }}
+          >
+            Cetak Daftar
+          </Button>
           {!['menunggu_katim', 'menunggu_ppk', 'dalam_perbaikan', 'menunggu_konfirmasi_kabag', 'menunggu_konfirmasi_user', 'selesai', 'ditolak'].includes(filters.status) && (
             <Button
               variant="contained"
@@ -774,6 +882,7 @@ const LaporanRusakContainer = () => {
               onCatatPerbaikan={handleCatatPerbaikan}
               onKonfirmasiKabag={handleKonfirmasiKabag}
               onKonfirmasiUser={handleKonfirmasiUser}
+              onPrint={handlePrint}
               pagination={pagination}
               onPageChange={handlePageChange}
               sortConfig={sortConfig}
@@ -808,6 +917,7 @@ const LaporanRusakContainer = () => {
         title="Detail Laporan"
         readOnly={true}
         loading={modalLoading}
+        onPrint={() => handlePrint(selectedItem)}
       />
 
       <VerifikasiModal
