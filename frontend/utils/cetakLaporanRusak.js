@@ -10,7 +10,6 @@
 //   - cetakLaporanRusak(laporan, opts)  -> formulir 1 laporan (lengkap + foto + alur + ttd)
 //   - cetakDaftarLaporanRusak(opts)     -> rekapitulasi banyak laporan (A4 landscape)
 
-const KODE_DOKUMEN = 'POM-14.02/CEM.02/SOP.01/IK.16A.01/F.04';
 const INSTANSI = 'BADAN PENGAWAS OBAT DAN MAKANAN';
 const APP_NAME = 'Aplikasi Pemeliharaan Aset';
 
@@ -263,8 +262,6 @@ const baseStyles = (orientation = 'portrait') => `
   }
   .sheet { position: relative; }
 
-  .doc-code { text-align: right; font-size: 9.5px; color: #000; }
-
   .kop { text-align: center; margin-top: 2mm; }
   .logo { width: 74px; height: 74px; display: inline-block; }
   .instansi { margin-top: 3px; }
@@ -318,7 +315,6 @@ const baseStyles = (orientation = 'portrait') => `
 `;
 
 const kopHtml = (judul, subtitle) => `
-  <div class="doc-code">${KODE_DOKUMEN}</div>
   <div class="kop">
     <img class="logo" src="${LOGO_URL}" alt="Logo Badan POM" />
     <div class="instansi">

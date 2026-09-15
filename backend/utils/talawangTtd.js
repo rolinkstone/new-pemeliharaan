@@ -21,10 +21,21 @@
 //   2) Pool sendiri (dipakai bila user DB Pemeliharaan tidak punya akses ke
 //      DB accounting): set TALAWANG_DB_USER + TALAWANG_DB_PASSWORD
 //      (opsional TALAWANG_DB_HOST / TALAWANG_DB_PORT).
+//
+// Pencocokan identitas:
+//   Sebagian kolom di Pemeliharaan hanya menyimpan NAMA tampilan
+//   (`req.user.name`, mis. `laporan_rusak.kabag_confirm_by`), sedangkan
+//   `user_profiles` Talawang sering memakai NIP sebagai `nama_lengkap`.
+//   Karena itu nama yang tidak ketemu langsung diterjemahkan dulu ke
+//   identitas Keycloak (user_id / username / NIP) lewat admin API, lalu
+//   dicocokkan lagi. Hasilnya di-cache agar tidak membebani Keycloak.
 // =====================================================================
 
 const mysql = require('mysql2/promise');
+const axios = require('axios');
 const db = require('../db');
+const KEYCLOAK_CONFIG = require('../config/keycloak');
+const { getAdminCliToken } = require('./keycloakHelpers');
 
 const DB_NAME_RAW = process.env.TALAWANG_DB_NAME || 'accounting';
 const DB_NAME = /^[A-Za-z0-9_]+$/.test(DB_NAME_RAW) ? DB_NAME_RAW : 'accounting';
@@ -105,6 +116,86 @@ async function muatPetaTtd() {
   return map;
 }
 
+// ============ FALLBACK: NAMA TAMPILAN -> IDENTITAS KEYCLOAK ============
+// Dipakai untuk kolom yang hanya menyimpan nama (mis. `kabag_confirm_by`),
+// karena nama tampilan tidak selalu sama dengan `nama_lengkap` di Talawang
+// (sering diisi NIP).
+const CACHE_IDENTITAS_TTL_MS = 10 * 60 * 1000;
+let cacheIdentitas = { at: 0, map: null, error: null };
+
+const kandidatNama = (u) => [
+  `${u.firstName || ''} ${u.lastName || ''}`.trim(),
+  u.attributes?.nama_lengkap?.[0],
+  u.username,
+  u.email,
+];
+
+async function muatPetaIdentitas() {
+  const token = await getAdminCliToken();
+  const url = `${KEYCLOAK_CONFIG.serverUrl}/admin/realms/${KEYCLOAK_CONFIG.realm}/users`;
+  const { data } = await axios.get(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    params: { max: 1000 },
+    timeout: 15000,
+  });
+
+  const map = new Map();
+  (Array.isArray(data) ? data : [])
+    .filter((u) => u.enabled !== false)
+    .forEach((u) => {
+      const identitas = {
+        user_id: u.id,
+        username: u.username,
+        nip: u.attributes?.nip?.[0] || '',
+        nama: `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.username || '',
+      };
+      [...kandidatNama(u), identitas.nip].forEach((k) => {
+        const key = norm(k);
+        if (!key) return;
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(identitas);
+      });
+    });
+
+  return map;
+}
+
+async function petaIdentitas() {
+  if (cacheIdentitas.map && Date.now() - cacheIdentitas.at < CACHE_IDENTITAS_TTL_MS) {
+    return cacheIdentitas.map;
+  }
+  try {
+    const map = await muatPetaIdentitas();
+    cacheIdentitas = { at: Date.now(), map, error: null };
+    console.log(`👥 Peta identitas Keycloak untuk TTD dimuat (${map.size} kunci)`);
+  } catch (error) {
+    console.error('⚠️ Gagal memuat identitas user Keycloak:', error.message);
+    cacheIdentitas = { at: Date.now(), map: cacheIdentitas.map || null, error: error.message };
+  }
+  return cacheIdentitas.map;
+}
+
+/**
+ * Cocokkan satu kunci lewat identitas Keycloak:
+ * nama tampilan -> (user_id / username / NIP) -> peta TTD Talawang.
+ * Hanya dipakai bila pencocokan langsung gagal. Bila hasilnya ambigu
+ * (nama kembar dengan TTD berbeda) maka diabaikan supaya tidak salah orang.
+ */
+const cocokLewatIdentitas = (kunci, petaTtd, petaId) => {
+  const kandidat = petaId.get(norm(kunci));
+  if (!kandidat || kandidat.length === 0) return null;
+
+  const hasil = new Map(); // ttd_url -> rec
+  kandidat.forEach((id) => {
+    [id.user_id, id.username, id.nip, id.nama].forEach((k) => {
+      const rec = petaTtd.get(norm(k));
+      if (rec) hasil.set(rec.ttd_url, rec);
+    });
+  });
+
+  return hasil.size === 1 ? [...hasil.values()][0] : null;
+};
+
 /**
  * Cari TTD berdasarkan daftar kunci (boleh campur: user_id / NIP / username / nama).
  * @param {string[]} keys
@@ -133,10 +224,25 @@ async function cariTtd(keys = []) {
     return daftar.map((kunci) => ({ kunci, ketemu: false }));
   }
 
-  return daftar.map((kunci) => {
+  const hasil = daftar.map((kunci) => {
     const rec = cache.map.get(norm(kunci));
-    return rec ? { kunci, ketemu: true, ...rec } : { kunci, ketemu: false };
+    return rec ? { kunci, ketemu: true, ...rec } : null;
   });
+
+  // Fallback: kunci berupa nama tampilan diterjemahkan dulu ke identitas
+  // Keycloak, lalu dicocokkan lagi ke peta TTD Talawang.
+  const belumKetemu = hasil.map((h, i) => (h ? -1 : i)).filter((i) => i >= 0);
+  if (belumKetemu.length > 0) {
+    const petaId = await petaIdentitas();
+    if (petaId) {
+      belumKetemu.forEach((i) => {
+        const rec = cocokLewatIdentitas(daftar[i], cache.map, petaId);
+        if (rec) hasil[i] = { kunci: daftar[i], ketemu: true, ...rec, via: 'nama' };
+      });
+    }
+  }
+
+  return hasil.map((h, i) => h || { kunci: daftar[i], ketemu: false });
 }
 
 const infoTalawang = () => ({
@@ -148,6 +254,12 @@ const infoTalawang = () => ({
   jumlahProfil: cache.map ? cache.map.size : 0,
   error: cache.error,
   terakhirMuat: cache.at ? new Date(cache.at).toISOString() : null,
+  identitasKeycloak: {
+    aktif: Boolean(cacheIdentitas.map),
+    jumlahKunci: cacheIdentitas.map ? cacheIdentitas.map.size : 0,
+    error: cacheIdentitas.error,
+    terakhirMuat: cacheIdentitas.at ? new Date(cacheIdentitas.at).toISOString() : null,
+  },
 });
 
 module.exports = { cariTtd, infoTalawang, buatUrlTtd };
