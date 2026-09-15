@@ -22,6 +22,19 @@ services:
       - DATA_PATH=/data
       - LOGS_PATH=/data/logs
       - UPLOADS_PATH=/data/uploads
+      # ---------- Integrasi TTD Talawang (opsional, lihat backend/utils/talawangTtd.js) ----------
+      # URL publik penyaji file TTD. Default production: https://api-talawang.bbpompky.id
+      # (JANGAN https://talawang.bbpompky.id - rewrite /api/uploads/* -> 500 di production)
+      - TALAWANG_PUBLIC_URL=${TALAWANG_PUBLIC_URL:-}
+      - TALAWANG_UPLOADS_PREFIX=${TALAWANG_UPLOADS_PREFIX:-}
+      - TALAWANG_DB_NAME=${TALAWANG_DB_NAME:-}
+      # Isi HANYA bila user DB Pemeliharaan tidak punya akses ke DB accounting.
+      # Set TALAWANG_DB_USER/PASSWORD dengan user MySQL yang boleh SELECT
+      # accounting.user_profiles (mode koneksi jadi 'pool-khusus').
+      - TALAWANG_DB_HOST=${TALAWANG_DB_HOST:-}
+      - TALAWANG_DB_PORT=${TALAWANG_DB_PORT:-}
+      - TALAWANG_DB_USER=${TALAWANG_DB_USER:-}
+      - TALAWANG_DB_PASSWORD=${TALAWANG_DB_PASSWORD:-}
     volumes:
       # Mount folder data untuk backend
       - ./data/backend:/data

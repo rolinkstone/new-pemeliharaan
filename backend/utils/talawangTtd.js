@@ -11,8 +11,12 @@
 //
 // Env opsional:
 //   TALAWANG_DB_NAME         (default: accounting)
-//   TALAWANG_PUBLIC_URL      (default prod: https://talawang.bbpompky.id,
+//   TALAWANG_PUBLIC_URL      (default prod: https://api-talawang.bbpompky.id,
 //                             default dev : http://localhost:3001)
+//     ⚠️ Di production JANGAN pakai https://talawang.bbpompky.id untuk file:
+//        rewrite Next.js `/api/uploads/*` yang jalan di local (localhost:3001)
+//        mengembalikan 500 di production. Yang benar domain API Talawang
+//        (https://api-talawang.bbpompky.id/api/uploads/ttd/<file> -> 200 image/png).
 //   TALAWANG_UPLOADS_PREFIX  (default: /api/uploads)
 //
 // Cara koneksi DB:
@@ -42,7 +46,7 @@ const DB_NAME = /^[A-Za-z0-9_]+$/.test(DB_NAME_RAW) ? DB_NAME_RAW : 'accounting'
 
 const DEFAULT_PUBLIC_URL =
   process.env.NODE_ENV === 'production'
-    ? 'https://talawang.bbpompky.id'
+    ? 'https://api-talawang.bbpompky.id'
     : 'http://localhost:3001';
 
 const PUBLIC_URL = (process.env.TALAWANG_PUBLIC_URL || DEFAULT_PUBLIC_URL).replace(/\/+$/, '');
@@ -67,10 +71,9 @@ const getPoolTalawang = () => {
       host: process.env.TALAWANG_DB_HOST || process.env.DB_HOST || '127.0.0.1',
       port: parseInt(process.env.TALAWANG_DB_PORT || process.env.DB_PORT || '3306', 10),
       user: process.env.TALAWANG_DB_USER || process.env.DB_USER || 'root',
-      password:
-        process.env.TALAWANG_DB_PASSWORD !== undefined
-          ? process.env.TALAWANG_DB_PASSWORD
-          : process.env.DB_PASSWORD || '',
+      // Nilai kosong dianggap belum diset (mis. env docker-compose
+      // `${TALAWANG_DB_PASSWORD:-}`) -> pakai DB_PASSWORD.
+      password: process.env.TALAWANG_DB_PASSWORD || process.env.DB_PASSWORD || '',
       database: DB_NAME,
       waitForConnections: true,
       connectionLimit: 3,
