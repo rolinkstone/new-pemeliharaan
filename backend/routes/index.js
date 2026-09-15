@@ -6,7 +6,7 @@ const router = express.Router();
 
 // ========== DAFTAR ROUTE ==========
 const routeModules = [
-    { name: 'laporanRusak', path: '/laporanrusak', file: './laporanrusak' },
+    { name: 'laporanRusak', path: '/laporanrusak', file: './laporanRusak' },
     { name: 'picRuangan', path: '/picruangan', file: './picruangan' },
     { name: 'ruangan', path: '/ruangan', file: './ruangan' },
     { name: 'keycloak', path: '/keycloak', file: './keycloak' },

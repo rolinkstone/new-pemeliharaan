@@ -203,7 +203,7 @@ const db = require('./db');
 
 // ========== ROUTES ==========
 const routes = [
-    { name: 'laporanRusak', path: '/api/laporanrusak', file: './routes/laporanrusak' },
+    { name: 'laporanRusak', path: '/api/laporanrusak', file: './routes/laporanRusak' },
     { name: 'picRuangan', path: '/api/picruangan', file: './routes/picruangan' },
     { name: 'ruangan', path: '/api/ruangan', file: './routes/ruangan' },
     { name: 'keycloak', path: '/api/keycloak', file: './routes/keycloak' },
