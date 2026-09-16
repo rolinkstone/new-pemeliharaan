@@ -332,11 +332,38 @@ const LaporanRusakTable = ({
 
   // ========== DAPATKAN ROLE USER DARI SESSION ==========
   const userRoles = session?.user?.roles || [];
+  const currentUserId = session?.user?.id || session?.user?.sub || null;
   const isAdmin = session?.user?.isAdmin || userRoles.includes('admin') || userRoles.includes('superadmin') || userRoles.includes('admin_pemeliharaan');
   const isPICRuangan = session?.user?.isPICRuangan || userRoles.includes('pic_ruangan') || userRoles.includes('pic');
   const isKabagTU = session?.user?.isKabagTU || userRoles.includes('kabag_tu');
   const isPPK = session?.user?.isPPK || userRoles.includes('ppk');
   const isKatim = session?.user?.isKatim || userRoles.includes('katim');
+
+  // ========== PEMBATASAN PIC RUANGAN ==========
+  // PIC hanya boleh menindaklanjuti laporan dari ruangan yang ia tangani.
+  // Akun yang punya role pic_ruangan SELALU terikat aturan ini walau ia juga
+  // punya role admin; yang bebas semua ruangan hanyalah admin MURNI (tanpa
+  // peran pic_ruangan). Sumber utama: flag `bisa_tindak_lanjut` dari backend
+  // (dihitung dari token request, jadi selalu sinkron). Heuristik lokal hanya
+  // dipakai sebagai cadangan bila flag tidak ada (data lama / endpoint lain).
+  const bolehBypassAturanPIC = isAdmin && !isPICRuangan;
+
+  const isPicOfRow = (row) => {
+    if (bolehBypassAturanPIC) return true;
+    if (typeof row?.bisa_tindak_lanjut === 'boolean') return row.bisa_tindak_lanjut;
+    if (!isPICRuangan || !row || !currentUserId) return false;
+
+    const kandidat = [row.pic_ruangan_id, row.pic_user_id];
+    const mapped = row.ruangan_id != null ? picDetails[row.ruangan_id] : null;
+    if (mapped) {
+      kandidat.push(mapped.user_id);
+      if (Array.isArray(mapped.user_ids)) kandidat.push(...mapped.user_ids);
+    }
+
+    return kandidat.some(
+      (id) => id !== null && id !== undefined && String(id) === String(currentUserId)
+    );
+  };
 
   // ========== AMBIL DATA PIC DARI BEBERAPA SUMBER ==========
   useEffect(() => {
@@ -347,8 +374,8 @@ const LaporanRusakTable = ({
       
       // Coba beberapa endpoint
       const endpoints = [
-        `${BASE_URL}/api/picruangan`,
-        `${BASE_URL}/api/pic_ruangan`,
+        `${BASE_URL}/api/picruangan?page=1&limit=1000`,
+        `${BASE_URL}/api/pic_ruangan?page=1&limit=1000`,
         `${BASE_URL}/api/ruangan?page=1&limit=1000`,
       ];
       
@@ -400,16 +427,22 @@ const LaporanRusakTable = ({
       if (pics.length > 0) {
         console.log('📋 Data PIC yang ditemukan:', pics);
         
-        // Buat mapping ruangan_id -> data PIC
+        // Buat mapping ruangan_id -> data PIC (satu ruangan bisa punya >1 PIC)
         const picMapping = {};
         pics.forEach(pic => {
           const ruanganId = pic.ruangan_id || pic.ruanganId;
-          if (ruanganId) {
-            picMapping[ruanganId] = {
-              user_name: pic.user_name || pic.userName || pic.nama,
-              user_id: pic.user_id || pic.userId,
-            };
+          if (!ruanganId) return;
+          const userId = pic.user_id || pic.userId || null;
+          const userName = pic.user_name || pic.userName || pic.nama || null;
+          const prev = picMapping[ruanganId] || { user_name: null, user_id: null, user_ids: [] };
+          if (userId && !prev.user_ids.some((id) => String(id) === String(userId))) {
+            prev.user_ids.push(userId);
           }
+          picMapping[ruanganId] = {
+            user_name: prev.user_name || userName,
+            user_id: prev.user_id || userId,
+            user_ids: prev.user_ids,
+          };
         });
         setPicDetails(picMapping);
         console.log('📋 Mapping PIC by ruangan:', picMapping);
@@ -441,9 +474,9 @@ const LaporanRusakTable = ({
   }, [session, data]);
 
   // ========== FUNGSI CAN VERIFIKASI (CEK FISIK) ==========
-  const canVerifikasi = (status) => {
-    if (isAdmin) return status === STATUS.DIAJUKAN;
-    return isPICRuangan && status === STATUS.DIAJUKAN;
+  const canVerifikasi = (row) => {
+    if (bolehBypassAturanPIC) return row?.status === STATUS.DIAJUKAN;
+    return isPICRuangan && isPicOfRow(row) && row?.status === STATUS.DIAJUKAN;
   };
 
   // Data sudah disaring di backend sesuai role; frontend hanya menampilkan semua
@@ -501,17 +534,18 @@ const LaporanRusakTable = ({
   const handleChangeRowsPerPage = (event) => onPageChange(1, parseInt(event.target.value, 10));
   const handleSortClick = (field) => onSort(field);
 
-  const canEdit = (status) => {
-    if (isAdmin) return status === STATUS.DIAJUKAN;
-    return isPICRuangan && status === STATUS.DIAJUKAN;
+  const canEdit = (row) => {
+    if (bolehBypassAturanPIC) return row?.status === STATUS.DIAJUKAN;
+    return isPICRuangan && isPicOfRow(row) && row?.status === STATUS.DIAJUKAN;
   };
 
   const canDelete = (row) => {
-    if (isAdmin) return row?.status === STATUS.DIAJUKAN;
+    if (bolehBypassAturanPIC) return row?.status === STATUS.DIAJUKAN;
     if (!row) return false;
     const userId = session?.user?.id || session?.user?.sub;
     const isOwner = String(row.pelapor_id) === String(userId);
-    return isOwner && row.status === STATUS.DIAJUKAN;
+    const isPicRuanganRow = isPICRuangan && isPicOfRow(row);
+    return (isOwner || isPicRuanganRow) && row.status === STATUS.DIAJUKAN;
   };
 
   // Katim mengetahui & mengirim ke PPK
@@ -527,9 +561,9 @@ const LaporanRusakTable = ({
   };
 
   // PIC/Admin mencatat perbaikan selesai
-  const canCatatPerbaikan = (status) => {
-    if (isAdmin) return status === STATUS.DALAM_PERBAIKAN;
-    return isPICRuangan && status === STATUS.DALAM_PERBAIKAN;
+  const canCatatPerbaikan = (row) => {
+    if (bolehBypassAturanPIC) return row?.status === STATUS.DALAM_PERBAIKAN;
+    return isPICRuangan && isPicOfRow(row) && row?.status === STATUS.DALAM_PERBAIKAN;
   };
 
   // Kabag TU konfirmasi
@@ -803,10 +837,10 @@ const LaporanRusakTable = ({
             <ListItemText>Cetak / PDF</ListItemText>
           </MenuItem>
 
-          {selectedRow && canVerifikasi(selectedRow.status) && (
+          {selectedRow && canVerifikasi(selectedRow) && (
             <MenuItem onClick={() => handleAction('verifikasi')}>
-              <ListItemIcon><CheckCircleIcon fontSize="small" color={isAdmin ? 'primary' : 'success'} /></ListItemIcon>
-              <ListItemText>{isAdmin ? 'Cek Fisik (Admin)' : 'Cek Fisik BMN'}</ListItemText>
+              <ListItemIcon><CheckCircleIcon fontSize="small" color={bolehBypassAturanPIC ? 'primary' : 'success'} /></ListItemIcon>
+              <ListItemText>{bolehBypassAturanPIC ? 'Cek Fisik (Admin)' : 'Cek Fisik BMN'}</ListItemText>
             </MenuItem>
           )}
 
@@ -824,10 +858,10 @@ const LaporanRusakTable = ({
             </MenuItem>
           )}
 
-          {selectedRow && canCatatPerbaikan(selectedRow.status) && (
+          {selectedRow && canCatatPerbaikan(selectedRow) && (
             <MenuItem onClick={() => handleAction('catat-perbaikan')}>
               <ListItemIcon><CheckCircleOutlineIcon fontSize="small" color="success" /></ListItemIcon>
-              <ListItemText>{isAdmin ? 'Catat Perbaikan (Admin)' : 'Catat Perbaikan Selesai'}</ListItemText>
+              <ListItemText>{bolehBypassAturanPIC ? 'Catat Perbaikan (Admin)' : 'Catat Perbaikan Selesai'}</ListItemText>
             </MenuItem>
           )}
 
@@ -845,10 +879,10 @@ const LaporanRusakTable = ({
             </MenuItem>
           )}
 
-          {selectedRow && canEdit(selectedRow.status) && (
+          {selectedRow && canEdit(selectedRow) && (
             <MenuItem onClick={() => handleAction('edit')}>
               <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
-              <ListItemText>{isAdmin ? 'Edit (Admin)' : 'Edit'}</ListItemText>
+              <ListItemText>{bolehBypassAturanPIC ? 'Edit (Admin)' : 'Edit'}</ListItemText>
             </MenuItem>
           )}
 

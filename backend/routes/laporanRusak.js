@@ -40,6 +40,49 @@ const isKatim = (req) => hasRole(req, ['katim']);
 const isPPK = (req) => hasRole(req, ['ppk']);
 const isKabagTU = (req) => hasRole(req, ['kabag_tu']);
 
+// =====================================================================
+// PEMBATASAN TINDAK LANJUT PIC RUANGAN
+// PIC (mis. PIC A) hanya boleh menindaklanjuti laporan dari ruangan yang ia
+// tangani (baris pic_ruangan berstatus 'aktif'). Laporan milik PIC ruangan
+// lain (mis. PIC B) TIDAK boleh ditindaklanjuti. Admin bebas semua ruangan.
+// =====================================================================
+const PESAN_BUKAN_PIC =
+    'Akses ditolak. Laporan ini bukan di ruangan yang Anda tangani sebagai PIC Ruangan.';
+
+const isPicUntukLaporan = async (req, laporan) => {
+    if (!laporan || !laporan.ruangan_id) return false;
+    // pic_ruangan.user_id menyimpan id user Keycloak (claim sub). Username ikut
+    // dicocokkan sebagai cadangan bila baris PIC dibuat dengan username.
+    const kandidat = [getUserId(req), getUsername(req)].filter(Boolean);
+    if (kandidat.length === 0) return false;
+    const [rows] = await db.query(
+        `SELECT id FROM pic_ruangan
+          WHERE ruangan_id = ? AND status = 'aktif'
+            AND user_id IN (${kandidat.map(() => '?').join(', ')})
+          LIMIT 1`,
+        [laporan.ruangan_id, ...kandidat]
+    );
+    return rows.length > 0;
+};
+
+// Boleh menindaklanjuti = admin MURNI (tanpa peran PIC ruangan), atau PIC ruangan terkait.
+// Akun yang punya role pic_ruangan tetap terikat aturannya walau ia juga admin
+// (mis. PIC Lobby tidak boleh menindaklanjuti laporan ruangan PIC lain).
+const isAdminTanpaPeranPIC = (req) => isAdminRole(req) && !isPicRuangan(req);
+
+const bolehTindakLanjutPIC = async (req, laporan) => {
+    if (isAdminTanpaPeranPIC(req)) return true;
+    if (!isPicRuangan(req)) return false;
+    return isPicUntukLaporan(req, laporan);
+};
+
+// Boleh ubah/hapus = admin murni, pelapor sendiri, atau PIC ruangan terkait.
+const bolehUbahLaporan = async (req, laporan) => {
+    if (isAdminTanpaPeranPIC(req)) return true;
+    if (String(laporan?.pelapor_id ?? '') === String(getUserId(req))) return true;
+    return isPicRuangan(req) && (await isPicUntukLaporan(req, laporan));
+};
+
 // Helper untuk generate nomor laporan
 async function generateNomorLaporan() {
     const date = new Date();
@@ -247,7 +290,34 @@ router.get('/', keycloakAuth, async (req, res) => {
             console.error('Error fetching users from Keycloak:', error);
         }
 
-        const laporanList = rows.map(row => mapLaporan(row, userMap));
+        // Flag otorisasi per baris (server = penentu), dipakai UI untuk menampilkan
+        // tombol tindak lanjut. Lebih andal daripada menebak dari role/session di
+        // frontend yang bisa kedaluwarsa atau salah terbaca.
+        // Aturan sama dengan bolehTindakLanjutPIC(): peran PIC ruangan menang
+        // atas role admin, jadi hanya admin murni yang bebas semua ruangan.
+        const adminBebas = isAdminTanpaPeranPIC(req);
+        const ruanganPICUser = new Set();
+        if (!adminBebas && isPIC) {
+            const kandidat = [userId, getUsername(req)].filter(Boolean);
+            if (kandidat.length > 0) {
+                try {
+                    const [rp] = await db.query(
+                        `SELECT DISTINCT ruangan_id FROM pic_ruangan
+                          WHERE status = 'aktif' AND user_id IN (?)`,
+                        [kandidat]
+                    );
+                    rp.forEach(r => ruanganPICUser.add(Number(r.ruangan_id)));
+                } catch (error) {
+                    console.error('Error fetching ruangan PIC user:', error);
+                }
+            }
+        }
+
+        const laporanList = rows.map(row => ({
+            ...mapLaporan(row, userMap),
+            bisa_tindak_lanjut:
+                adminBebas || (isPIC && ruanganPICUser.has(Number(row.ruangan_id))),
+        }));
 
         res.json({
             success: true,
@@ -439,12 +509,15 @@ router.put('/:id', keycloakAuth, async (req, res) => {
         const { id } = req.params;
         let { aset_id, ruangan_id, deskripsi, foto_kerusakan, prioritas, status } = req.body;
 
-        const [existing] = await db.query('SELECT id, status FROM laporan_rusak WHERE id = ?', [id]);
+        const [existing] = await db.query('SELECT id, status, ruangan_id, pelapor_id FROM laporan_rusak WHERE id = ?', [id]);
         if (existing.length === 0) {
             return res.status(404).json({ success: false, message: 'Laporan tidak ditemukan' });
         }
         if (existing[0].status !== STATUS.DIAJUKAN) {
             return res.status(400).json({ success: false, message: 'Laporan sudah diproses, tidak dapat diedit' });
+        }
+        if (!(await bolehUbahLaporan(req, existing[0]))) {
+            return res.status(403).json({ success: false, message: PESAN_BUKAN_PIC });
         }
 
         const fotoKerusakanJson = Array.isArray(foto_kerusakan) ? JSON.stringify(foto_kerusakan) : null;
@@ -465,7 +538,7 @@ router.put('/:id', keycloakAuth, async (req, res) => {
 router.delete('/:id', keycloakAuth, async (req, res) => {
     try {
         const { id } = req.params;
-        const [existing] = await db.query('SELECT status, pelapor_id FROM laporan_rusak WHERE id = ?', [id]);
+        const [existing] = await db.query('SELECT status, pelapor_id, ruangan_id FROM laporan_rusak WHERE id = ?', [id]);
         if (existing.length === 0) {
             return res.status(404).json({ success: false, message: 'Laporan tidak ditemukan' });
         }
@@ -475,6 +548,9 @@ router.delete('/:id', keycloakAuth, async (req, res) => {
                 success: false,
                 message: `Laporan sudah ditindaklanjuti (${laporan.status}) dan tidak dapat dihapus`
             });
+        }
+        if (!(await bolehUbahLaporan(req, laporan))) {
+            return res.status(403).json({ success: false, message: PESAN_BUKAN_PIC });
         }
         await db.query('DELETE FROM laporan_rusak WHERE id = ?', [id]);
         res.json({ success: true, message: 'Laporan berhasil dihapus', deletedBy: getUsernameFromToken(req.user) });
@@ -502,6 +578,11 @@ router.post('/:id/verifikasi', keycloakAuth, async (req, res) => {
         const [existing] = await conn.query('SELECT * FROM laporan_rusak WHERE id = ?', [id]);
         if (existing.length === 0) { await conn.rollback(); conn.release(); return res.status(404).json({ success: false, message: 'Laporan tidak ditemukan' }); }
         const laporan = existing[0];
+        // PIC hanya boleh cek fisik laporan ruangan yang ia tangani (admin bebas)
+        if (!(await bolehTindakLanjutPIC(req, laporan))) {
+            await conn.rollback(); conn.release();
+            return res.status(403).json({ success: false, message: PESAN_BUKAN_PIC });
+        }
         if (laporan.status !== STATUS.DIAJUKAN) {
             await conn.rollback(); conn.release();
             return res.status(400).json({ success: false, message: `Laporan tidak dalam status diajukan. Status saat ini: ${laporan.status}` });
@@ -686,6 +767,10 @@ router.post('/:id/catat-perbaikan', keycloakAuth, async (req, res) => {
         const [existing] = await db.query('SELECT * FROM laporan_rusak WHERE id = ?', [id]);
         if (existing.length === 0) { return res.status(404).json({ success: false, message: 'Laporan tidak ditemukan' }); }
         const laporan = existing[0];
+        // PIC hanya boleh mencatat perbaikan laporan ruangan yang ia tangani (admin bebas)
+        if (!(await bolehTindakLanjutPIC(req, laporan))) {
+            return res.status(403).json({ success: false, message: PESAN_BUKAN_PIC });
+        }
         if (laporan.status !== STATUS.DALAM_PERBAIKAN) {
             return res.status(400).json({ success: false, message: `Laporan tidak dalam status dalam_perbaikan. Status saat ini: ${laporan.status}` });
         }
