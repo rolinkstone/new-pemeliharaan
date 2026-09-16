@@ -75,30 +75,40 @@ const fmtTanggal = (value) => {
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'long', year: 'numeric' });
 };
 
-const fmtTanggalWaktu = (value) => {
-  const d = toDate(value);
-  if (!d) return isEmptyValue(value) ? '-' : escapeHtml(value);
-  const tanggal = d.toLocaleDateString('id-ID', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
-  const jam = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-  return `${tanggal}, ${jam}`;
+// Normalisasi nilai rupiah menjadi number.
+// Mendukung:
+//   number        : 1300000
+//   desimal DB    : "1300000.00"  / "1300000,00" -> 1300000
+//   pemisah ribuan: "1.300.000"   / "1,300,000"  -> 1300000
+//   prefix Rp     : "Rp 1.300.000"
+// Mengembalikan null bila nilainya bukan angka tunggal (teks bebas / rentang),
+// sehingga pemanggil bisa menampilkan teksnya apa adanya.
+const parseRupiahNumber = (value) => {
+  if (isEmptyValue(value)) return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+
+  const s = String(value).trim();
+  if (!s) return null;
+  const bersih = s.replace(/rp\.?/gi, '').replace(/[\s\u00a0]/g, '');
+  // Teks bebas ("kurang lebih 2 juta") atau rentang ("1.000.000 - 2.000.000")
+  if (/[a-zA-Z]/.test(bersih) || /[-/]/.test(bersih)) return null;
+  if (!/^[\d.,]+$/.test(bersih)) return null;
+
+  // Bagian desimal (mis. ".00" pada "1300000.00") dibuang, sisanya digit utuh.
+  // Pemisah ribuan tidak dianggap desimal karena diikuti tepat 3 digit.
+  const desimal = bersih.match(/[.,]\d{1,2}$/);
+  const utuh = desimal ? bersih.slice(0, bersih.length - desimal[0].length) : bersih;
+  const angka = utuh.replace(/[.,]/g, '');
+  if (!angka) return null;
+  const num = Number(angka);
+  return Number.isFinite(num) ? num : null;
 };
 
 const fmtRupiah = (value) => {
   if (isEmptyValue(value)) return '';
-  if (typeof value === 'number') {
-    return `Rp ${Number(value).toLocaleString('id-ID')}`;
-  }
-  const s = String(value).trim();
-  // Teks bebas (mis. "1.000.000 - 2.000.000", "kurang lebih 2 juta") -> tampilkan apa adanya
-  if (/[a-zA-Z]/.test(s) || /[-/]/.test(s)) return s;
-  const digits = s.replace(/[^\d]/g, '');
-  if (!digits) return s;
-  const num = Number(digits);
-  if (isNaN(num)) return s;
+  const num = parseRupiahNumber(value);
+  // Bukan angka tunggal (teks bebas / rentang) -> tampilkan apa adanya
+  if (num === null) return String(value).trim();
   return `Rp ${num.toLocaleString('id-ID')}`;
 };
 
@@ -727,7 +737,7 @@ export const buildLaporanRusakHtml = (laporan, opts = {}) => {
             <td class="center">${i + 1}</td>
             <td>${escapeHtml(s.tahap)}</td>
             <td>${nl2br(orDash(s.pelaksana))}</td>
-            <td>${escapeHtml(s.waktu ? fmtTanggalWaktu(s.waktu) : '-')}</td>
+            <td>${escapeHtml(s.waktu ? fmtTanggal(s.waktu) : '-')}</td>
             <td>${s.catatan ? nl2br(s.catatan) : '-'}</td>
           </tr>`
           )
@@ -822,9 +832,8 @@ const ringkasFilter = (filters = {}) => {
 export const buildDaftarLaporanRusakHtml = ({ data = [], filters = {}, statistics = null } = {}) => {
   const rows = Array.isArray(data) ? data : [];
   const totalBiayaAktual = rows.reduce((acc, r) => {
-    const v = r?.detail_perbaikan?.biaya_aktual;
-    const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[^\d]/g, ''));
-    return acc + (isNaN(n) ? 0 : n);
+    const n = parseRupiahNumber(r?.detail_perbaikan?.biaya_aktual);
+    return acc + (n === null ? 0 : n);
   }, 0);
 
   const statusCount = rows.reduce((acc, r) => {
