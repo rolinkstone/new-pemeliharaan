@@ -85,13 +85,8 @@ export const handleAuthFailure = () => {
       isHandlingAuthFailure = false;
     }, 5000);
 
-  try {
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
-  } catch (err) {
-    // storage tidak tersedia — abaikan
-  }
-
+  // Catatan: tidak ada token di localStorage/sessionStorage - token sesi
+  // disimpan NextAuth di cookie HttpOnly dan dibersihkan oleh signOut() di bawah.
   const target = `${window.location.origin}/login?error=session_expired`;
 
   console.warn('[auth-interceptor] Sesi tidak valid/kedaluwarsa → redirect ke /login');

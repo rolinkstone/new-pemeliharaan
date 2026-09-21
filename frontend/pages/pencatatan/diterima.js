@@ -24,5 +24,7 @@ export async function getServerSideProps(context) {
   if (!allowedRoles.some((r) => roles.includes(r))) {
     return { redirect: { destination: '/', permanent: false } };
   }
-  return { props: { session } };
+  // Sengaja TIDAK mengirim `session` sebagai props: objek session memuat token,
+  // sehingga ikut tertanam di HTML. Token diambil sisi klien oleh SessionProvider.
+  return { props: {} };
 }

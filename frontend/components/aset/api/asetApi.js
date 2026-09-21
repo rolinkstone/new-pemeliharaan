@@ -3,8 +3,11 @@
 /**
  * Helper untuk mendapatkan token
  */
+// Token HANYA berasal dari sesi NextAuth (cookie HttpOnly).
+// Dulu ada fallback `localStorage.getItem('token')`, padahal token tidak pernah
+// ditulis ke localStorage - fallback itu menyesatkan dan sudah dihapus.
 const getToken = (session) => {
-    return session?.accessToken || session?.token || session?.access_token || localStorage.getItem('token');
+    return session?.accessToken || session?.token || session?.access_token;
 };
 
 const handleResponse = async (response) => {

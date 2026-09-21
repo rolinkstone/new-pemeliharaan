@@ -43,8 +43,7 @@ export default function VerifikasiModal({ open, onClose, onConfirm, laporan, loa
     if (katimList.length > 0) return;
     setKatimLoading(true);
     try {
-      let token = session?.accessToken || session?.token;
-      if (!token) { try { token = localStorage.getItem('token'); } catch (e) { /* ignore */ } }
+      const token = session?.accessToken || session?.token;
       const { data } = await axios.get(`${BASE}/keycloak/katim/list`, {
         headers: { Authorization: `Bearer ${token || ''}` },
       });

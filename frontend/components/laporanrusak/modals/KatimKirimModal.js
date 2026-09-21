@@ -30,8 +30,7 @@ export default function KatimKirimModal({ open, onClose, onConfirm, laporan, loa
     if (ppkList.length > 0) return;
     setPpkLoading(true);
     try {
-      let token = session?.accessToken || session?.token;
-      if (!token) { try { token = localStorage.getItem('token'); } catch (e) { /* ignore */ } }
+      const token = session?.accessToken || session?.token;
       const { data } = await axios.get(`${BASE}/keycloak/ppk/list`, {
         headers: { Authorization: `Bearer ${token || ''}` },
       });

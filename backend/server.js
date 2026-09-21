@@ -76,6 +76,66 @@ if (!KEYCLOAK_CONFIG.clientSecret) {
     console.error('⚠️  KEYCLOAK_CLIENT_SECRET tidak terbaca - endpoint /api/login akan gagal (unauthorized_client).');
 }
 
+// ========== VERIFIKASI TANDA TANGAN TOKEN (JWKS Keycloak) ==========
+// Sebelumnya token hanya di-`jwt.decode` TANPA verifikasi tanda tangan, sehingga
+// token buatan sendiri (ditandatangani dengan secret apa pun) bisa lolos.
+// Verifikasi otomatis AKTIF di produksi; di dev bisa dipaksa:
+//   JWT_VERIFY_TOKENS=true   -> wajib tanda tangan valid
+//   JWT_VERIFY_TOKENS=false  -> hanya decode (khusus pengujian lokal)
+const { createPublicKey } = require('crypto');
+
+const VERIFY_TOKENS = process.env.JWT_VERIFY_TOKENS !== undefined
+    ? String(process.env.JWT_VERIFY_TOKENS).toLowerCase() === 'true'
+    : process.env.NODE_ENV === 'production';
+
+const KEYCLOAK_ISSUER = process.env.KEYCLOAK_ISSUER || `${KEYCLOAK_CONFIG.url}/realms/${KEYCLOAK_CONFIG.realm}`;
+const JWKS_URI = `${KEYCLOAK_ISSUER}/protocol/openid-connect/certs`;
+const JWKS_TTL = 10 * 60 * 1000;
+
+let jwksCache = { keys: [], fetchedAt: 0 };
+
+async function fetchJwks(force = false) {
+    const masihSegar = jwksCache.keys.length > 0 && (Date.now() - jwksCache.fetchedAt) < JWKS_TTL;
+    if (!force && masihSegar) return jwksCache.keys;
+
+    const response = await fetch(JWKS_URI);
+    if (!response.ok) throw new Error(`Gagal mengambil JWKS (HTTP ${response.status})`);
+
+    const body = await response.json();
+    jwksCache = { keys: body.keys || [], fetchedAt: Date.now() };
+    return jwksCache.keys;
+}
+
+function publicKeyFromJwks(keys, kid) {
+    // Hanya pakai key untuk tanda tangan (use=sig) - JWKS Keycloak juga memuat
+    // key enkripsi (alg=RSA-OAEP) yang tidak dipakai untuk verifikasi.
+    const signingKeys = keys.filter((k) => !k.use || k.use === 'sig');
+    const jwk = signingKeys.find((k) => k.kid === kid) || (signingKeys.length === 1 ? signingKeys[0] : null);
+    if (!jwk) return null;
+    return createPublicKey({ key: jwk, format: 'jwk' });
+}
+
+async function verifyKeycloakToken(token) {
+    const decoded = jwt.decode(token, { complete: true });
+    if (!decoded || !decoded.header) throw new Error('Token tidak dapat dibaca');
+
+    const kid = decoded.header.kid;
+    let key = publicKeyFromJwks(await fetchJwks(), kid);
+    if (!key) {
+        // Keycloak bisa merotasi key -> paksa ambil ulang JWKS sekali.
+        key = publicKeyFromJwks(await fetchJwks(true), kid);
+    }
+    if (!key) throw new Error(`Public key untuk kid "${kid}" tidak ditemukan di JWKS`);
+
+    return jwt.verify(token, key, { algorithms: ['RS256'], issuer: KEYCLOAK_ISSUER });
+}
+
+if (VERIFY_TOKENS) {
+    console.log(`🔐 Verifikasi tanda tangan JWT: AKTIF (${JWKS_URI})`);
+} else {
+    console.warn('⚠️  Verifikasi tanda tangan JWT: NONAKTIF (mode dev). Set NODE_ENV=production atau JWT_VERIFY_TOKENS=true saat produksi.');
+}
+
 const httpsAgent = new https.Agent({ rejectUnauthorized: true });
 
 // ========== PUBLIC ROUTES ==========
@@ -94,7 +154,8 @@ const authMiddleware = async (req, res, next) => {
 
     const token = authHeader.slice(7);
     try {
-        const decoded = jwt.decode(token);
+        // Verifikasi tanda tangan (produksi) atau sekadar decode (dev).
+        const decoded = VERIFY_TOKENS ? await verifyKeycloakToken(token) : jwt.decode(token);
         if (!decoded || (decoded.exp && decoded.exp < Date.now() / 1000)) {
             return res.status(401).json({ success: false, message: 'Token invalid or expired' });
         }
@@ -211,10 +272,23 @@ app.post('/api/upload/foto', upload.array('foto_kerusakan', 10), (req, res) => {
 });
 
 app.get('/uploads/:filename', (req, res) => {
-    const filePath = path.join(UPLOADS_DIR, req.params.filename);
+    // Pengaman path traversal: hanya nama file polos yang diterima.
+    const namaFile = String(req.params.filename || '');
+    if (!namaFile || namaFile !== path.basename(namaFile) || namaFile.includes('..')) {
+        return res.status(400).json({ success: false, message: 'Nama file tidak valid' });
+    }
+
+    const filePath = path.join(UPLOADS_DIR, namaFile);
     if (!fs.existsSync(filePath)) {
         return res.status(404).json({ success: false, message: 'File not found' });
     }
+
+    // File upload = konten tak terpercaya. nosniff + CSP ketat mencegah file yang
+    // disamarkan (HTML/SVG berisi skrip) dieksekusi sebagai dokumen di origin API
+    // -> mitigasi stored XSS. Gambar tetap tampil normal lewat <img>.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.sendFile(filePath);
 });
 
@@ -279,9 +353,13 @@ app.use((err, req, res, next) => {
     if (err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({ success: false, message: 'Ukuran file terlalu besar. Maksimal 10MB.' });
     }
-    if (err.message && err.message.includes('hanya file gambar')) {
+    // Pesan penolakan fileFilter bisa berawalan huruf besar ("Hanya file gambar..."),
+    // jadi pencocokan WAJIB case-insensitive agar pengguna menerima 400 + alasannya,
+    // bukan 500 "Internal server error".
+    if (err.message && /hanya file gambar/i.test(err.message)) {
         return res.status(400).json({ success: false, message: err.message });
     }
+    console.error('❌ Unhandled error:', err.message);
     res.status(500).json({ success: false, message: 'Internal server error' });
 });
 

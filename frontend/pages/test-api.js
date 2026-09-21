@@ -33,8 +33,8 @@ export default function TestApiPage() {
     setLoading(true);
     setResult('Testing...');
     
-    // Dapatkan token
-    const token = session?.accessToken || localStorage.getItem('token');
+    // Dapatkan token dari sesi NextAuth (tidak ada lagi fallback localStorage)
+    const token = session?.accessToken;
     
     if (!token) {
       setResult('Error: No token found');

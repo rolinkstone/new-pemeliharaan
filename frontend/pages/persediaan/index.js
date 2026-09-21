@@ -19,5 +19,7 @@ export async function getServerSideProps(context) {
   if (!session) {
     return { redirect: { destination: '/login', permanent: false } };
   }
-  return { props: { session } };
+  // Sengaja TIDAK mengirim `session` sebagai props: objek session memuat token,
+  // sehingga ikut tertanam di HTML. Token diambil sisi klien oleh SessionProvider.
+  return { props: {} };
 }

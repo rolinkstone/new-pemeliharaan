@@ -1,7 +1,8 @@
 // components/laporanrusak/api/laporanRusakApi.js
 
+// Token HANYA dari sesi NextAuth (cookie HttpOnly) - fallback localStorage dihapus.
 const getToken = (session) => {
-    return session?.accessToken || session?.token || session?.access_token || localStorage.getItem('token');
+    return session?.accessToken || session?.token || session?.access_token;
 };
 
 const handleResponse = async (response) => {

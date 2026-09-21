@@ -565,37 +565,25 @@ const AsetContainer = () => {
     setSnackbar(prev => ({ ...prev, open: false }));
   };
 
-  // ========== ROLE BADGE COMPONENT ==========
-  // ========== ROLE BADGE COMPONENT ==========
-  const RoleBadge = () => {
-    const roles = getUserRoles();
-    if (!roles.length) return null;
-    
+  // ========== ACCESS BADGE COMPONENT ==========
+  // Nama role SENGAJA tidak ditampilkan di header halaman Barang BMN (tidak
+  // diperlukan bagi pengguna - dan kalau diambil dari access token, role bawaan
+  // Keycloak seperti view-realm/manage-users ikut muncul).
+  // Yang tersisa hanya penanda "Read Only" saat pengguna tidak punya hak ubah.
+  const AccessBadge = () => {
+    if (!isReadOnly()) return null;
+
     return (
       <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-        {roles.map((role, index) => (
-          <Chip
-            key={index}
-            label={role}
-            size="small"
-            sx={{
-              fontSize: '0.65rem', height: 22,
-              bgcolor: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)',
-              fontWeight: 500, '& .MuiChip-label': { px: 1 },
-            }}
-          />
-        ))}
-        {isReadOnly() && (
-          <Chip
-            label="Read Only" size="small"
-            icon={<LockIcon sx={{ fontSize: 12 }} />}
-            sx={{
-              fontSize: '0.65rem', height: 22,
-              bgcolor: 'rgba(255,152,0,0.25)', color: 'rgba(255,255,255,0.9)',
-              '& .MuiChip-label': { px: 1 }, '& .MuiChip-icon': { fontSize: 12, ml: 0.5 },
-            }}
-          />
-        )}
+        <Chip
+          label="Read Only" size="small"
+          icon={<LockIcon sx={{ fontSize: 12 }} />}
+          sx={{
+            fontSize: '0.65rem', height: 22,
+            bgcolor: 'rgba(255,152,0,0.25)', color: 'rgba(255,255,255,0.9)',
+            '& .MuiChip-label': { px: 1 }, '& .MuiChip-icon': { fontSize: 12, ml: 0.5 },
+          }}
+        />
       </Box>
     );
   };
@@ -660,7 +648,7 @@ const AsetContainer = () => {
       title="Inventaris Aset BPOM"
       subtitle="Kelola dan pantau Barang Milik Negara dengan mudah"
       statistics={getStatCards()}
-      roleBadge={<RoleBadge />}
+      roleBadge={<AccessBadge />}
       actions={
         <>
           <Button

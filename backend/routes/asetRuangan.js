@@ -385,22 +385,31 @@ router.get('/statistics', keycloakAuth, async (req, res) => {
     try {
         console.log('📊 Statistics endpoint accessed');
         
-        // Hitung total semua record
-        const [total] = await db.query('SELECT COUNT(*) as total FROM aset_ruangan');
-        
-        // Hitung berdasarkan status
-        const [aktif] = await db.query('SELECT COUNT(*) as total FROM aset_ruangan WHERE status = "aktif"');
-        const [dipindah] = await db.query('SELECT COUNT(*) as total FROM aset_ruangan WHERE status = "dipindah"');
-        const [dihapuskan] = await db.query('SELECT COUNT(*) as total FROM aset_ruangan WHERE status = "dihapuskan"');
-        
+        // Dulu: 4 query COUNT terpisah (total + 3 status) -> 4x table scan.
+        // Sekarang: satu kali GROUP BY status (memakai index idx_ar_status_tgl)
+        // lalu dijumlahkan di JavaScript.
+        const [perStatus] = await db.query(
+            'SELECT status, COUNT(*) as total FROM aset_ruangan GROUP BY status'
+        );
+
+        const perStatusMap = { aktif: 0, dipindah: 0, dihapuskan: 0 };
+        let totalSemua = 0;
+        for (const row of perStatus || []) {
+            const jumlah = Number(row.total) || 0;
+            totalSemua += jumlah;
+            if (row.status && Object.prototype.hasOwnProperty.call(perStatusMap, row.status)) {
+                perStatusMap[row.status] = jumlah;
+            }
+        }
+
         // Hitung unique aset
         const [uniqueAset] = await db.query('SELECT COUNT(DISTINCT aset_id) as total FROM aset_ruangan');
         
         const statistics = {
-            total: total[0]?.total || 0,
-            aktif: aktif[0]?.total || 0,
-            dipindah: dipindah[0]?.total || 0,
-            dihapuskan: dihapuskan[0]?.total || 0,
+            total: totalSemua,
+            aktif: perStatusMap.aktif,
+            dipindah: perStatusMap.dipindah,
+            dihapuskan: perStatusMap.dihapuskan,
             unique_aset: uniqueAset[0]?.total || 0
         };
         
@@ -464,8 +473,10 @@ router.get('/', keycloakAuth, async (req, res) => {
 
         const whereSql = `WHERE ${where.join(' AND ')}`;
 
-        // Total count (ikut join agar bisa mencari kolom aset/ruangan)
-        const [countResult] = await db.query(`SELECT COUNT(*) as total ${baseFrom} ${whereSql}`, whereParams);
+        // Total count (join hanya dipakai bila filter mencari kolom aset/ruangan;
+        // tanpa itu, COUNT cukup dari tabel aset_ruangan - jauh lebih murah).
+        const countFrom = (search && normalizeStr(search)) ? baseFrom : 'FROM aset_ruangan ar';
+        const [countResult] = await db.query(`SELECT COUNT(*) as total ${countFrom} ${whereSql}`, whereParams);
         const total = countResult && countResult[0] ? countResult[0].total : 0;
 
         // Data + pagination

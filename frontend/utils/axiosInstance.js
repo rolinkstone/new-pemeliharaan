@@ -2,6 +2,16 @@
 import axios from 'axios';
 import { handleAuthFailure, isSessionFailure } from './authInterceptor';
 
+// Sumber token untuk axios instance ini. Token sesi NextAuth hanya berada di
+// cookie HttpOnly / objek session, BUKAN di localStorage, jadi token harus
+// didaftarkan dari komponen, contoh:
+//   setAuthTokenProvider(() => session?.accessToken)
+let tokenProvider = () => null;
+
+export const setAuthTokenProvider = (provider) => {
+  tokenProvider = typeof provider === 'function' ? provider : () => null;
+};
+
 // Buat axios instance dengan interceptor
 const createAxiosInstance = (baseURL = 'http://localhost:5000/api') => {
   const instance = axios.create({
@@ -16,7 +26,7 @@ const createAxiosInstance = (baseURL = 'http://localhost:5000/api') => {
   // Request interceptor untuk menambahkan token
   instance.interceptors.request.use(
     (config) => {
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      const token = typeof tokenProvider === 'function' ? tokenProvider() : null;
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }

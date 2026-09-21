@@ -179,9 +179,14 @@ export const authOptions = {
       session.user.isKatim = userRoles.includes('katim');
       session.user.isMt = userRoles.includes('mt');
 
+      // Hanya token yang benar-benar dibutuhkan browser yang diteruskan:
+      //  - accessToken : header Authorization ke backend
+      //  - idToken     : id_token_hint saat logout SSO Keycloak (DashboardLayout)
+      // refreshToken TIDAK diteruskan ke klien - proses refresh tetap di server
+      // (callbacks.jwt) memakai token di dalam cookie, jadi browser tidak perlu
+      // memegang token berumur paling panjang itu.
       session.accessToken = token.accessToken;
       session.idToken = token.idToken;
-      session.refreshToken = token.refreshToken;
       session.clientId = process.env.KEYCLOAK_CLIENT_ID || 'nextjs-local';
       session.expires = token.expiresAt
         ? new Date(token.expiresAt * 1000).toISOString()

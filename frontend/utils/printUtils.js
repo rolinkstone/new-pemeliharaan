@@ -1,4 +1,15 @@
 // utils/printUtils.js - VERSION 4.1 (Perbaikan TTE dan QR Code)
+//
+// ⚠️ PERINGATAN KEAMANAN - FILE INI TIDAK DIPAKAI (tidak diimpor di mana pun).
+// Kalau nanti dipakai: SEMUA nilai yang berasal dari data pengguna WAJIB di-
+// escape dulu (contoh helper: `escapeHtml` di utils/cetakLaporanRusak.js).
+// Template di file ini masih menyisipkan nilai apa adanya (`${pegawai.nama}`,
+// dll) ke HTML yang ditulis dengan document.write, sehingga nilai berisi
+// `<img src=x onerror=...>` akan dieksekusi di jendela cetak (same-origin) -> XSS.
+// Selain itu file ini memuat <script> dari cdnjs + <script> inline, yang
+// memerlukan CSP longgar. Utilitas cetak yang DIPAKAI sekarang:
+//   - utils/cetakLaporanRusak.js (sudah memakai escapeHtml)
+//   - utils/cetakSPBSBBK.js      (sudah memakai escapeHtml)
 
 // ============================================
 // IMPORT LIBRARY (jika menggunakan module)

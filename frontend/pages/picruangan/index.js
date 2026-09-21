@@ -28,7 +28,10 @@ export async function getServerSideProps(context) {
     };
   }
 
+  // Sengaja TIDAK mengirim `session` sebagai props: objek session memuat
+  // accessToken/refreshToken, sehingga ikut tertanam di HTML (__NEXT_DATA__).
+  // Token diambil sisi klien oleh SessionProvider dari /api/auth/session.
   return {
-    props: { session },
+    props: {},
   };
 }

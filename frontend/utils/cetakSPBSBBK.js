@@ -26,6 +26,12 @@ const preloadLogo = (cb) => {
 const LAB_LABEL = { pangan: 'LAB Pangan', mikro: 'LAB Mikro', terano: 'LAB Terano' };
 const getLabLabel = (v) => LAB_LABEL[v] || (v ? v : '');
 
+// Escape nilai yang berasal dari data pengguna sebelum disisipkan ke HTML cetak.
+// Tanpa ini, nilai seperti nama barang / keterangan / batch yang berisi
+// `<img src=x onerror=...>` akan DIEKSEKUSI di jendela cetak (same-origin) -> XSS.
+const escapeHtml = (value) =>
+  String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
 const toYMD = (d) => {
   if (!d) return new Date().toISOString().split('T')[0];
   const s = String(d);
@@ -45,12 +51,12 @@ const buildDoc = ({ judul, nomor, tanggal, unit, rows, diserahkan, diterima, men
         <div class="badan">BADAN POM</div>
         <div class="nama-lengkap">${INSTANSI}</div>
       </div>
-      <div class="title">${judul}</div>
+      <div class="title">${escapeHtml(judul)}</div>
     </div>
     <div class="meta">
-      <p><span class="lbl">Unit Seksi/Sub Bagian</span><span class="sep">:</span> ${unit}</p>
-      <p><span class="lbl">Nomor</span><span class="sep">:</span> ${nomor}</p>
-      <p><span class="lbl">Tanggal</span><span class="sep">:</span> ${tanggal}</p>
+      <p><span class="lbl">Unit Seksi/Sub Bagian</span><span class="sep">:</span> ${escapeHtml(unit)}</p>
+      <p><span class="lbl">Nomor</span><span class="sep">:</span> ${escapeHtml(nomor)}</p>
+      <p><span class="lbl">Tanggal</span><span class="sep">:</span> ${escapeHtml(tanggal)}</p>
     </div>
     <table class="items">
       <thead>
@@ -66,12 +72,12 @@ const buildDoc = ({ judul, nomor, tanggal, unit, rows, diserahkan, diterima, men
       <tbody>
         ${rows.map(r => `
           <tr>
-            <td class="c no">${r.no}</td>
-            <td class="nama">${r.nama}</td>
-            <td class="c satuan">${r.satuan}</td>
-            <td class="c jml">${r.diminta}</td>
-            <td class="c jml">${r.jumlah}</td>
-            <td class="c ket">${r.ket}</td>
+            <td class="c no">${escapeHtml(r.no)}</td>
+            <td class="nama">${escapeHtml(r.nama)}</td>
+            <td class="c satuan">${escapeHtml(r.satuan)}</td>
+            <td class="c jml">${escapeHtml(r.diminta)}</td>
+            <td class="c jml">${escapeHtml(r.jumlah)}</td>
+            <td class="c ket">${escapeHtml(r.ket)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -82,19 +88,19 @@ const buildDoc = ({ judul, nomor, tanggal, unit, rows, diserahkan, diterima, men
           <div class="lbl-ttd">Diserahkan</div>
           <div class="jab-ttd">Pengelola Gudang</div>
           <div class="space-ttd"></div>
-          <div class="nama-ttd">${diserahkan}</div>
+          <div class="nama-ttd">${escapeHtml(diserahkan)}</div>
         </td>
         <td>
           <div class="lbl-ttd">Diterima</div>
           <div class="jab-ttd">Pemohon</div>
           <div class="space-ttd"></div>
-          <div class="nama-ttd">${diterima}</div>
+          <div class="nama-ttd">${escapeHtml(diterima)}</div>
         </td>
         <td>
           <div class="lbl-ttd">Mengetahui</div>
-          <div class="jab-ttd">${jabatan}</div>
+          <div class="jab-ttd">${escapeHtml(jabatan)}</div>
           <div class="space-ttd"></div>
-          <div class="nama-ttd">${mengetahui}</div>
+          <div class="nama-ttd">${escapeHtml(mengetahui)}</div>
         </td>
       </tr>
     </table>
