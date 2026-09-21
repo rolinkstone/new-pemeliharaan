@@ -9,6 +9,13 @@ const https = require('https');
 const qs = require('qs');
 const multer = require('multer');
 
+// ========== ENV ==========
+// WAJIB dimuat di sini: tanpa ini KEYCLOAK_CLIENT_SECRET = undefined dan
+// Keycloak membalas 401 unauthorized_client (terlihat seperti "password salah").
+// Path ABSOLUT supaya tetap benar walau cwd bukan folder backend.
+require('dotenv').config({ path: path.join(__dirname, '.env.local') });
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 const app = express();
 const PORT = process.env.PORT || 5002;
 const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
@@ -57,12 +64,17 @@ app.use(cors());
 
 // ========== KEYCLOAK CONFIG ==========
 const KEYCLOAK_CONFIG = {
-    url: process.env.KEYCLOAK_URL || 'https://auth.bbpompky.id',
+    // .env memakai nama KEYCLOAK_SERVER_URL; KEYCLOAK_URL dipertahankan sebagai alias
+    url: process.env.KEYCLOAK_URL || process.env.KEYCLOAK_SERVER_URL || 'https://auth.bbpompky.id',
     realm: process.env.KEYCLOAK_REALM || 'master',
     clientId: process.env.KEYCLOAK_CLIENT_ID || 'nextjs-local',
     // WAJIB diisi lewat environment variable (.env.local) - jangan hardcode di source
     clientSecret: process.env.KEYCLOAK_CLIENT_SECRET
 };
+
+if (!KEYCLOAK_CONFIG.clientSecret) {
+    console.error('⚠️  KEYCLOAK_CLIENT_SECRET tidak terbaca - endpoint /api/login akan gagal (unauthorized_client).');
+}
 
 const httpsAgent = new https.Agent({ rejectUnauthorized: true });
 
@@ -156,10 +168,23 @@ app.post('/api/login', async (req, res) => {
             }
         });
     } catch (error) {
-        const status = error.response?.status === 401 ? 401 : 500;
-        res.status(status).json({
+        const kcError = error.response?.data?.error;
+        console.error(`❌ Login gagal: HTTP ${error.response?.status ?? '-'} ${kcError || error.message}`);
+
+        // invalid_client/unauthorized_client = konfigurasi (client id/secret), BUKAN salah password.
+        // Jangan tampilkan sebagai "Username atau password salah" supaya tidak menyesatkan.
+        if (kcError === 'invalid_client' || kcError === 'unauthorized_client') {
+            return res.status(500).json({
+                success: false,
+                message: 'Konfigurasi Keycloak tidak valid (client id/secret) - cek backend/.env.local',
+                error: kcError
+            });
+        }
+
+        res.status(kcError === 'invalid_grant' ? 401 : 500).json({
             success: false,
-            message: error.response?.status === 401 ? 'Username atau password salah' : 'Login failed'
+            message: kcError === 'invalid_grant' ? 'Username atau password salah' : 'Login failed',
+            error: kcError || error.message
         });
     }
 });

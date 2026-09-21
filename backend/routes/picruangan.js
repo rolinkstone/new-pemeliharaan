@@ -39,28 +39,47 @@ async function getAdminToken() {
     }
 }
 
-// ========== CACHE FOR USER OPTIONS ==========
-let cachedUsers = null;
-let cacheTimestamp = null;
+// ========== CACHE FOR USER OPTIONS (PER ROLE) ==========
+// Cache dipisah per role: dulu hanya ada satu slot cache untuk semua role,
+// sehingga hasil role lain bisa ikut terpakai (user yang dicari tidak muncul).
+const usersCache = new Map(); // roleName -> { users, timestamp }
 const CACHE_TTL = 10 * 60 * 1000; // 10 menit
+
+// Ambil SEMUA user dari Keycloak (dengan pagination).
+// Sebelumnya hanya `max: 100` tanpa `first`, sehingga begitu jumlah user di
+// realm melewati 100 user, sebagian user tidak pernah muncul di dropdown.
+async function fetchAllKeycloakUsers(adminToken) {
+    const usersUrl = `${KEYCLOAK_CONFIG.serverUrl}/admin/realms/${KEYCLOAK_CONFIG.realm}/users`;
+    const pageSize = 100;
+    const allUsers = [];
+
+    for (let first = 0; first < 10000; first += pageSize) {
+        const { data } = await axios.get(usersUrl, {
+            headers: { 'Authorization': `Bearer ${adminToken}` },
+            params: { first, max: pageSize },
+            timeout: 15000
+        });
+        const batch = data || [];
+        allUsers.push(...batch);
+        if (batch.length < pageSize) break;
+    }
+
+    return allUsers;
+}
 
 // ========== GET USERS BY ROLE WITH CACHE ==========
 async function getUsersByRole(roleName, forceRefresh = false) {
-    if (!forceRefresh && cachedUsers && cacheTimestamp && (Date.now() - cacheTimestamp) < CACHE_TTL) {
-        console.log('📦 Using cached users');
-        return cachedUsers;
+    const cached = usersCache.get(roleName);
+    if (!forceRefresh && cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
+        console.log(`📦 Using cached users for role ${roleName}`);
+        return cached.users;
     }
     
     try {
         const adminToken = await getAdminToken();
-        if (!adminToken) return [];
+        if (!adminToken) return cached?.users || [];
         
-        const usersUrl = `${KEYCLOAK_CONFIG.serverUrl}/admin/realms/${KEYCLOAK_CONFIG.realm}/users`;
-        const usersResponse = await axios.get(usersUrl, {
-            headers: { 'Authorization': `Bearer ${adminToken}` },
-            params: { max: 100 },
-            timeout: 15000
-        });
+        const usersResponse = { data: await fetchAllKeycloakUsers(adminToken) };
         
         const usersWithRole = [];
         
@@ -108,13 +127,12 @@ async function getUsersByRole(roleName, forceRefresh = false) {
         
         const sortedUsers = usersWithRole.sort((a, b) => a.nama.localeCompare(b.nama));
         
-        cachedUsers = sortedUsers;
-        cacheTimestamp = Date.now();
+        usersCache.set(roleName, { users: sortedUsers, timestamp: Date.now() });
         
         return sortedUsers;
     } catch (error) {
         console.error(`❌ Error:`, error.message);
-        return cachedUsers || [];
+        return cached?.users || [];
     }
 }
 

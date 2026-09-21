@@ -27,6 +27,22 @@ import PicRuangan from './models/PicRuangan';
 import * as picRuanganApi from './api/picRuanganApi';
 import { useSession } from 'next-auth/react';
 
+// ========== HELPER PENCARIAN ==========
+// Normalisasi teks: huruf kecil, semua pemisah (titik, koma, tanda kurung, dsb)
+// dianggap spasi. Dengan ini "19900711 202521 1 010" dan "199007112025211010"
+// tetap cocok, begitu juga nama yang mengandung gelar.
+const normalizeSearchText = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+// Kata kunci dipisah per kata; urutan bebas dan boleh sebagian saja.
+const buildSearchTokens = (value) => normalizeSearchText(value).split(' ').filter(Boolean);
+
+// Cocok bila SEMUA kata kunci ada di dalam data (nama/NIP/username/email).
+const matchesAllTokens = (haystack, tokens) => tokens.every((token) => haystack.includes(token));
+
 const PicRuanganForm = ({
   initialData,
   onSubmit,
@@ -52,6 +68,13 @@ const PicRuanganForm = ({
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [userSearchText, setUserSearchText] = useState('');
   const [ruanganSearchText, setRuanganSearchText] = useState('');
+  // Teks yang BENAR-BENAR dipakai untuk menyaring daftar (diisi hanya saat
+  // pengguna mengetik). Dipisahkan dari userSearchText/ruanganSearchText yang
+  // menyimpan label tampilan seperti "Nama (NIP)" - dulu label itu ikut dipakai
+  // sebagai kata kunci sehingga daftar dropdown jadi KOSONG setelah memilih
+  // user/ruangan, dan nama yang sama tidak bisa dipilih lagi.
+  const [userQuery, setUserQuery] = useState('');
+  const [ruanganQuery, setRuanganQuery] = useState('');
   const [loadError, setLoadError] = useState(null);
 
   // Load options from API
@@ -122,41 +145,52 @@ const PicRuanganForm = ({
       if (initialData.user_name || initialData.user_nama) {
         setUserSearchText(initialData.user_name || initialData.user_nama);
       }
+      // Mode edit: tampilkan seluruh pilihan saat dropdown dibuka.
+      setUserQuery('');
+      setRuanganQuery('');
     }
   }, [initialData]);
 
-  // Filter user options based on search text
+  // Filter user options berdasarkan kata kunci yang diketik pengguna
   const filteredUserOptions = useMemo(() => {
-    if (!userSearchText || userSearchText.length < 2) {
-      return userOptions.slice(0, 50);
-    }
-    
-    const searchLower = userSearchText.toLowerCase();
-    return userOptions.filter(user => {
-      return (
-        (user.nama && user.nama.toLowerCase().includes(searchLower)) ||
-        (user.nip && user.nip.toLowerCase().includes(searchLower)) ||
-        (user.username && user.username.toLowerCase().includes(searchLower)) ||
-        (user.email && user.email.toLowerCase().includes(searchLower))
-      );
-    }).slice(0, 100);
-  }, [userOptions, userSearchText]);
+    const tokens = buildSearchTokens(userQuery);
+    let hasil =
+      tokens.length === 0
+        ? userOptions.slice(0, 50)
+        : userOptions
+            .filter((user) =>
+              matchesAllTokens(
+                normalizeSearchText(`${user.nama || ''} ${user.nip || ''} ${user.username || ''} ${user.email || ''}`),
+                tokens
+              )
+            )
+            .slice(0, 100);
 
-  // Filter ruangan options based on search text
+    // Pengaman: user yang sedang terpilih SELALU ada di daftar, walau kata kunci
+    // pencarian tidak cocok. Jadi nama PIC yang sudah dipilih tidak pernah
+    // "hilang" dari dropdown.
+    const terpilih = userOptions.find((user) => user.user_id === formData.user_id);
+    if (terpilih && !hasil.includes(terpilih)) {
+      hasil = [terpilih, ...hasil];
+    }
+
+    return hasil;
+  }, [userOptions, userQuery, formData.user_id]);
+
+  // Filter ruangan options berdasarkan kata kunci yang diketik pengguna
   const filteredRuanganOptions = useMemo(() => {
-    if (!ruanganSearchText || ruanganSearchText.length < 2) {
+    const tokens = buildSearchTokens(ruanganQuery);
+    if (tokens.length === 0) {
       return ruanganOptions;
     }
-    
-    const searchLower = ruanganSearchText.toLowerCase();
-    return ruanganOptions.filter(ruangan => {
-      return (
-        (ruangan.kode_ruangan && ruangan.kode_ruangan.toLowerCase().includes(searchLower)) ||
-        (ruangan.nama_ruangan && ruangan.nama_ruangan.toLowerCase().includes(searchLower)) ||
-        (ruangan.lokasi && ruangan.lokasi.toLowerCase().includes(searchLower))
-      );
-    });
-  }, [ruanganOptions, ruanganSearchText]);
+
+    return ruanganOptions.filter((ruangan) =>
+      matchesAllTokens(
+        normalizeSearchText(`${ruangan.kode_ruangan || ''} ${ruangan.nama_ruangan || ''} ${ruangan.lokasi || ''}`),
+        tokens
+      )
+    );
+  }, [ruanganOptions, ruanganQuery]);
 
   const handleChange = (e) => {
     if (readOnly) return;
@@ -225,6 +259,9 @@ const PicRuanganForm = ({
       user_id: newValue?.user_id || '',
       user_name: newValue?.nama || ''  // Set nama PIC
     }));
+    // Kata kunci dikosongkan supaya daftar penuh muncul lagi pada pencarian
+    // berikutnya (mis. saat menambah ruangan lain untuk user yang sama).
+    setUserQuery('');
     if (errors.user_id) {
       setErrors(prev => ({ ...prev, user_id: '' }));
     }
@@ -259,9 +296,13 @@ const PicRuanganForm = ({
               }}
               value={selectedUser || null}
               onChange={handleUserChange}
-              onInputChange={(event, newInputValue) => {
+              onInputChange={(event, newInputValue, reason) => {
                 if (readOnly) return;
                 setUserSearchText(newInputValue);
+                // reason 'input' = pengguna mengetik -> jadikan kata kunci.
+                // Selain itu (memilih opsi / mengosongkan) kata kunci direset
+                // agar seluruh daftar PIC tampil kembali.
+                setUserQuery(reason === 'input' ? newInputValue : '');
               }}
               inputValue={userSearchText}
               disabled={loading || readOnly}
@@ -271,7 +312,7 @@ const PicRuanganForm = ({
                   label="Pilih PIC *"
                   required
                   error={!!errors.user_id}
-                  helperText={errors.user_id || 'Cari berdasarkan nama, NIP, atau email (min. 2 karakter)'}
+                  helperText={errors.user_id || 'Cari berdasarkan nama, NIP, atau email'}
                   fullWidth
                   InputProps={{
                     ...params.InputProps,
@@ -283,37 +324,38 @@ const PicRuanganForm = ({
                   }}
                 />
               )}
-              renderOption={(props, option) => (
-                <li {...props}>
-                  <Box sx={{ width: '100%', py: 0.5 }}>
-                    <Box display="flex" alignItems="center" gap={1}>
-                      <PersonIcon fontSize="small" color="action" />
-                      <Box>
-                        <Typography variant="body2" fontWeight="bold">
-                          {option.nama}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary" component="div">
-                          {option.nip && `NIP: ${option.nip} • `}
-                          Username: {option.username}
-                        </Typography>
-                        {option.jabatan && option.jabatan !== '-' && (
-                          <Typography variant="caption" color="textSecondary">
-                            Jabatan: {option.jabatan}
+              renderOption={(props, option) => {
+                const { key, ...optionProps } = props;
+                return (
+                  <li key={key} {...optionProps}>
+                    <Box sx={{ width: '100%', py: 0.5 }}>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <PersonIcon fontSize="small" color="action" />
+                        <Box>
+                          <Typography variant="body2" fontWeight="bold">
+                            {option.nama}
                           </Typography>
-                        )}
+                          <Typography variant="caption" color="textSecondary" component="div">
+                            {option.nip && `NIP: ${option.nip} • `}
+                            Username: {option.username}
+                          </Typography>
+                          {option.jabatan && option.jabatan !== '-' && (
+                            <Typography variant="caption" color="textSecondary">
+                              Jabatan: {option.jabatan}
+                            </Typography>
+                          )}
+                        </Box>
                       </Box>
                     </Box>
-                  </Box>
-                </li>
-              )}
+                  </li>
+                );
+              }}
               noOptionsText={
                 loadingOptions 
                   ? 'Memuat data user...'
-                  : userSearchText.length < 2 
-                    ? 'Ketik minimal 2 karakter untuk mencari' 
-                    : userOptions.length === 0 && !loadingOptions
-                      ? 'Tidak ada user dengan role pic_ruangan. Periksa konfigurasi Keycloak.'
-                      : 'Tidak ada user ditemukan'
+                  : userOptions.length === 0
+                    ? 'Tidak ada user dengan role pic_ruangan. Periksa konfigurasi Keycloak.'
+                    : 'Tidak ada user yang cocok dengan pencarian'
               }
               loadingText="Memuat data user..."
               isOptionEqualToValue={(option, value) => option.user_id === value?.user_id}
@@ -338,13 +380,16 @@ const PicRuanganForm = ({
               onChange={(event, newValue) => {
                 if (readOnly) return;
                 setFormData(prev => ({ ...prev, ruangan_id: newValue?.id || '' }));
+                // Kata kunci dikosongkan supaya daftar ruangan penuh muncul lagi.
+                setRuanganQuery('');
                 if (errors.ruangan_id) {
                   setErrors(prev => ({ ...prev, ruangan_id: '' }));
                 }
               }}
-              onInputChange={(event, newInputValue) => {
+              onInputChange={(event, newInputValue, reason) => {
                 if (readOnly) return;
                 setRuanganSearchText(newInputValue);
+                setRuanganQuery(reason === 'input' ? newInputValue : '');
               }}
               inputValue={ruanganSearchText}
               disabled={loading || readOnly}
@@ -366,26 +411,27 @@ const PicRuanganForm = ({
                   }}
                 />
               )}
-              renderOption={(props, option) => (
-                <li {...props}>
-                  <Box sx={{ width: '100%', py: 0.5 }}>
-                    <Typography variant="body2" fontWeight="bold">
-                      {option.kode_ruangan} - {option.nama_ruangan}
-                    </Typography>
-                    {option.lokasi && (
-                      <Typography variant="caption" color="textSecondary">
-                        Lokasi: {option.lokasi}
+              renderOption={(props, option) => {
+                const { key, ...optionProps } = props;
+                return (
+                  <li key={key} {...optionProps}>
+                    <Box sx={{ width: '100%', py: 0.5 }}>
+                      <Typography variant="body2" fontWeight="bold">
+                        {option.kode_ruangan} - {option.nama_ruangan}
                       </Typography>
-                    )}
-                  </Box>
-                </li>
-              )}
+                      {option.lokasi && (
+                        <Typography variant="caption" color="textSecondary">
+                          Lokasi: {option.lokasi}
+                        </Typography>
+                      )}
+                    </Box>
+                  </li>
+                );
+              }}
               noOptionsText={
                 loadingOptions
                   ? 'Memuat data ruangan...'
-                  : ruanganSearchText.length < 2
-                    ? 'Ketik minimal 2 karakter untuk mencari'
-                    : 'Tidak ada ruangan ditemukan'
+                  : 'Tidak ada ruangan yang cocok dengan pencarian'
               }
               loadingText="Memuat data ruangan..."
               isOptionEqualToValue={(option, value) => option.id === value?.id}

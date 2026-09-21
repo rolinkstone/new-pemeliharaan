@@ -7,8 +7,53 @@ import Head from 'next/head';
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  // null = belum terdeteksi, true = mode ringan (HP/perangkat lemah), false = mode penuh (desktop)
+  const [liteMode, setLiteMode] = useState(null);
   const canvasRef = useRef(null);
   const router = useRouter();
+
+  // ========== DETEKSI PERANGKAT ==========
+  // Di HP animasi latar (canvas + blur besar) membuat halaman berat/tersendat.
+  // Karena itu perangkat berikut otomatis memakai mode ringan (latar CSS statis):
+  // layar sempit, perangkat sentuh, CPU/RAM kecil, hemat data, atau pengguna
+  // yang memilih "kurangi gerakan" (prefers-reduced-motion).
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mqlReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+    const mqlNarrow = window.matchMedia && window.matchMedia('(max-width: 900px)');
+    const mqlCoarse = window.matchMedia && window.matchMedia('(hover: none), (pointer: coarse)');
+
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const cores = navigator.hardwareConcurrency || 4;
+    const memory = navigator.deviceMemory || 4;
+
+    const evaluate = () => {
+      const lite =
+        !!mqlReducedMotion?.matches ||
+        !!mqlNarrow?.matches ||
+        !!mqlCoarse?.matches ||
+        cores <= 4 ||
+        memory <= 4 ||
+        connection?.saveData === true;
+      setLiteMode(lite);
+    };
+
+    const listen = (mql, handler) => {
+      if (!mql) return;
+      if (mql.addEventListener) mql.addEventListener('change', handler);
+      else if (mql.addListener) mql.addListener(handler); // Safari/WebView lama
+    };
+    const unlisten = (mql, handler) => {
+      if (!mql) return;
+      if (mql.removeEventListener) mql.removeEventListener('change', handler);
+      else if (mql.removeListener) mql.removeListener(handler);
+    };
+
+    evaluate();
+    [mqlReducedMotion, mqlNarrow, mqlCoarse].forEach((mql) => listen(mql, evaluate));
+    return () => [mqlReducedMotion, mqlNarrow, mqlCoarse].forEach((mql) => unlisten(mql, evaluate));
+  }, []);
 
   useEffect(() => {
     // Jika diarahkan ke sini karena sesi kedaluwarsa (token invalid/expired)
@@ -18,16 +63,25 @@ export default function LoginPage() {
   }, [router.query.error]);
 
   useEffect(() => {
-    // Animated Background Particles
+    // Animasi partikel hanya dijalankan pada mode penuh (desktop).
+    // Mode ringan memakai latar CSS statis -> tanpa loop render tiap frame.
+    if (liteMode !== false) return;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) return;
+
+    const MAX_PARTICLES = 70;
+    const CONNECT_DIST = 120;
+    const FRAME_INTERVAL = 1000 / 30; // batasi ~30 fps (cukup halus, jauh lebih ringan)
 
     let particles = [];
-    let animationFrameId;
+    let backgroundCache = null;
+    let animationFrameId = null;
+    let resizeTimer = null;
+    let lastFrameTime = 0;
 
     class Particle {
       constructor(x, y, size, speedX, speedY, color) {
@@ -51,19 +105,51 @@ export default function LoginPage() {
       }
 
       draw() {
-        ctx.save();
         ctx.globalAlpha = this.alpha;
         ctx.fillStyle = this.color;
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
         ctx.fill();
-        ctx.restore();
+        ctx.globalAlpha = 1;
       }
+    }
+
+    // Latar (gradient + grid) digambar SEKALI ke canvas terpisah lalu ditempel
+    // tiap frame. Sebelumnya gradient + ratusan garis grid digambar ulang terus.
+    function buildBackground() {
+      const off = document.createElement('canvas');
+      off.width = canvas.width;
+      off.height = canvas.height;
+      const offCtx = off.getContext('2d');
+
+      const gradient = offCtx.createLinearGradient(0, 0, off.width, off.height);
+      gradient.addColorStop(0, '#0b1f1c');
+      gradient.addColorStop(0.3, '#1a4731');
+      gradient.addColorStop(0.6, '#115e59');
+      gradient.addColorStop(1, '#0b3b2f');
+      offCtx.fillStyle = gradient;
+      offCtx.fillRect(0, 0, off.width, off.height);
+
+      offCtx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
+      offCtx.lineWidth = 0.5;
+      const gridSize = 40;
+      offCtx.beginPath();
+      for (let i = 0; i < off.width; i += gridSize) {
+        offCtx.moveTo(i + 0.5, 0);
+        offCtx.lineTo(i + 0.5, off.height);
+      }
+      for (let j = 0; j < off.height; j += gridSize) {
+        offCtx.moveTo(0, j + 0.5);
+        offCtx.lineTo(off.width, j + 0.5);
+      }
+      offCtx.stroke();
+
+      backgroundCache = off;
     }
 
     function createParticles() {
       particles = [];
-      const particleCount = Math.min(100, Math.floor((canvas.width * canvas.height) / 15000));
+      const particleCount = Math.min(MAX_PARTICLES, Math.floor((canvas.width * canvas.height) / 22000));
       const colors = [
         'rgba(16, 185, 129, 0.6)',
         'rgba(5, 150, 105, 0.6)',
@@ -83,81 +169,112 @@ export default function LoginPage() {
       }
     }
 
-    function drawConnections() {
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+    // Garis penghubung dikelompokkan ke 3 kelompok warna: cukup 3x stroke per
+    // frame. Sebelumnya satu linear-gradient dibuat untuk SETIAP pasangan
+    // (>4000 pasangan) setiap frame -> penyebab utama halaman berat.
+    const buckets = [
+      { max: 62, color: 'rgba(16, 185, 129, 0.16)', points: [] },
+      { max: 92, color: 'rgba(6, 182, 212, 0.11)', points: [] },
+      { max: CONNECT_DIST, color: 'rgba(59, 130, 246, 0.07)', points: [] },
+    ];
 
-          if (distance < 120) {
-            ctx.beginPath();
-            const gradient = ctx.createLinearGradient(
-              particles[i].x, particles[i].y,
-              particles[j].x, particles[j].y
-            );
-            gradient.addColorStop(0, `rgba(16, 185, 129, ${0.15 * (1 - distance / 120)})`);
-            gradient.addColorStop(1, `rgba(6, 182, 212, ${0.15 * (1 - distance / 120)})`);
-            ctx.strokeStyle = gradient;
-            ctx.lineWidth = 0.8;
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.stroke();
-          }
+    function drawConnections() {
+      buckets.forEach((bucket) => {
+        bucket.points.length = 0;
+      });
+
+      for (let i = 0; i < particles.length; i++) {
+        const a = particles[i];
+        for (let j = i + 1; j < particles.length; j++) {
+          const b = particles[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          if (distance >= CONNECT_DIST) continue;
+
+          const bucket = distance < buckets[0].max ? buckets[0] : distance < buckets[1].max ? buckets[1] : buckets[2];
+          bucket.points.push(a, b);
         }
       }
+
+      buckets.forEach((bucket) => {
+        if (bucket.points.length === 0) return;
+        ctx.strokeStyle = bucket.color;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        for (let i = 0; i < bucket.points.length; i += 2) {
+          ctx.moveTo(bucket.points[i].x, bucket.points[i].y);
+          ctx.lineTo(bucket.points[i + 1].x, bucket.points[i + 1].y);
+        }
+        ctx.stroke();
+      });
     }
 
-    function animate() {
-      const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-      gradient.addColorStop(0, '#0b1f1c');
-      gradient.addColorStop(0.3, '#1a4731');
-      gradient.addColorStop(0.6, '#115e59');
-      gradient.addColorStop(1, '#0b3b2f');
-      
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
-      ctx.lineWidth = 0.5;
-      const gridSize = 40;
-      for (let i = 0; i < canvas.width; i += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, canvas.height);
-        ctx.stroke();
-      }
-      for (let i = 0; i < canvas.height; i += gridSize) {
-        ctx.beginPath();
-        ctx.moveTo(0, i);
-        ctx.lineTo(canvas.width, i);
-        ctx.stroke();
+    function renderFrame() {
+      if (backgroundCache) {
+        ctx.drawImage(backgroundCache, 0, 0);
+      } else {
+        ctx.fillStyle = '#0b1f1c';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
-      particles.forEach(particle => {
+      particles.forEach((particle) => {
         particle.update();
         particle.draw();
       });
 
       drawConnections();
+    }
+
+    function animate(timestamp) {
+      animationFrameId = requestAnimationFrame(animate);
+      if (timestamp - lastFrameTime < FRAME_INTERVAL) return;
+      lastFrameTime = timestamp;
+      renderFrame();
+    }
+
+    function startAnimation() {
+      if (animationFrameId !== null) return;
+      lastFrameTime = 0;
       animationFrameId = requestAnimationFrame(animate);
     }
 
-    function handleResize() {
+    function stopAnimation() {
+      if (animationFrameId === null) return;
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+
+    function resizeCanvas() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
+      buildBackground();
       createParticles();
     }
 
-    createParticles();
-    animate();
+    function handleResize() {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(resizeCanvas, 200);
+    }
+
+    function handleVisibilityChange() {
+      // Hemat baterai: hentikan animasi saat tab tidak aktif.
+      if (document.hidden) stopAnimation();
+      else startAnimation();
+    }
+
+    resizeCanvas();
+    startAnimation();
     window.addEventListener('resize', handleResize);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      stopAnimation();
+      if (resizeTimer) clearTimeout(resizeTimer);
       window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animationFrameId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [liteMode]);
 
   const handleSSOLogin = async () => {
     setIsLoading(true);
@@ -192,86 +309,130 @@ export default function LoginPage() {
     },
   ];
 
+  const fullMode = liteMode === false;
+
   return (
     <>
       <Head>
         <title>Login | TABELA RAYA - BBPOM Palangka Raya</title>
         <meta name="description" content="Sistem Tata Kelola Barang Negara BBPOM di Palangka Raya" />
       </Head>
-      
-      {/* Animated Background Canvas */}
-      <canvas
-        ref={canvasRef}
-        className="fixed inset-0 w-full h-full"
-        style={{ zIndex: 0 }}
+
+      {/* Latar dasar statis: tampil di semua perangkat, dan sekaligus menjadi
+          pengganti canvas di mode ringan (tanpa animasi & tanpa blur besar). */}
+      <div
+        className="fixed inset-0"
+        style={{
+          zIndex: 0,
+          background: 'linear-gradient(135deg, #0b1f1c 0%, #1a4731 30%, #115e59 60%, #0b3b2f 100%)',
+        }}
+      />
+      <div
+        className="fixed inset-0"
+        style={{
+          zIndex: 0,
+          background:
+            'radial-gradient(900px 620px at 15% 18%, rgba(16, 185, 129, 0.18), rgba(16, 185, 129, 0) 70%), radial-gradient(900px 700px at 85% 82%, rgba(6, 182, 212, 0.16), rgba(6, 182, 212, 0) 70%)',
+        }}
+      />
+      <div
+        className="fixed inset-0"
+        style={{
+          zIndex: 0,
+          backgroundImage:
+            'repeating-linear-gradient(to right, rgba(255, 255, 255, 0.02) 0 1px, rgba(255, 255, 255, 0) 1px 40px), repeating-linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 0 1px, rgba(255, 255, 255, 0) 1px 40px)',
+        }}
       />
 
-      {/* Floating Geometric Elements */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }}>
-        {[...Array(8)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute border border-white/10 rounded-3xl"
-            style={{
-              width: `${150 + i * 80}px`,
-              height: `${150 + i * 80}px`,
-              top: `${5 + i * 12}%`,
-              left: `${2 + i * 8}%`,
-              animation: `float ${10 + i * 3}s ease-in-out infinite ${i * 0.7}s`,
-              transform: `rotate(${i * 25}deg)`,
-              background: `linear-gradient(135deg, rgba(16, 185, 129, ${0.02 + i * 0.01}), rgba(6, 182, 212, ${0.02 + i * 0.01}))`,
-              boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
-              backdropFilter: 'blur(4px)',
-            }}
-          />
-        ))}
-      </div>
+      {/* Animated Background Canvas - hanya mode penuh */}
+      {fullMode && (
+        <canvas
+          ref={canvasRef}
+          className="fixed inset-0 w-full h-full"
+          style={{ zIndex: 0 }}
+        />
+      )}
 
-      {/* Animated Gradient Orbs */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }}>
-        <div className="absolute top-20 left-20 w-[600px] h-[600px] bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-cyan-500/20 rounded-full blur-[120px] animate-pulse-slow" />
-        <div className="absolute bottom-20 right-20 w-[700px] h-[700px] bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-emerald-500/20 rounded-full blur-[150px] animate-pulse-slower" />
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-emerald-600/10 via-teal-600/10 to-cyan-600/10 rounded-full blur-[180px] animate-spin-very-slow" />
-      </div>
+      {/* Floating Geometric Elements - hanya mode penuh */}
+      {fullMode && (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }}>
+          {[...Array(8)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute border border-white/10 rounded-3xl"
+              style={{
+                width: `${150 + i * 80}px`,
+                height: `${150 + i * 80}px`,
+                top: `${5 + i * 12}%`,
+                left: `${2 + i * 8}%`,
+                animation: `float ${10 + i * 3}s ease-in-out infinite ${i * 0.7}s`,
+                transform: `rotate(${i * 25}deg)`,
+                background: `linear-gradient(135deg, rgba(16, 185, 129, ${0.02 + i * 0.01}), rgba(6, 182, 212, ${0.02 + i * 0.01}))`,
+                boxShadow: '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
+                backdropFilter: 'blur(4px)',
+              }}
+            />
+          ))}
+        </div>
+      )}
 
-      {/* Floating Icons */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }}>
-        {[...Array(6)].map((_, i) => (
-          <div
-            key={`icon-${i}`}
-            className="absolute text-white/5"
-            style={{
-              top: `${15 + i * 20}%`,
-              right: `${5 + i * 10}%`,
-              animation: `float-reverse ${12 + i * 4}s ease-in-out infinite ${i * 2}s`,
-              fontSize: `${40 + i * 20}px`,
-              transform: `rotate(${i * 30}deg)`,
-            }}
-          >
-            {i % 3 === 0 && '📦'}
-            {i % 3 === 1 && '🏢'}
-            {i % 3 === 2 && '📊'}
-          </div>
-        ))}
-      </div>
+      {/* Animated Gradient Orbs - hanya mode penuh (blur besar sangat mahal di HP) */}
+      {fullMode && (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }}>
+          <div className="absolute top-20 left-20 w-[600px] h-[600px] bg-gradient-to-r from-emerald-500/20 via-teal-500/20 to-cyan-500/20 rounded-full blur-[120px] animate-pulse-slow" />
+          <div className="absolute bottom-20 right-20 w-[700px] h-[700px] bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-emerald-500/20 rounded-full blur-[150px] animate-pulse-slower" />
+          <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-gradient-to-r from-emerald-600/10 via-teal-600/10 to-cyan-600/10 rounded-full blur-[180px] animate-spin-very-slow" />
+        </div>
+      )}
+
+      {/* Floating Icons - hanya mode penuh */}
+      {fullMode && (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ zIndex: 1 }}>
+          {[...Array(6)].map((_, i) => (
+            <div
+              key={`icon-${i}`}
+              className="absolute text-white/5"
+              style={{
+                top: `${15 + i * 20}%`,
+                right: `${5 + i * 10}%`,
+                animation: `float-reverse ${12 + i * 4}s ease-in-out infinite ${i * 2}s`,
+                fontSize: `${40 + i * 20}px`,
+                transform: `rotate(${i * 30}deg)`,
+              }}
+            >
+              {i % 3 === 0 && '📦'}
+              {i % 3 === 1 && '🏢'}
+              {i % 3 === 2 && '📊'}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Main Content */}
       <div className="relative min-h-screen flex items-center justify-center p-4" style={{ zIndex: 10 }}>
         {/* Glassmorphism Container */}
-        <div className="w-full max-w-6xl backdrop-blur-xl bg-white/10 rounded-3xl shadow-2xl overflow-hidden border border-white/20">
+        <div
+          className={`w-full max-w-6xl rounded-3xl shadow-2xl overflow-hidden border border-white/20 ${
+            fullMode ? 'backdrop-blur-xl bg-white/10' : 'bg-white/10'
+          }`}
+        >
           <div className="grid md:grid-cols-2">
             {/* LEFT COLUMN - Description/Branding */}
-            <div className="bg-gradient-to-br from-emerald-900/90 to-teal-900/90 backdrop-blur-sm p-10 text-white relative overflow-hidden">
+            <div
+              className={`bg-gradient-to-br from-emerald-900/90 to-teal-900/90 p-10 text-white relative overflow-hidden ${
+                fullMode ? 'backdrop-blur-sm' : ''
+              }`}
+            >
               {/* Decorative Elements */}
-              <div className="absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 animate-blob"></div>
-              <div className="absolute bottom-0 left-0 w-80 h-80 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2 animate-blob animation-delay-2000"></div>
+              <div className={`absolute top-0 right-0 w-96 h-96 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 ${fullMode ? 'animate-blob' : ''}`}></div>
+              <div className={`absolute bottom-0 left-0 w-80 h-80 bg-white/5 rounded-full translate-y-1/2 -translate-x-1/2 ${fullMode ? 'animate-blob animation-delay-2000' : ''}`}></div>
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl"></div>
-              
+
               <div className="relative z-10 h-full flex flex-col">
                 {/* Logo and Title with Animation */}
                 <div className="mb-8 animate-fade-in-up">
                   <div className="flex items-center space-x-3 mb-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-teal-400 rounded-2xl flex items-center justify-center shadow-2xl transform hover:scale-110 transition-transform duration-300 animate-pulse-glow">
+                    <div className={`w-16 h-16 bg-gradient-to-br from-emerald-400 to-teal-400 rounded-2xl flex items-center justify-center shadow-2xl transform hover:scale-110 transition-transform duration-300 ${fullMode ? 'animate-pulse-glow' : ''}`}>
                       <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
                       </svg>
@@ -283,7 +444,7 @@ export default function LoginPage() {
                       <div className="h-1 w-20 bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full mt-2 animate-expand-width"></div>
                     </div>
                   </div>
-                  
+
                   <h2 className="text-2xl font-semibold mb-2 text-emerald-100 animate-fade-in animation-delay-300">
                     Tata Kelola Barang Negara
                   </h2>
@@ -323,7 +484,7 @@ export default function LoginPage() {
             </div>
 
             {/* RIGHT COLUMN - Login Form with Additional Info */}
-            <div className="p-10 bg-white/95 backdrop-blur-xl flex items-center">
+            <div className={`p-10 flex items-center ${fullMode ? 'bg-white/95 backdrop-blur-xl' : 'bg-white'}`}>
               <div className="w-full max-w-md mx-auto">
                 {/* Welcome Text */}
                 <div className="text-center mb-8 animate-fade-in-down">
@@ -559,6 +720,30 @@ export default function LoginPage() {
         }
         .animation-delay-2000 {
           animation-delay: 2000ms;
+        }
+
+        /* Hormati preferensi sistem: matikan animasi berulang, dan pastikan
+           elemen yang memakai animasi masuk tetap terlihat (opacity akhir). */
+        @media (prefers-reduced-motion: reduce) {
+          .animate-float,
+          .animate-float-reverse,
+          .animate-blob,
+          .animate-pulse-slow,
+          .animate-pulse-slower,
+          .animate-spin-very-slow,
+          .animate-pulse-glow {
+            animation: none !important;
+          }
+
+          .animate-fade-in-up,
+          .animate-fade-in-down,
+          .animate-fade-in,
+          .animate-slide-in,
+          .animate-expand-width {
+            animation-duration: 0.01ms !important;
+            animation-delay: 0ms !important;
+            opacity: 1 !important;
+          }
         }
       `}</style>
     </>
