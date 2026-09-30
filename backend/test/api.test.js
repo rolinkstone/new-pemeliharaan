@@ -167,9 +167,32 @@ describe('📄 Route publik (template, tanpa auth)', function () {
     assert.strictEqual(res.status, 200);
   });
 
-  it('GET /api/persediaan/barang/template-xlsx -> 200', async function () {
-    const res = await request(app).get('/api/persediaan/barang/template-xlsx');
+  it('GET /api/persediaan/barang/template-xlsx -> 200 + sheet & header benar', async function () {
+    const res = await request(app)
+      .get('/api/persediaan/barang/template-xlsx')
+      .buffer(true)
+      .parse((response, callback) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => callback(null, Buffer.concat(chunks)));
+      });
+
     assert.strictEqual(res.status, 200);
+    assert.ok(Buffer.isBuffer(res.body), 'body harus berupa buffer XLSX');
+
+    const wb = XLSX.read(res.body, { type: 'buffer' });
+    assert.ok(wb.SheetNames.includes('Template Import'), 'sheet "Template Import" harus ada');
+    assert.ok(wb.SheetNames.includes('Petunjuk'), 'sheet "Petunjuk" harus ada');
+
+    // Sheet referensi hanya dibuat bila master barang sudah berisi data
+    const [[countRow]] = await db.query('SELECT COUNT(*) AS c FROM barang_persediaan');
+    if (Number(countRow.c) > 0) {
+      assert.ok(wb.SheetNames.includes('Pilihan'), 'sheet "Pilihan" harus ada bila ada data jenis/kategori');
+      assert.ok(wb.SheetNames.includes('Kode per Jenis'), 'sheet "Kode per Jenis" harus ada bila ada data barang');
+    }
+
+    const [header] = XLSX.utils.sheet_to_json(wb.Sheets['Template Import'], { header: 1, defval: '' });
+    assert.deepStrictEqual(header, ['kode_barang', 'nama_barang', 'jenis', 'kategori', 'satuan', 'saldo_awal']);
   });
 
   it('GET /api/asetRuangan/import/template -> 200', async function () {
@@ -280,6 +303,62 @@ describe('📤 Export XLSX (Barang BMN, Ruangan, Aset Ruangan)', function () {
   it('GET /api/asetRuangan/export/xlsx -> 200', async function () {
     const res = await fetchXlsx('/api/asetRuangan/export/xlsx');
     assertXlsx(res, ['Kode Barang', 'NUP', 'Nama Barang', 'Kode Ruangan', 'Nama Ruangan', 'Tgl Masuk', 'Tgl Keluar', 'Status', 'Keterangan']);
+  });
+
+  it('GET /api/persediaan/barang/export/xlsx -> 200', async function () {
+    const res = await fetchXlsx('/api/persediaan/barang/export/xlsx');
+    assertXlsx(res, ['Kode Barang', 'Nama Barang', 'Jenis', 'Kategori', 'Satuan', 'Stok']);
+  });
+
+  it('GET /api/persediaan/barang/next-kode -> 200 + kode 4 digit sesuai jenis', async function () {
+    const res = await request(app)
+      .get('/api/persediaan/barang/next-kode')
+      .query({ jenis: 'ALAT TULIS' });
+    assert.strictEqual(res.status, 200, `status ${res.status}: ${JSON.stringify(res.body).slice(0, 200)}`);
+    assert.strictEqual(res.body.success, true);
+    assert.ok(/^\d{4}$/.test(res.body.data.kode_barang), `kode harus 4 digit, dapat: ${res.body.data.kode_barang}`);
+  });
+
+  it('GET /api/persediaan/barang/next-kode tanpa jenis -> 400', async function () {
+    const res = await request(app).get('/api/persediaan/barang/next-kode');
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('import barang persediaan membaca hasil Export (duplikat terdeteksi, bukan 0/0)', async function () {
+    const exp = await fetchXlsx('/api/persediaan/barang/export/xlsx');
+    assert.strictEqual(exp.status, 200);
+
+    const imp = await request(app)
+      .post('/api/persediaan/barang/import-xlsx')
+      .send({ fileBase64: exp.body.toString('base64') });
+
+    if (countDataRows(exp.body) === 0) {
+      // Master barang masih kosong -> import file kosong wajib ditolak dengan pesan jelas
+      assert.strictEqual(imp.status, 400, `status ${imp.status}: ${JSON.stringify(imp.body).slice(0, 200)}`);
+      assert.ok(/tidak ada baris data/i.test(imp.body.message), imp.body.message);
+      return;
+    }
+
+    assert.strictEqual(imp.status, 200, `status ${imp.status}: ${JSON.stringify(imp.body).slice(0, 200)}`);
+    assert.strictEqual(imp.body.success, true);
+    assert.notStrictEqual(imp.body.message, '0 berhasil, 0 gagal');
+    assert.strictEqual(imp.body.data.success, 0, 'semua baris hasil export harus tertolak sebagai duplikat (tidak menulis DB)');
+    assert.ok(imp.body.data.failed > 0, 'baris hasil export harus terbaca (terdeteksi duplikat)');
+  });
+
+  it('import barang persediaan menolak header tidak dikenali', async function () {
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([['Foo', 'Bar'], ['a', 'b']]);
+    XLSX.utils.book_append_sheet(wb, ws, 'Template Import');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    const imp = await request(app)
+      .post('/api/persediaan/barang/import-xlsx')
+      .send({ fileBase64: buf.toString('base64') });
+
+    assert.strictEqual(imp.status, 400);
+    assert.ok(/header tidak dikenali/i.test(imp.body.message), imp.body.message);
+    assert.notStrictEqual(imp.body.message, '0 berhasil, 0 gagal');
   });
 
   // Jumlah baris data pada sheet pertama sebuah file XLSX (di luar baris header)
@@ -443,6 +522,32 @@ describe('🧾 Laporan Rusak: aset per ruangan (select box)', function () {
 });
 
 // ============================================================
+describe('📊 Laporan Rusak: statistik (tipe data untuk kartu)', function () {
+  const app = buildApp({ authed: true });
+
+  it('GET /api/laporanrusak/statistics -> semua nilai bertipe NUMBER (bukan string)', async function () {
+    const res = await request(app).get('/api/laporanrusak/statistics');
+    assert.strictEqual(res.status, 200, `status ${res.status}: ${JSON.stringify(res.body).slice(0, 200)}`);
+    assert.strictEqual(res.body.success, true);
+
+    const fields = ['total', 'diajukan', 'menunggu_katim', 'menunggu_ppk', 'dalam_perbaikan',
+      'menunggu_konfirmasi_kabag', 'menunggu_konfirmasi_user', 'selesai', 'ditolak'];
+
+    // Regresi: SUM(...) MySQL dikembalikan mysql2 sebagai string -> penjumlahan di frontend
+    // menempel jadi "20000" pada kartu "Menunggu Proses".
+    fields.forEach((f) => {
+      assert.strictEqual(typeof res.body.data[f], 'number',
+        `field ${f} harus number, dapat ${typeof res.body.data[f]} (${JSON.stringify(res.body.data[f])})`);
+    });
+
+    const menungguProses = res.body.data.diajukan + res.body.data.menunggu_katim + res.body.data.menunggu_ppk
+      + res.body.data.menunggu_konfirmasi_kabag + res.body.data.menunggu_konfirmasi_user;
+    assert.ok(menungguProses >= 0 && menungguProses <= res.body.data.total,
+      `nilai kartu "Menunggu Proses" (${menungguProses}) harus <= total (${res.body.data.total})`);
+  });
+});
+
+// ============================================================
 describe('🔎 Aset Ruangan: pencarian (search)', function () {
   const app = buildApp({ authed: true });
 
@@ -595,6 +700,7 @@ describe('📉 Pemantauan barang tidak bergerak (movement)', function () {
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.body.success, true);
     checkRows(res.body.data, 'persediaan');
+    assert.ok(res.body.data.every(r => r.kode_barang), 'setiap barang persediaan harus punya kode_barang');
   });
 
   it('GET /api/reagen/reagen/movement -> 200 + struktur benar', async function () {

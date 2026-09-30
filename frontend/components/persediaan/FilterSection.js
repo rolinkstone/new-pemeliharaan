@@ -22,7 +22,7 @@ import {
 } from '@mui/icons-material';
 import * as api from './api/persediaanApi';
 
-const FilterSection = ({ filters, onFilterChange, session, onImportXLSX, onDownloadTemplate }) => {
+const FilterSection = ({ filters, onFilterChange, session, onImportXLSX, onDownloadTemplate, onExportXLSX, canImport = false }) => {
   const [expanded, setExpanded] = useState(false);
   const [localFilters, setLocalFilters] = useState(filters);
   const [jenisOptions, setJenisOptions] = useState([]);
@@ -67,7 +67,7 @@ const FilterSection = ({ filters, onFilterChange, session, onImportXLSX, onDownl
       <Box display="flex" alignItems="center" gap={1.5} flexWrap="wrap">
         <TextField
           size="small"
-          placeholder="Cari nama barang..."
+          placeholder="Cari nama / kode barang..."
           value={localFilters.search || ''}
           onChange={(e) => handleChange('search', e.target.value)}
           onKeyDown={handleKeyPress}
@@ -129,16 +129,21 @@ const FilterSection = ({ filters, onFilterChange, session, onImportXLSX, onDownl
       </Collapse>
 
       {/* Upload & Download actions */}
-      <Box mt={1.5} display="flex" gap={1} flexWrap="wrap">
+      <Box mt={1.5} display="flex" gap={1} flexWrap="wrap" alignItems="center">
         <Button size="small" variant="text" startIcon={<DownloadIcon />} onClick={onDownloadTemplate}
           sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
           Download Template
         </Button>
-        <Button size="small" variant="text" startIcon={<CloudUploadIcon />} component="label"
-          sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
-          Import XLSX
-          <input type="file" hidden accept=".xlsx,.xls"
-            onChange={(e) => { if (e.target.files[0]) { onImportXLSX(e.target.files[0]); e.target.value = ''; } }} />
+        {canImport && (
+          <Button size="small" variant="text" startIcon={<CloudUploadIcon />} onClick={onImportXLSX}
+            sx={{ textTransform: 'none', fontSize: '0.75rem' }}>
+            Import Excel
+          </Button>
+        )}
+        <Button size="small" variant="text" startIcon={<DownloadIcon />} onClick={onExportXLSX}
+          disabled={!onExportXLSX}
+          sx={{ textTransform: 'none', fontSize: '0.75rem', ml: 'auto', color: '#10b981' }}>
+          Export Excel
         </Button>
       </Box>
     </Paper>

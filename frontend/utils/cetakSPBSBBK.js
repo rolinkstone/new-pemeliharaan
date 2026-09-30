@@ -73,7 +73,7 @@ const buildDoc = ({ judul, nomor, tanggal, unit, rows, diserahkan, diterima, men
         ${rows.map(r => `
           <tr>
             <td class="c no">${escapeHtml(r.no)}</td>
-            <td class="nama">${escapeHtml(r.nama)}</td>
+            <td class="nama">${escapeHtml(r.nama)}${r.kode ? `<div class="kode">Kode: ${escapeHtml(r.kode)}</div>` : ''}</td>
             <td class="c satuan">${escapeHtml(r.satuan)}</td>
             <td class="c jml">${escapeHtml(r.diminta)}</td>
             <td class="c jml">${escapeHtml(r.jumlah)}</td>
@@ -129,6 +129,7 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
   // Selalu tampilkan 10 baris (isi + kosong)
   const items = (group.items || []).map((it, i) => ({
     no: i + 1,
+    kode: it.kode_barang || '',
     nama: it.nama_barang || '',
     satuan: tipe === 'reagen' ? (it.satuan || 'Botol') : (it.satuan || ''),
     jumlah: tipe === 'reagen' ? (it.jumlah_botol ?? it.jumlah ?? '') : (it.jumlah ?? ''),
@@ -204,6 +205,7 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
   .c { text-align: center; }
   th.no, td.no { width: 5%; }
   th.nama, td.nama { text-align: left; width: 36%; }
+  td.nama .kode { font-size: 10.5px; font-weight: 600; color: #333; margin-top: 1px; }
   th.satuan, td.satuan { width: 12%; }
   th.jml, td.jml { width: 14%; }
   th.ket, td.ket { width: 19%; }

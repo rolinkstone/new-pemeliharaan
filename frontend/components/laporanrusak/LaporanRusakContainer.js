@@ -679,7 +679,9 @@ const LaporanRusakContainer = () => {
       },
       {
         label: 'Menunggu Proses',
-        value: (statistics.diajukan || 0) + (statistics.menunggu_katim || 0) + (statistics.menunggu_ppk || 0) + (statistics.menunggu_konfirmasi_kabag || 0) + (statistics.menunggu_konfirmasi_user || 0),
+        // Number(...) wajib: nilai dari API bisa bertipe string (hasil SUM MySQL),
+        // kalau dijumlahkan langsung dengan '+' akan menempel jadi "20000".
+        value: Number(statistics.diajukan || 0) + Number(statistics.menunggu_katim || 0) + Number(statistics.menunggu_ppk || 0) + Number(statistics.menunggu_konfirmasi_kabag || 0) + Number(statistics.menunggu_konfirmasi_user || 0),
         icon: <WarningIcon sx={{ fontSize: 22 }} />,
         color: '#f59e0b',
         maxValue: statistics.total || 100,

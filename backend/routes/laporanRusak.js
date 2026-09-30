@@ -352,18 +352,22 @@ router.get('/statistics', keycloakAuth, async (req, res) => {
             FROM laporan_rusak
         `);
         const s = rows[0] || {};
+        // Penting: hasil SUM(...) dari MySQL bertipe DECIMAL dan dikembalikan mysql2
+        // sebagai STRING. Tanpa Number(), penjumlahan di frontend akan menempel
+        // (mis. "2" + "0" + "0" + "0" + "0" = "20000").
+        const num = (v) => Number(v) || 0;
         res.json({
             success: true,
             data: {
-                total: s.total || 0,
-                diajukan: s.diajukan || 0,
-                menunggu_katim: s.menunggu_katim || 0,
-                menunggu_ppk: s.menunggu_ppk || 0,
-                dalam_perbaikan: s.dalam_perbaikan || 0,
-                menunggu_konfirmasi_kabag: s.menunggu_konfirmasi_kabag || 0,
-                menunggu_konfirmasi_user: s.menunggu_konfirmasi_user || 0,
-                selesai: s.selesai || 0,
-                ditolak: s.ditolak || 0
+                total: num(s.total),
+                diajukan: num(s.diajukan),
+                menunggu_katim: num(s.menunggu_katim),
+                menunggu_ppk: num(s.menunggu_ppk),
+                dalam_perbaikan: num(s.dalam_perbaikan),
+                menunggu_konfirmasi_kabag: num(s.menunggu_konfirmasi_kabag),
+                menunggu_konfirmasi_user: num(s.menunggu_konfirmasi_user),
+                selesai: num(s.selesai),
+                ditolak: num(s.ditolak)
             }
         });
     } catch (error) {

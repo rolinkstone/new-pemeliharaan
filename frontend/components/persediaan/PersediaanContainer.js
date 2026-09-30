@@ -21,6 +21,7 @@ import PolishedPageShell from '../common/PolishedPageShell';
 import FilterSection from './FilterSection';
 import KirimKeKatimModal from './modals/KirimKeKatimModal';
 import ProsesSerahkanModal from './modals/ProsesSerahkanModal';
+import ImportBarangModal from './modals/ImportBarangModal';
 import ConfirmDialog from '../common/ConfirmDialog';
 import RejectDialog from '../common/RejectDialog';
 import MovementSummaryCard from '../common/MovementSummaryCard';
@@ -71,6 +72,7 @@ const PersediaanContainer = ({ session }) => {
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
+  const [importBarangOpen, setImportBarangOpen] = useState(false);
   const [modalMode, setModalMode] = useState('create');
   const [selectedItem, setSelectedItem] = useState(null);
   const [formData, setFormData] = useState({});
@@ -168,8 +170,25 @@ const PersediaanContainer = ({ session }) => {
   const openEditModal = (item) => {
     setModalMode('edit');
     setSelectedItem(item);
-    setFormData({ nama_barang: item.nama_barang, jenis: item.jenis, kategori: item.kategori, satuan: item.satuan });
+    setFormData({
+      kode_barang: item.kode_barang,
+      nama_barang: item.nama_barang,
+      jenis: item.jenis,
+      kategori: item.kategori,
+      satuan: item.satuan,
+    });
     setModalOpen(true);
+  };
+
+  // Saran kode berikutnya untuk jenis yang dipilih (hanya saat tambah barang)
+  const applyNextKode = async (jenis) => {
+    if (!jenis) return;
+    try {
+      const res = await api.fetchNextKode(session, jenis);
+      if (res?.success) {
+        setFormData(prev => ({ ...prev, kode_barang: res.data.kode_barang }));
+      }
+    } catch { /* abaikan, kode tetap bisa diisi manual */ }
   };
 
   const handleCloseModal = () => setModalOpen(false);
@@ -526,18 +545,26 @@ const PersediaanContainer = ({ session }) => {
     window.open(api.downloadTemplateUrl, '_blank');
   };
 
-  const handleImportXLSX = async (file) => {
+  const handleImportDone = (res) => {
+    fetchAll();
+    const ok = res?.data?.success ?? 0;
+    const failed = res?.data?.failed ?? 0;
+    showSnackbar(`Import selesai: ${ok} berhasil, ${failed} gagal/dilewati`, failed > 0 ? 'warning' : 'success');
+  };
+
+  const handleExportBarangXLSX = async () => {
     try {
-      const res = await api.importXLSX(session, file);
-      if (res.success) {
-        showSnackbar(res.message + (res.data?.errors?.length ? '. Lihat console untuk detail' : ''), res.data?.failed > 0 ? 'warning' : 'success');
-        if (res.data?.errors?.length) console.warn('Import errors:', res.data.errors);
-        fetchAll();
-      } else {
-        showSnackbar(res.message || 'Gagal import', 'error');
-      }
+      const blob = await api.exportBarangXLSX(session);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `data-barang-persediaan-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
     } catch (e) {
-      showSnackbar(e?.response?.data?.message || e.message, 'error');
+      showSnackbar('Gagal export: ' + (e.response?.data?.message || e.message), 'error');
     }
   };
 
@@ -672,13 +699,16 @@ const PersediaanContainer = ({ session }) => {
               filters={filters}
               onFilterChange={(f) => { setFilters(f); setPagination(prev => ({ ...prev, currentPage: 1 })); }}
               session={session}
-              onImportXLSX={handleImportXLSX}
+              onImportXLSX={() => setImportBarangOpen(true)}
               onDownloadTemplate={handleDownloadTemplate}
+              onExportXLSX={handleExportBarangXLSX}
+              canImport={isPicGudang}
             />
             <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
               <Table>
                 <TableHead>
                   <TableRow sx={{ bgcolor: '#f8fafc', '& th': { fontWeight: 600, fontSize: '0.8rem', color: '#64748b' } }}>
+                    <TableCell>Kode</TableCell>
                     <TableCell>Nama Barang</TableCell>
                     <TableCell>Jenis</TableCell>
                     <TableCell>Kategori</TableCell>
@@ -690,6 +720,11 @@ const PersediaanContainer = ({ session }) => {
                 <TableBody>
                   {barangList.map((b) => (
                     <TableRow key={b.id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600, color: '#1f4e79' }}>
+                          {b.kode_barang}
+                        </Typography>
+                      </TableCell>
                       <TableCell><Typography fontWeight={500}>{b.nama_barang}</Typography></TableCell>
                       <TableCell>{b.jenis}</TableCell>
                       <TableCell>{b.kategori}</TableCell>
@@ -710,7 +745,7 @@ const PersediaanContainer = ({ session }) => {
                     </TableRow>
                   ))}
                   {barangList.length === 0 && !loading && (
-                    <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4, color: '#94a3b8' }}>Belum ada data barang</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={isPicGudang ? 7 : 6} align="center" sx={{ py: 4, color: '#94a3b8' }}>Belum ada data barang</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -806,7 +841,10 @@ const PersediaanContainer = ({ session }) => {
                         {group.items.map((b) => (
                           <TableRow key={b.id} hover sx={{ '&:last-child td': { border: 0 } }}>
                             <TableCell></TableCell>
-                            <TableCell>{b.nama_barang}</TableCell>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={500}>{b.nama_barang}</Typography>
+                              {b.kode_barang && <Typography variant="caption" color="text.secondary">Kode: {b.kode_barang}</Typography>}
+                            </TableCell>
                             <TableCell align="right"><Typography fontWeight={600}>{b.jumlah} {b.satuan}</Typography></TableCell>
                             <TableCell>{b.created_by}</TableCell>
                             <TableCell>
@@ -903,7 +941,7 @@ const PersediaanContainer = ({ session }) => {
                             {group.items.length} barang
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {group.items.map(i => i.nama_barang).join(', ')}
+                            {group.items.map(i => `${i.kode_barang ? `${i.kode_barang} · ` : ''}${i.nama_barang}`).join(', ')}
                           </Typography>
                         </TableCell>
                         <TableCell>
@@ -989,7 +1027,7 @@ const PersediaanContainer = ({ session }) => {
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2" fontWeight={500}>{item.nama_barang}</Typography>
-                            <Typography variant="caption" color="text.secondary">{item.jumlah} {item.satuan}</Typography>
+                            <Typography variant="caption" color="text.secondary">{item.kode_barang ? `Kode ${item.kode_barang} · ` : ''}{item.jumlah} {item.satuan}</Typography>
                           </TableCell>
                           <TableCell>
                             <Chip label={statusLabels[item.status] || item.status} size="small"
@@ -1080,13 +1118,13 @@ const PersediaanContainer = ({ session }) => {
                 </TableHead>
                 <TableBody>
                   {mutasiList
-                    .filter(b => !filters.search || b.nama_barang.toLowerCase().includes(filters.search.toLowerCase()))
+                    .filter(b => !filters.search || b.nama_barang.toLowerCase().includes(filters.search.toLowerCase()) || String(b.kode_barang || '').toLowerCase().includes(filters.search.toLowerCase()))
                     .slice(mutasiPage * mutasiRowsPerPage, mutasiPage * mutasiRowsPerPage + mutasiRowsPerPage)
                     .map((b) => (
                     <TableRow key={b.id} hover sx={{ '&:last-child td': { border: 0 } }}>
                       <TableCell>
                         <Typography fontWeight={500} variant="body2">{b.nama_barang}</Typography>
-                        <Typography variant="caption" color="text.secondary">{b.jenis} {b.kategori && `· ${b.kategori}`}</Typography>
+                        <Typography variant="caption" color="text.secondary">{[b.kode_barang, b.jenis, b.kategori].filter(Boolean).join(' · ')}</Typography>
                       </TableCell>
                       <TableCell>{b.satuan}</TableCell>
                       <TableCell align="right">
@@ -1120,7 +1158,7 @@ const PersediaanContainer = ({ session }) => {
               </Table>
               <TablePagination
                 component="div"
-                count={mutasiList.filter(b => !filters.search || b.nama_barang.toLowerCase().includes(filters.search.toLowerCase())).length}
+                count={mutasiList.filter(b => !filters.search || b.nama_barang.toLowerCase().includes(filters.search.toLowerCase()) || String(b.kode_barang || '').toLowerCase().includes(filters.search.toLowerCase())).length}
                 page={mutasiPage}
                 onPageChange={(e, p) => setMutasiPage(p)}
                 rowsPerPage={mutasiRowsPerPage}
@@ -1149,7 +1187,10 @@ const PersediaanContainer = ({ session }) => {
                   {opnameList.slice(opnamePage * opnameRowsPerPage, opnamePage * opnameRowsPerPage + opnameRowsPerPage).map((o) => (
                     <TableRow key={o.id} hover sx={{ '&:last-child td': { border: 0 } }}>
                       <TableCell>{o.tanggal?.split('T')[0]}</TableCell>
-                      <TableCell>{o.nama_barang}</TableCell>
+                      <TableCell>
+                        {o.nama_barang}
+                        {o.kode_barang && <Typography variant="caption" display="block" color="text.secondary">Kode: {o.kode_barang}</Typography>}
+                      </TableCell>
                       <TableCell align="right">{o.stok_sistem}</TableCell>
                       <TableCell align="right">{o.stok_nyata}</TableCell>
                       <TableCell align="right">
@@ -1190,8 +1231,16 @@ const PersediaanContainer = ({ session }) => {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
             <TextField label="Nama Barang" fullWidth required value={formData.nama_barang || ''}
               onChange={(e) => setFormData({ ...formData, nama_barang: e.target.value })} />
-            <TextField label="Jenis" fullWidth value={formData.jenis || ''}
-              onChange={(e) => setFormData({ ...formData, jenis: e.target.value })} />
+            <TextField label="Jenis" fullWidth required value={formData.jenis || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setFormData(prev => ({ ...prev, jenis: v }));
+                if (modalMode === 'create') applyNextKode(v);
+              }}
+              helperText="Kode barang dinomori per jenis (mis. ALAT TULIS: 0001, 0002, ...)" />
+            <TextField label="Kode Barang" fullWidth required value={formData.kode_barang || ''}
+              onChange={(e) => setFormData({ ...formData, kode_barang: e.target.value })} placeholder="contoh: 0001"
+              helperText="Terisi otomatis dari jenis; wajib unik per jenis" />
             <TextField label="Kategori" fullWidth value={formData.kategori || ''}
               onChange={(e) => setFormData({ ...formData, kategori: e.target.value })} />
             <TextField label="Satuan" fullWidth required value={formData.satuan || ''}
@@ -1277,7 +1326,7 @@ const PersediaanContainer = ({ session }) => {
                   value={item.barang_id}
                   onChange={(e) => handleBmItemChange(idx, 'barang_id', e.target.value)}>
                   {allBarang.map((b) => (
-                    <MenuItem key={b.id} value={b.id}>{b.nama_barang} (stok: {b.saldo || 0} {b.satuan})</MenuItem>
+                    <MenuItem key={b.id} value={b.id}>{b.kode_barang ? `${b.kode_barang} · ` : ''}{b.nama_barang} (stok: {b.saldo || 0} {b.satuan})</MenuItem>
                   ))}
                 </TextField>
                 <TextField label="Jumlah" type="number" size="small" sx={{ flex: 0.5 }}
@@ -1344,7 +1393,7 @@ const PersediaanContainer = ({ session }) => {
                   <Autocomplete
                     size="small"
                     options={allBarang.filter(b => (b.saldo || 0) > 0)}
-                    getOptionLabel={(b) => `${b.nama_barang} (stok: ${b.saldo || 0} ${b.satuan})`}
+                    getOptionLabel={(b) => `${b.kode_barang ? `${b.kode_barang} · ` : ''}${b.nama_barang} (stok: ${b.saldo || 0} ${b.satuan})`}
                     isOptionEqualToValue={(option, value) => String(option.id) === String(value?.id)}
                     value={allBarang.find(b => String(b.id) === String(item.barang_id)) || null}
                     onChange={(e, newVal) => updatePermintaanItem(idx, 'barang_id', newVal ? newVal.id : '')}
@@ -1393,7 +1442,7 @@ const PersediaanContainer = ({ session }) => {
                 fetchOpnameTransaksi(bid);
               }}>
               {allBarang.map((b) => (
-                <MenuItem key={b.id} value={b.id}>{b.nama_barang} (stok sistem: {b.saldo || 0} {b.satuan})</MenuItem>
+                <MenuItem key={b.id} value={b.id}>{b.kode_barang ? `${b.kode_barang} · ` : ''}{b.nama_barang} (stok sistem: {b.saldo || 0} {b.satuan})</MenuItem>
               ))}
             </TextField>
             <TextField label="Stok Nyata (hasil hitung fisik)" type="number" fullWidth required value={opnameForm.stok_nyata}
@@ -1566,6 +1615,14 @@ const PersediaanContainer = ({ session }) => {
         group={prosesModal.group}
         session={session}
         onSuccess={(msg) => { showSnackbar(msg); fetchAll(); }}
+      />
+
+      {/* Modal Import Barang Persediaan (XLSX) */}
+      <ImportBarangModal
+        open={importBarangOpen}
+        onClose={() => setImportBarangOpen(false)}
+        session={session}
+        onSuccess={handleImportDone}
       />
 
       {/* Modal History */}

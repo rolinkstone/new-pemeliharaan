@@ -76,11 +76,14 @@ const Home = () => {
         const json = await res.json();
         if (json.success) {
           const d = json.data;
+          const num = (v) => Number(v) || 0;
           setStats([
-            { ...statConfig[0], value: d.total || '0' },
-            { ...statConfig[1], value: (d.diajukan + d.menunggu_katim + d.menunggu_ppk + d.menunggu_konfirmasi_kabag + d.menunggu_konfirmasi_user) || '0' },
-            { ...statConfig[2], value: d.dalam_perbaikan || '0' },
-            { ...statConfig[3], value: d.selesai || '0' },
+            { ...statConfig[0], value: num(d.total) },
+            // Number(...) wajib: nilai dari API bisa bertipe string (hasil SUM MySQL),
+            // kalau dijumlahkan langsung dengan '+' akan menempel jadi "20000".
+            { ...statConfig[1], value: num(d.diajukan) + num(d.menunggu_katim) + num(d.menunggu_ppk) + num(d.menunggu_konfirmasi_kabag) + num(d.menunggu_konfirmasi_user) },
+            { ...statConfig[2], value: num(d.dalam_perbaikan) },
+            { ...statConfig[3], value: num(d.selesai) },
           ]);
         }
       } catch (e) {

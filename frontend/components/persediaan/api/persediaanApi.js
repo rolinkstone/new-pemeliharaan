@@ -24,6 +24,15 @@ export const exportMutasi = async (session) => {
   });
   return data;
 };
+
+// Export data master barang persediaan (ATK) -> XLSX
+export const exportBarangXLSX = async (session) => {
+  const { data } = await axios.get(`${API_URL}/barang/export/xlsx`, {
+    headers: { Authorization: `Bearer ${session?.accessToken}` },
+    responseType: 'blob',
+  });
+  return data;
+};
 export const createBarang = async (session, body) => {
   const { data } = await axios.post(`${API_URL}/barang`, body, { headers: getHeaders(session) });
   return data;
@@ -152,6 +161,15 @@ export const fetchMutasiDetail = async (session, barang_id, params = {}) => {
 // ========== FILTER OPTIONS ==========
 export const fetchFilterOptions = async (session) => {
   const { data } = await axios.get(`${API_URL}/barang/filter-options`, { headers: getHeaders(session) });
+  return data;
+};
+
+// Saran kode barang berikutnya untuk suatu jenis (0001, 0002, ...)
+export const fetchNextKode = async (session, jenis) => {
+  const { data } = await axios.get(`${API_URL}/barang/next-kode`, {
+    headers: getHeaders(session),
+    params: { jenis },
+  });
   return data;
 };
 

@@ -122,7 +122,9 @@ export default function ProsesSerahkanModal({ open, onClose, group, session, onS
                   <TableRow key={item.id} hover sx={{ bgcolor: item.ditolak ? '#fef2f2' : 'inherit' }}>
                     <TableCell>
                       <Typography fontWeight={500} variant="body2">{item.nama_barang}</Typography>
-                      <Typography variant="caption" color="text.secondary">{item.satuan}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {item.kode_barang ? `Kode ${item.kode_barang} · ` : ''}{item.satuan}
+                      </Typography>
                     </TableCell>
                     <TableCell align="center"><Typography fontWeight={600}>{item.jumlah}</Typography></TableCell>
                     <TableCell align="center">

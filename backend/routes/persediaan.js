@@ -6,6 +6,8 @@ const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { getUsernameFromToken, hasRole } = require('../utils/routeHelpers');
 const { mergeFilesToPdf, safeFileName } = require('../utils/pdfMerge');
+const { normalizeStr, looksLikeNote, readRowsWithAliases } = require('../utils/xlsxImport');
+const { buildXlsxSheet, sendWorkbook, todayFileStamp } = require('../utils/xlsxExport');
 let XLSX = null;
 try { XLSX = require('xlsx-js-style'); } catch (e) {
     try { XLSX = require('xlsx'); } catch (e2) { console.log('⚠️ xlsx not installed, upload disabled'); }
@@ -22,6 +24,34 @@ const createNotif = async (userId, userRole, title, message, link) => {
     } catch (e) { console.error('Notif error:', e.message); }
 };
 
+// ========== KODE BARANG (unik PER JENIS) ==========
+// Normalisasi kode: kode angka otomatis dipadkan jadi 4 digit (mis. '7' -> '0007').
+// Tanda kutip di depan ("'0001", biasa muncul saat Excel dipaksa jadi teks) ikut dibuang.
+const normalizeKode = (v) => {
+    const s = normalizeStr(v).replace(/^['\u2019"]+/, '').trim();
+    if (!s) return '';
+    return /^\d+$/.test(s) ? s.padStart(4, '0') : s;
+};
+
+// Cek apakah (jenis, kode) sudah dipakai barang lain.
+const findKodeConflict = async (jenis, kode, excludeId = null) => {
+    const params = [jenis, kode];
+    let q = 'SELECT id, nama_barang FROM barang_persediaan WHERE jenis = ? AND kode_barang = ?';
+    if (excludeId) { q += ' AND id != ?'; params.push(excludeId); }
+    const [rows] = await db.query(q, params);
+    return rows[0] || null;
+};
+
+// Kode berikutnya untuk suatu jenis (0001, 0002, ...).
+const nextKodeForJenis = async (jenis) => {
+    const [rows] = await db.query(
+        'SELECT MAX(CAST(kode_barang AS UNSIGNED)) AS maxnum FROM barang_persediaan WHERE jenis = ?',
+        [jenis]
+    );
+    const next = (Number(rows[0]?.maxnum) || 0) + 1;
+    return String(next).padStart(4, '0');
+};
+
 // ========== BARANG PERSEDIAAN (Master) ==========
 
 // GET all barang persediaan
@@ -33,9 +63,9 @@ router.get('/barang', keycloakAuth, async (req, res) => {
         let whereClause = ' WHERE 1=1';
         const params = [];
         if (search) {
-            whereClause += ' AND (nama_barang LIKE ? OR jenis LIKE ? OR kategori LIKE ?)';
+            whereClause += ' AND (nama_barang LIKE ? OR kode_barang LIKE ? OR jenis LIKE ? OR kategori LIKE ?)';
             const s = `%${search}%`;
-            params.push(s, s, s);
+            params.push(s, s, s, s);
         }
         if (jenis) {
             whereClause += ' AND jenis = ?';
@@ -52,7 +82,7 @@ router.get('/barang', keycloakAuth, async (req, res) => {
 
         // Fetch page
         const [rows] = await db.query(
-            `SELECT * FROM barang_persediaan${whereClause} ORDER BY nama_barang ASC LIMIT ? OFFSET ?`,
+            `SELECT * FROM barang_persediaan${whereClause} ORDER BY jenis ASC, kode_barang ASC LIMIT ? OFFSET ?`,
             [...params, parseInt(limit), parseInt(offset)]
         );
 
@@ -84,34 +114,134 @@ router.get('/barang/filter-options', keycloakAuth, async (req, res) => {
     }
 });
 
-// GET download template XLSX
+// GET saran kode barang berikutnya untuk suatu jenis (0001, 0002, ...)
+router.get('/barang/next-kode', keycloakAuth, async (req, res) => {
+    try {
+        const jenis = normalizeStr(req.query.jenis);
+        if (!jenis) return res.status(400).json({ success: false, message: 'Parameter jenis wajib diisi' });
+        const kode_barang = await nextKodeForJenis(jenis);
+        res.json({ success: true, data: { jenis, kode_barang } });
+    } catch (error) {
+        console.error('Error next kode barang:', error);
+        res.status(500).json({ success: false, message: 'Gagal mengambil saran kode barang', error: error.message });
+    }
+});
+
+// GET download template XLSX (publik, tanpa auth)
+// Sheet: 'Template Import' (header saja) + 'Petunjuk' + 'Pilihan' (jenis/kategori yang sudah ada)
 router.get('/barang/template-xlsx', async (req, res) => {
     try {
         if (!XLSX) return res.status(500).json({ success: false, message: 'xlsx package tidak tersedia' });
 
+        let jenisRef = [];
+        let kategoriRef = [];
+        let kodeRef = [];
+        try {
+            const [j] = await db.query('SELECT DISTINCT jenis FROM barang_persediaan WHERE jenis IS NOT NULL AND jenis != "" ORDER BY jenis');
+            const [k] = await db.query('SELECT DISTINCT kategori FROM barang_persediaan WHERE kategori IS NOT NULL AND kategori != "" ORDER BY kategori');
+            const [c] = await db.query(`
+                SELECT jenis, COUNT(*) AS jumlah,
+                       MAX(kode_barang) AS kode_terakhir,
+                       LPAD(MAX(CAST(kode_barang AS UNSIGNED)) + 1, 4, '0') AS kode_berikutnya
+                FROM barang_persediaan
+                GROUP BY jenis
+                ORDER BY jenis ASC
+            `);
+            jenisRef = (j || []).map(r => r.jenis);
+            kategoriRef = (k || []).map(r => r.kategori);
+            kodeRef = c || [];
+        } catch (e) { console.error('Template barang ref error:', e.message); }
+
+        const HEADER = ['kode_barang', 'nama_barang', 'jenis', 'kategori', 'satuan', 'saldo_awal'];
+        const COL_WIDTHS = [{ wch: 14 }, { wch: 34 }, { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 12 }];
         const wb = XLSX.utils.book_new();
-        const wsData = [
-            ['nama_barang', 'jenis', 'kategori', 'satuan', 'saldo_awal'],
-            ['Contoh Barang A', 'ATK', 'Konsumsi', 'pcs', '100'],
-            ['Contoh Barang B', 'ATK', 'Cetakan', 'box', '50'],
-            ['', '', '', '', ''],
-            ['Keterangan:', '', '', '', ''],
-            ['- Nama barang (wajib)', '', '', '', ''],
-            ['- Satuan (wajib): pcs, box, kg, rim, dll', '', '', '', ''],
-            ['- Jenis & kategori (opsional)', '', '', '', ''],
-            ['- Saldo awal (opsional, default 0)', '', '', '', ''],
+
+        // Sheet 1: Template Import (header saja)
+        const ws = buildXlsxSheet([HEADER], COL_WIDTHS);
+        XLSX.utils.book_append_sheet(wb, ws, 'Template Import');
+
+        // Sheet 2: Petunjuk
+        const petunjuk = [
+            ['PETUNJUK IMPORT DATA BARANG PERSEDIAAN (ATK)'],
+            [''],
+            ['1. Isi data pada sheet "Template Import" mulai baris ke-2 (jangan ubah baris header).'],
+            ['2. Kolom wajib: kode_barang, nama_barang, jenis, dan satuan.'],
+            ['3. KODE BARANG unik PER JENIS. Contoh: jenis "ALAT TULIS" memakai 0001, 0002, ...;'],
+            ['   jenis lain (mis. "BUKU TULIS") mulai dari 0001 lagi.'],
+            ['4. Lihat sheet "Kode per Jenis" untuk kode terakhir & kode berikutnya tiap jenis.'],
+            ['5. Kode boleh ditulis tanpa nol di depan (mis. 7) — otomatis menjadi 0007.'],
+            ['6. Barang yang jenis+kode-nya sudah ada akan DILEWATI dan dicatat sebagai gagal.'],
+            ['7. Kolom saldo_awal opsional berupa angka (default 0) = stok awal saat barang pertama diinput.'],
+            [''],
+            ['Contoh pengisian:'],
+            HEADER,
+            ['0001', 'Kertas HVS A4 70gr', 'KERTAS HVS', 'Konsumsi', 'rim', '25'],
+            ['0001', 'Buku Tulis 38 lembar', 'BARANG CETAKAN', 'Konsumsi', 'pcs', '100'],
         ];
-        const ws = XLSX.utils.aoa_to_sheet(wsData);
-        ws['!cols'] = [{ wch: 30 }, { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 12 }];
-        XLSX.utils.book_append_sheet(wb, ws, 'Template Barang');
+        const wsPetunjuk = XLSX.utils.aoa_to_sheet(petunjuk);
+        wsPetunjuk['!cols'] = COL_WIDTHS;
+        XLSX.utils.book_append_sheet(wb, wsPetunjuk, 'Petunjuk');
+
+        // Sheet 3: Pilihan (referensi jenis & kategori dari data yang sudah ada)
+        if (jenisRef.length > 0 || kategoriRef.length > 0) {
+            const maxLen = Math.max(jenisRef.length, kategoriRef.length, 1);
+            const aoa = [['jenis', 'kategori']];
+            for (let i = 0; i < maxLen; i++) aoa.push([jenisRef[i] || '', kategoriRef[i] || '']);
+            const wsPilih = XLSX.utils.aoa_to_sheet(aoa);
+            wsPilih['!cols'] = [{ wch: 26 }, { wch: 22 }];
+            XLSX.utils.book_append_sheet(wb, wsPilih, 'Pilihan');
+        }
+
+        // Sheet 4: Kode per Jenis (kode terakhir & berikutnya)
+        if (kodeRef.length > 0) {
+            const aoa = [['jenis', 'jumlah_barang', 'kode_terakhir', 'kode_berikutnya']];
+            kodeRef.forEach(r => aoa.push([r.jenis, Number(r.jumlah) || 0, r.kode_terakhir || '', r.kode_berikutnya || '']));
+            const wsKode = XLSX.utils.aoa_to_sheet(aoa);
+            wsKode['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 16 }];
+            XLSX.utils.book_append_sheet(wb, wsKode, 'Kode per Jenis');
+        }
 
         const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', 'attachment; filename=template_import_barang.xlsx');
+        res.setHeader('Content-Disposition', 'attachment; filename=template_import_barang_persediaan.xlsx');
         res.send(buf);
     } catch (error) {
         console.error('Error generate template:', error);
         res.status(500).json({ success: false, message: 'Gagal generate template', error: error.message });
+    }
+});
+
+// GET export semua barang persediaan (XLSX)
+router.get('/barang/export/xlsx', keycloakAuth, async (req, res) => {
+    try {
+        if (!XLSX) return res.status(500).json({ success: false, message: 'xlsx package tidak tersedia' });
+
+        const [rows] = await db.query(
+            'SELECT kode_barang, nama_barang, jenis, kategori, satuan, saldo FROM barang_persediaan ORDER BY jenis ASC, kode_barang ASC'
+        );
+
+        const aoa = [['No', 'Kode Barang', 'Nama Barang', 'Jenis', 'Kategori', 'Satuan', 'Stok']];
+        (rows || []).forEach((r, i) => {
+            aoa.push([
+                i + 1,
+                normalizeStr(r.kode_barang),
+                normalizeStr(r.nama_barang),
+                normalizeStr(r.jenis),
+                normalizeStr(r.kategori),
+                normalizeStr(r.satuan),
+                Number(r.saldo) || 0,
+            ]);
+        });
+
+        const wb = XLSX.utils.book_new();
+        const ws = buildXlsxSheet(aoa, [{ wch: 6 }, { wch: 14 }, { wch: 34 }, { wch: 26 }, { wch: 18 }, { wch: 12 }, { wch: 10 }]);
+        XLSX.utils.book_append_sheet(wb, ws, 'Barang Persediaan');
+
+        console.log(`📤 Export barang persediaan: ${(rows || []).length} baris`);
+        sendWorkbook(res, wb, `data-barang-persediaan-${todayFileStamp()}.xlsx`);
+    } catch (error) {
+        console.error('Error export barang:', error);
+        res.status(500).json({ success: false, message: 'Gagal export data', error: error.message });
     }
 });
 
@@ -158,8 +288,8 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
         // --- Build merged header (2 rows) ---
         // Row 0: bulan names (merged across 3 sub-columns) + 4 static columns
         // Row 1: sub-column headers (Pembelian, Pemakaian, Saldo)
-        const headerRow1 = ['Nama Barang', 'Jenis', 'Kategori', 'Satuan'];
-        const headerRow2 = ['', '', '', ''];
+        const headerRow1 = ['Kode Barang', 'Nama Barang', 'Jenis', 'Kategori', 'Satuan'];
+        const headerRow2 = ['', '', '', '', ''];
         const merges = [];
 
         for (let m = 1; m <= 12; m++) {
@@ -178,7 +308,7 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
 
         // --- Data rows (using pre-fetched maps) ---
         for (const b of semuaBarang) {
-            const row = [b.nama_barang, b.jenis || '', b.kategori || '', b.satuan];
+            const row = [b.kode_barang || '', b.nama_barang, b.jenis || '', b.kategori || '', b.satuan];
             const stokSekarang = Number(b.saldo || 0);
             const totalMasukThnIni = Object.values(masukMap[b.id] || {}).reduce((s, v) => s + v, 0);
             const totalKeluarThnIni = Object.values(keluarMap[b.id] || {}).reduce((s, v) => s + v, 0);
@@ -254,7 +384,7 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
             for (let c = 0; c < wsData[r].length; c++) {
                 const ref = XLSX.utils.encode_cell({ r, c });
                 if (!ws[ref]) ws[ref] = { t: 's', v: wsData[r][c] ?? '' };
-                ws[ref].s = c < 4 ? dataLeft : dataCenter;
+                ws[ref].s = c < 5 ? dataLeft : dataCenter;
             }
         }
 
@@ -268,7 +398,7 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
         ];
 
         // Column widths
-        const colWidths = [{ wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 10 }];
+        const colWidths = [{ wch: 14 }, { wch: 32 }, { wch: 14 }, { wch: 14 }, { wch: 10 }];
         for (let m = 0; m < 12; m++) colWidths.push({ wch: 14 }, { wch: 12 }, { wch: 10 });
         ws['!cols'] = colWidths;
 
@@ -294,39 +424,92 @@ router.post('/barang/import-xlsx', keycloakAuth, async (req, res) => {
         if (!fileBase64) return res.status(400).json({ success: false, message: 'File tidak ditemukan' });
 
         const buf = Buffer.from(fileBase64, 'base64');
-        const wb = XLSX.read(buf, { type: 'buffer' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        const wb = XLSX.read(buf, { type: 'buffer', cellDates: true });
+        const sheetName = wb.SheetNames.includes('Template Import') ? 'Template Import' : wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        if (!ws) return res.status(400).json({ success: false, message: 'File tidak memiliki sheet yang bisa dibaca' });
 
-        if (rows.length === 0) return res.status(400).json({ success: false, message: 'File kosong atau format salah' });
+        // Terima header template (snake_case) ATAU label hasil Export
+        const ALIAS = {
+            kode_barang: ['kode_barang', 'Kode Barang', 'Kode'],
+            nama_barang: ['nama_barang', 'Nama Barang', 'Nama'],
+            jenis: ['jenis', 'Jenis'],
+            kategori: ['kategori', 'Kategori'],
+            satuan: ['satuan', 'Satuan'],
+            saldo_awal: ['saldo_awal', 'Saldo Awal', 'Saldo', 'Stok', 'Stok Awal'],
+        };
+        const { rows, matched } = readRowsWithAliases(ws, ALIAS);
+
+        const REQUIRED = ['kode_barang', 'nama_barang', 'jenis', 'satuan'];
+        const missing = REQUIRED.filter(k => !matched.includes(k));
+        if (missing.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Format header tidak dikenali. Gunakan template import atau file hasil Export dari aplikasi.',
+                data: { success: 0, failed: 0, errors: [`Kolom wajib tidak ditemukan: ${missing.join(', ')}.`] },
+            });
+        }
+        if (!rows || rows.length === 0) {
+            return res.status(400).json({ success: false, message: 'File kosong atau tidak ada baris data' });
+        }
+
+        // Deteksi duplikat: kode_barang unik PER JENIS (case-insensitive)
+        const keyOf = (jenis, kode) => `${normalizeStr(jenis).toLowerCase()}|${normalizeStr(kode).toLowerCase()}`;
+        const [existingRows] = await db.query('SELECT jenis, kode_barang FROM barang_persediaan');
+        const existingKeys = new Set((existingRows || []).map(r => keyOf(r.jenis, r.kode_barang)));
+        const seenKeys = new Set();
 
         const username = getUsername(req);
-        let success = 0, failed = 0, errors = [];
+        let success = 0, failed = 0;
+        const errors = [];
 
         for (let i = 0; i < rows.length; i++) {
             const row = rows[i];
-            const nama_barang = (row.nama_barang || '').trim();
-            const satuan = (row.satuan || '').trim();
+            const rowNum = i + 2;
 
-            if (!nama_barang || !satuan) {
+            const kode_barang = normalizeKode(row.kode_barang);
+            const nama_barang = normalizeStr(row.nama_barang);
+            const jenis = normalizeStr(row.jenis);
+            const satuan = normalizeStr(row.satuan);
+
+            // Lewati baris kosong / baris catatan template
+            if (!kode_barang && !nama_barang && !jenis) continue;
+            if (looksLikeNote(kode_barang) || looksLikeNote(nama_barang)) continue;
+
+            if (!kode_barang) { failed++; errors.push(`Baris ${rowNum}: kode_barang kosong`); continue; }
+            if (!nama_barang) { failed++; errors.push(`Baris ${rowNum}: nama_barang kosong`); continue; }
+            if (!jenis) { failed++; errors.push(`Baris ${rowNum}: jenis kosong (wajib untuk penomoran kode)`); continue; }
+            if (!satuan) { failed++; errors.push(`Baris ${rowNum}: satuan kosong`); continue; }
+
+            const key = keyOf(jenis, kode_barang);
+            if (existingKeys.has(key)) {
                 failed++;
-                errors.push(`Baris ${i + 2}: Nama barang atau satuan kosong`);
+                errors.push(`Baris ${rowNum}: Kode "${kode_barang}" untuk jenis "${jenis}" sudah ada (dilewati)`);
+                continue;
+            }
+            if (seenKeys.has(key)) {
+                failed++;
+                errors.push(`Baris ${rowNum}: Kode "${kode_barang}" untuk jenis "${jenis}" duplikat di dalam file (dilewati)`);
                 continue;
             }
 
-            const saldo = parseInt(row.saldo_awal) || 0;
+            const saldoParsed = parseInt(normalizeStr(row.saldo_awal), 10);
+            const saldo = Number.isNaN(saldoParsed) ? 0 : saldoParsed;
+
             try {
                 await db.query(
-                    'INSERT INTO barang_persediaan (nama_barang, jenis, kategori, satuan, saldo, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-                    [nama_barang, (row.jenis || '').trim(), (row.kategori || '').trim(), satuan, saldo, username]
+                    'INSERT INTO barang_persediaan (kode_barang, nama_barang, jenis, kategori, satuan, saldo, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [kode_barang, nama_barang, jenis, normalizeStr(row.kategori), satuan, saldo, username]
                 );
+                seenKeys.add(key);
                 success++;
             } catch (e) {
                 failed++;
-                errors.push(`Baris ${i + 2}: ${e.message}`);
+                errors.push(`Baris ${rowNum}: ${e.message}`);
             }
         }
 
+        console.log(`✅ Import barang persediaan by ${username}: ${success} berhasil, ${failed} gagal`);
         res.json({ success: true, message: `${success} berhasil, ${failed} gagal`, data: { success, failed, errors } });
     } catch (error) {
         console.error('Error import xlsx:', error);
@@ -340,19 +523,37 @@ router.post('/barang', keycloakAuth, async (req, res) => {
         return res.status(403).json({ success: false, message: 'Akses ditolak' });
     }
     try {
-        const { nama_barang, jenis, kategori, satuan, saldo_awal } = req.body;
+        const { kode_barang, nama_barang, jenis, kategori, satuan, saldo_awal } = req.body;
+        const kode = normalizeKode(kode_barang);
+        const jenisFinal = normalizeStr(jenis);
+        if (!kode) {
+            return res.status(400).json({ success: false, message: 'Kode barang wajib diisi' });
+        }
         if (!nama_barang || !satuan) {
             return res.status(400).json({ success: false, message: 'Nama barang dan satuan wajib diisi' });
+        }
+        if (!jenisFinal) {
+            return res.status(400).json({ success: false, message: 'Jenis wajib diisi (kode barang dinomori per jenis)' });
+        }
+        const konflik = await findKodeConflict(jenisFinal, kode);
+        if (konflik) {
+            return res.status(400).json({
+                success: false,
+                message: `Kode "${kode}" sudah dipakai jenis "${jenisFinal}" oleh barang "${konflik.nama_barang}"`,
+            });
         }
         const saldo = parseInt(saldo_awal) || 0;
         const username = getUsername(req);
         const [result] = await db.query(
-            'INSERT INTO barang_persediaan (nama_barang, jenis, kategori, satuan, saldo, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-            [nama_barang, jenis || '', kategori || '', satuan, saldo, username]
+            'INSERT INTO barang_persediaan (kode_barang, nama_barang, jenis, kategori, satuan, saldo, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [kode, nama_barang, jenisFinal, kategori || '', satuan, saldo, username]
         );
-        res.json({ success: true, data: { id: result.insertId }, message: 'Barang berhasil ditambahkan' });
+        res.json({ success: true, data: { id: result.insertId, kode_barang: kode }, message: 'Barang berhasil ditambahkan' });
     } catch (error) {
         console.error('Error create barang:', error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ success: false, message: 'Kode barang sudah dipakai untuk jenis ini' });
+        }
         res.status(500).json({ success: false, message: 'Gagal menambah barang', error: error.message });
     }
 });
@@ -364,14 +565,35 @@ router.put('/barang/:id', keycloakAuth, async (req, res) => {
     }
     try {
         const { id } = req.params;
-        const { nama_barang, jenis, kategori, satuan } = req.body;
+        const { kode_barang, nama_barang, jenis, kategori, satuan } = req.body;
+        const kode = normalizeKode(kode_barang);
+        const jenisFinal = normalizeStr(jenis);
+        if (!kode) {
+            return res.status(400).json({ success: false, message: 'Kode barang wajib diisi' });
+        }
+        if (!nama_barang || !satuan) {
+            return res.status(400).json({ success: false, message: 'Nama barang dan satuan wajib diisi' });
+        }
+        if (!jenisFinal) {
+            return res.status(400).json({ success: false, message: 'Jenis wajib diisi (kode barang dinomori per jenis)' });
+        }
+        const konflik = await findKodeConflict(jenisFinal, kode, id);
+        if (konflik) {
+            return res.status(400).json({
+                success: false,
+                message: `Kode "${kode}" sudah dipakai jenis "${jenisFinal}" oleh barang "${konflik.nama_barang}"`,
+            });
+        }
         await db.query(
-            'UPDATE barang_persediaan SET nama_barang=?, jenis=?, kategori=?, satuan=? WHERE id=?',
-            [nama_barang, jenis || '', kategori || '', satuan, id]
+            'UPDATE barang_persediaan SET kode_barang=?, nama_barang=?, jenis=?, kategori=?, satuan=? WHERE id=?',
+            [kode, nama_barang, jenisFinal, kategori || '', satuan, id]
         );
         res.json({ success: true, message: 'Barang berhasil diupdate' });
     } catch (error) {
         console.error('Error update barang:', error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ success: false, message: 'Kode barang sudah dipakai untuk jenis ini' });
+        }
         res.status(500).json({ success: false, message: 'Gagal update barang', error: error.message });
     }
 });
@@ -403,7 +625,7 @@ router.get('/barang-masuk', keycloakAuth, async (req, res) => {
         const total = countResult[0]?.total || 0;
 
         const [rows] = await db.query(`
-            SELECT bm.*, bp.nama_barang, bp.satuan
+            SELECT bm.*, bp.kode_barang, bp.nama_barang, bp.satuan
             FROM barang_masuk bm
             LEFT JOIN barang_persediaan bp ON bm.barang_id = bp.id
             ORDER BY bm.created_at DESC
@@ -643,7 +865,7 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
         }
 
         const [rows] = await db.query(`
-            SELECT p.*, bp.nama_barang, bp.satuan
+            SELECT p.*, bp.kode_barang, bp.nama_barang, bp.satuan
             FROM permintaan_barang p
             LEFT JOIN barang_persediaan bp ON p.barang_id = bp.id
             ${whereClause}
@@ -676,6 +898,7 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
             groups[gid].items.push({
                 id: r.id,
                 barang_id: r.barang_id,
+                kode_barang: r.kode_barang,
                 nama_barang: r.nama_barang,
                 jumlah: r.jumlah,
                 jumlah_diminta: r.jumlah_diminta,
@@ -735,17 +958,18 @@ router.post('/permintaan', keycloakAuth, async (req, res) => {
         // Cek stok untuk setiap item
         for (const item of items) {
             if (!item.barang_id || !item.jumlah) continue;
-            const [barang] = await db.query('SELECT saldo, nama_barang FROM barang_persediaan WHERE id=?', [item.barang_id]);
+            const [barang] = await db.query('SELECT saldo, kode_barang, nama_barang FROM barang_persediaan WHERE id=?', [item.barang_id]);
             if (barang.length === 0) {
                 return res.status(400).json({ success: false, message: `Barang ID ${item.barang_id} tidak ditemukan` });
             }
             const stok = Number(barang[0].saldo);
             const minta = Number(item.jumlah);
+            const label = `${barang[0].kode_barang || ''} ${barang[0].nama_barang}`.trim();
             if (stok <= 0) {
-                return res.status(400).json({ success: false, message: `"${barang[0].nama_barang}" stok habis (0), tidak bisa diajukan` });
+                return res.status(400).json({ success: false, message: `"${label}" stok habis (0), tidak bisa diajukan` });
             }
             if (minta > stok) {
-                return res.status(400).json({ success: false, message: `"${barang[0].nama_barang}" stok tersisa ${stok}, tidak mencukupi permintaan ${minta}` });
+                return res.status(400).json({ success: false, message: `"${label}" stok tersisa ${stok}, tidak mencukupi permintaan ${minta}` });
             }
         }
 
@@ -958,7 +1182,7 @@ router.get('/opname', keycloakAuth, async (req, res) => {
     try {
         const { tanggal_mulai, tanggal_akhir } = req.query;
         let query = `
-            SELECT so.*, bp.nama_barang, bp.satuan
+            SELECT so.*, bp.kode_barang, bp.nama_barang, bp.satuan
             FROM stok_opname so
             LEFT JOIN barang_persediaan bp ON so.barang_id = bp.id
             WHERE 1=1
@@ -1034,6 +1258,7 @@ router.get('/opname/mutasi', keycloakAuth, async (req, res) => {
             const stok_akhir = stok_awal + masuk - keluar;
             return {
                 id: b.id,
+                kode_barang: b.kode_barang,
                 nama_barang: b.nama_barang,
                 jenis: b.jenis,
                 kategori: b.kategori,
@@ -1061,7 +1286,7 @@ router.get('/opname/mutasi/:barang_id/detail', keycloakAuth, async (req, res) =>
         let result = [];
         if (!jenis || jenis === 'masuk') {
             let q = `SELECT bm.id, bm.jumlah, bm.tanggal_pembelian, bm.kuitansi_url, bm.catatan, bm.created_by,
-                     bp.nama_barang, bp.satuan FROM barang_masuk bm
+                     bp.kode_barang, bp.nama_barang, bp.satuan FROM barang_masuk bm
                      LEFT JOIN barang_persediaan bp ON bm.barang_id = bp.id
                      WHERE bm.barang_id = ? AND bm.status="disetujui"`;
             const p = [barang_id];
@@ -1075,7 +1300,7 @@ router.get('/opname/mutasi/:barang_id/detail', keycloakAuth, async (req, res) =>
         if (!jenis || jenis === 'keluar') {
             let q = `SELECT p.id, p.jumlah, p.jumlah_diminta, p.group_id, p.status,
                      p.delivered_at as tanggal, p.catatan, p.requested_by, p.delivered_by,
-                     bp.nama_barang, bp.satuan FROM permintaan_barang p
+                     bp.kode_barang, bp.nama_barang, bp.satuan FROM permintaan_barang p
                      LEFT JOIN barang_persediaan bp ON p.barang_id = bp.id
                      WHERE p.barang_id = ? AND p.status IN ("diserahkan","diserahkan_sebagian","disetujui_kabag")`;
             const p = [barang_id];
@@ -1208,7 +1433,7 @@ router.get('/movement', keycloakAuth, async (req, res) => {
     try {
         // Semua master barang persediaan
         const [semuaBarang] = await db.query(
-            'SELECT id, nama_barang, jenis, kategori, satuan, saldo FROM barang_persediaan ORDER BY nama_barang ASC'
+            'SELECT id, kode_barang, nama_barang, jenis, kategori, satuan, saldo FROM barang_persediaan ORDER BY jenis ASC, kode_barang ASC'
         );
 
         // Tanggal terakhir MASUK (hanya yang disetujui = stok bertambah)
@@ -1248,6 +1473,7 @@ router.get('/movement', keycloakAuth, async (req, res) => {
             const lastMovement = [lastMasuk, lastKeluar].filter(Boolean).sort().pop() || null;
             return {
                 id: b.id,
+                kode_barang: b.kode_barang,
                 nama_barang: b.nama_barang,
                 jenis: b.jenis,
                 kategori: b.kategori,
