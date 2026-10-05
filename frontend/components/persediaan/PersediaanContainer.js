@@ -26,7 +26,8 @@ import ConfirmDialog from '../common/ConfirmDialog';
 import RejectDialog from '../common/RejectDialog';
 import MovementSummaryCard from '../common/MovementSummaryCard';
 import { formatDateForDisplay } from '../../utils/formatters';
-import { cetakSPBSBBK } from '../../utils/cetakSPBSBBK';
+import { cetakSPBSBBK, kunciPenandatanganSPBSBBK } from '../../utils/cetakSPBSBBK';
+import { ambilPetaTtd } from '../../utils/ttdPenandatangan';
 
 const statusColors = {
   draft: 'default',
@@ -113,6 +114,18 @@ const PersediaanContainer = ({ session }) => {
   const isKatim = hasRole('katim');
   const isKabagTu = hasRole('kabag_tu');
   const isMt = hasRole('mt');
+
+  // ID Keycloak user saat ini — dipakai mencocokkan `katim_id` pada permintaan.
+  const myUserId = String(session?.user?.id || '');
+
+  // Katim hanya boleh approve/tolak permintaan yang DITUJUKAN KE DIRINYA.
+  // User yang merangkap katim + kabag_tu tetap melihat semua data (untuk
+  // memantau progres sebagai Kabag TU), tapi tombol aksi Katim hanya muncul
+  // pada permintaan miliknya. Data lama tanpa katim_id dianggap milik bersama.
+  const isMyKatimRequest = (group) =>
+    !group?.katim_id || !myUserId || String(group.katim_id) === myUserId;
+  const isKatimStage = (group) =>
+    group?.status === 'diajukan' || group?.status === 'menunggu_katim';
 
   // Tab yang boleh dilihat per role:
   //  - pic_persediaan : Barang + Permintaan saja
@@ -551,9 +564,15 @@ const PersediaanContainer = ({ session }) => {
       open: true,
       groupId,
       onConfirm: async (alasan) => {
-        const r = await api.tolakPermintaan(session, groupId, alasan || defaultAlasan);
-        if (r.success) { showSnackbar(r.message); fetchAll(); }
-        setRejectDialog({ open: false, groupId: null, onConfirm: null });
+        try {
+          const r = await api.tolakPermintaan(session, groupId, alasan || defaultAlasan);
+          if (r.success) { showSnackbar(r.message); fetchAll(); }
+          else showSnackbar(r.message || 'Gagal menolak permintaan', 'error');
+        } catch (e) {
+          showSnackbar(e?.response?.data?.message || e.message, 'error');
+        } finally {
+          setRejectDialog({ open: false, groupId: null, onConfirm: null });
+        }
       }
     });
   };
@@ -613,6 +632,20 @@ const PersediaanContainer = ({ session }) => {
       window.URL.revokeObjectURL(url);
     } catch (e) {
       showSnackbar('Gagal export: ' + (e.response?.data?.message || e.message), 'error');
+    }
+  };
+
+  // ========== CETAK SPB & SBBK (dengan TTD dari Talawang) ==========
+  // TTD bersifat pelengkap: kalau gagal diambil, dokumen tetap dicetak
+  // dengan ruang tanda tangan kosong.
+  const handlePrintSpbSbbk = async (group) => {
+    try {
+      const keys = kunciPenandatanganSPBSBBK(group);
+      const ttd = await ambilPetaTtd(session, keys);
+      cetakSPBSBBK({ group, tipe: 'atk', ttd });
+    } catch (e) {
+      console.warn('⚠️ Cetak SPB/SBBK tanpa TTD:', e.message);
+      cetakSPBSBBK({ group, tipe: 'atk' });
     }
   };
 
@@ -710,7 +743,9 @@ const PersediaanContainer = ({ session }) => {
           if (!canSeeTab(i)) return null;
           // Badge untuk tab Permintaan
           const pendingCount = i === 2 ? permintaanList.filter(g => {
-            if (isKatim) return g.status === 'menunggu_katim' || g.status === 'diajukan';
+            // Hanya hitung permintaan yang benar-benar menunggu aksi user ini
+            // (Katim: miliknya sendiri, bukan permintaan Katim lain).
+            if (isKatim) return isKatimStage(g) && isMyKatimRequest(g);
             if (isPicGudang) return g.status === 'disetujui_katim';
             if (isKabagTu) return g.status === 'diserahkan' || g.status === 'diserahkan_sebagian';
             return false;
@@ -1012,12 +1047,17 @@ const PersediaanContainer = ({ session }) => {
           <Box>
             {/* Notification alerts per role */}
             {(() => {
-              const needsKatim = permintaanList.filter(g => g.status === 'menunggu_katim' || g.status === 'diajukan');
+              // "Menunggu Anda" = hanya permintaan yang memang ditujukan ke akun ini,
+              // bukan permintaan yang menunggu Katim lain (relevan untuk role rangkap).
+              const needsKatim = permintaanList.filter(g => isKatimStage(g) && isMyKatimRequest(g));
+              const needsKatimLain = permintaanList.filter(g => isKatimStage(g) && !isMyKatimRequest(g));
               const needsGudang = permintaanList.filter(g => g.status === 'disetujui_katim');
               const needsKabag = permintaanList.filter(g => g.status === 'diserahkan' || g.status === 'diserahkan_sebagian');
               const alerts = [];
               if (isKatim && needsKatim.length > 0)
                 alerts.push({ severity: 'warning', msg: `🔔 ${needsKatim.length} permintaan menunggu persetujuan Anda (Katim)` });
+              if (isKatim && isKabagTu && needsKatimLain.length > 0)
+                alerts.push({ severity: 'info', msg: `ℹ️ ${needsKatimLain.length} permintaan menunggu Katim lain — Anda dapat memantau progresnya sebagai Kabag TU` });
               if (isPicGudang && needsGudang.length > 0)
                 alerts.push({ severity: 'success', msg: `🔔 ${needsGudang.length} permintaan disetujui Katim, siap diverifikasi & diserahkan (PIC Gudang)` });
               if (isKabagTu && needsKabag.length > 0)
@@ -1097,11 +1137,22 @@ const PersediaanContainer = ({ session }) => {
                               </Tooltip>
                             </>
                           )}
-                          {(group.status === 'diajukan' || group.status === 'menunggu_katim') && isKatim && (
+                          {isKatimStage(group) && isKatim && isMyKatimRequest(group) && (
                             <>
-                              <Tooltip title="Setujui"><IconButton size="small" onClick={async () => { const r = await api.approvePermintaanKatim(session, group.group_id); if (r.success) { showSnackbar(r.message); fetchAll(); } }} sx={{ color: '#10b981' }}><CheckCircleIcon fontSize="small" /></IconButton></Tooltip>
+                              <Tooltip title="Setujui"><IconButton size="small" onClick={async () => { const r = await api.approvePermintaanKatim(session, group.group_id); if (r.success) { showSnackbar(r.message); fetchAll(); } else { showSnackbar(r.message || 'Gagal', 'error'); } }} sx={{ color: '#10b981' }}><CheckCircleIcon fontSize="small" /></IconButton></Tooltip>
                               <Tooltip title="Tolak"><IconButton size="small" onClick={() => handleReject(group.group_id)} sx={{ color: '#ef4444' }}><CancelIcon fontSize="small" /></IconButton></Tooltip>
                             </>
+                          )}
+                          {/* Role rangkap katim+kabag_tu: permintaan Katim lain hanya dipantau,
+                              tidak bisa di-approve (backend juga menolaknya). */}
+                          {isKatimStage(group) && isKatim && !isMyKatimRequest(group) && (
+                            <Tooltip title={`Menunggu Katim lain${group.katim_nama ? ` (${group.katim_nama})` : ''} — Anda hanya dapat memantau progres`}>
+                              <span>
+                                <IconButton size="small" disabled sx={{ color: '#cbd5e1' }}>
+                                  <CheckCircleIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
                           )}
                           {group.status === 'disetujui_katim' && isPicGudang && (
                             <>
@@ -1123,7 +1174,7 @@ const PersediaanContainer = ({ session }) => {
                           )}
                           {group.status === 'disetujui_kabag' && (
                             <Tooltip title="Cetak SPB & SBBK">
-                              <IconButton size="small" onClick={() => cetakSPBSBBK({ group, tipe: 'atk' })}
+                              <IconButton size="small" onClick={() => handlePrintSpbSbbk(group)}
                                 sx={{ color: '#3b82f6' }}><PrintIcon fontSize="small" /></IconButton>
                             </Tooltip>
                           )}

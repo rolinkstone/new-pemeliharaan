@@ -23,7 +23,8 @@ import MovementSummaryCard from '../common/MovementSummaryCard';
 import KirimKeKatimModal from './modals/KirimKeKatimModal';
 import ImportStokModal from './modals/ImportStokModal';
 import { formatDateForDisplay } from '../../utils/formatters';
-import { cetakSPBSBBK } from '../../utils/cetakSPBSBBK';
+import { cetakSPBSBBK, kunciPenandatanganSPBSBBK } from '../../utils/cetakSPBSBBK';
+import { ambilPetaTtd } from '../../utils/ttdPenandatangan';
 
 const statusColors = {
   draft: 'default',
@@ -551,6 +552,20 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
     } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
   };
 
+  // ========== CETAK SPB & SBBK (dengan TTD dari Talawang) ==========
+  // TTD bersifat pelengkap: kalau gagal diambil, dokumen tetap dicetak
+  // dengan ruang tanda tangan kosong.
+  const handlePrintSpbSbbk = async (group) => {
+    try {
+      const keys = kunciPenandatanganSPBSBBK(group);
+      const ttd = await ambilPetaTtd(session, keys);
+      cetakSPBSBBK({ group, tipe: 'reagen', ttd });
+    } catch (e) {
+      console.warn('⚠️ Cetak SPB/SBBK tanpa TTD:', e.message);
+      cetakSPBSBBK({ group, tipe: 'reagen' });
+    }
+  };
+
   // ========== STATS ==========
   const getStatCards = () => {
     const totalReagen = allReagen.length || pagination.total || reagenList.length;
@@ -1046,7 +1061,7 @@ const ReagenContainer = ({ session, initialTab = 0, pageTitle, pageSubtitle }) =
                             )}
                             {group.status === 'disetujui_kabag' && (
                               <Tooltip title="Cetak SPB & SBBK">
-                                <IconButton size="small" onClick={() => cetakSPBSBBK({ group, tipe: 'reagen' })}
+                                <IconButton size="small" onClick={() => handlePrintSpbSbbk(group)}
                                   sx={{ color: '#8b5cf6' }}><PrintIcon fontSize="small" /></IconButton>
                               </Tooltip>
                             )}

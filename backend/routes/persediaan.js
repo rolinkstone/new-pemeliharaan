@@ -15,6 +15,23 @@ try { XLSX = require('xlsx-js-style'); } catch (e) {
 
 // ========== HELPERS ==========
 const getUsername = (req) => req.user?.name || req.user?.username || req.user?.preferred_username || req.user?.email || 'system';
+
+// ID user Keycloak (dipakai mencocokkan `katim_id` pada permintaan)
+const getUserId = (req) => String(req.user?.user_id || req.user?.id || req.user?.sub || '');
+
+// Katim hanya boleh approve/tolak permintaan yang DITUJUKAN KE DIRINYA.
+// Mengembalikan pesan error bila tidak berhak, atau null bila boleh.
+//   - admin/superadmin selalu boleh (untuk koreksi data)
+//   - group tanpa katim_id (data lama / belum dikirim ke Katim) tetap boleh,
+//     supaya data lama tidak ikut terkunci
+const cekKatimPemilik = (req, katimId) => {
+    if (hasRole(req, ['admin', 'superadmin'])) return null;
+    if (!katimId) return null;
+    const userId = getUserId(req);
+    if (!userId) return null;
+    if (String(katimId) === userId) return null;
+    return 'Permintaan ini ditujukan ke Katim lain. Anda hanya dapat melihat progresnya.';
+};
 const createNotif = async (userId, userRole, title, message, link) => {
     try {
         await db.query(
@@ -1049,6 +1066,17 @@ router.put('/permintaan/:groupId/approve-katim', keycloakAuth, async (req, res) 
     try {
         const { groupId } = req.params;
         const username = getUsername(req);
+
+        // Validasi kepemilikan: Katim tidak boleh menyetujui permintaan Katim lain.
+        const [cek] = await db.query(
+            'SELECT katim_id FROM permintaan_barang WHERE group_id=? LIMIT 1',
+            [groupId]
+        );
+        const errKatim = cekKatimPemilik(req, cek[0]?.katim_id);
+        if (errKatim) {
+            return res.status(403).json({ success: false, message: errKatim });
+        }
+
         await db.query(
             'UPDATE permintaan_barang SET status="disetujui_katim", approved_katim_by=?, approved_katim_at=NOW() WHERE group_id=? AND (status="diajukan" OR status="menunggu_katim")',
             [username, groupId]
@@ -1184,6 +1212,24 @@ router.put('/permintaan/:groupId/tolak', keycloakAuth, async (req, res) => {
         const { groupId } = req.params;
         const { alasan } = req.body;
         const username = getUsername(req);
+
+        // Tolak di tahap Katim juga dibatasi ke pemiliknya (dalam satu UI dengan approve).
+        // Role tahap berikutnya (pic_gudang / kabag_tu) tetap bebas menolak di tahapnya.
+        const [cek] = await db.query(
+            'SELECT status, katim_id FROM permintaan_barang WHERE group_id=? LIMIT 1',
+            [groupId]
+        );
+        const grup = cek[0];
+        if (grup
+            && (grup.status === 'diajukan' || grup.status === 'menunggu_katim')
+            && hasRole(req, ['katim'])
+            && !hasRole(req, ['pic_gudang', 'kabag_tu'])) {
+            const errKatim = cekKatimPemilik(req, grup.katim_id);
+            if (errKatim) {
+                return res.status(403).json({ success: false, message: errKatim });
+            }
+        }
+
         await db.query(
             'UPDATE permintaan_barang SET status="ditolak", catatan=CONCAT(IFNULL(catatan,""), ?) WHERE group_id=? AND status!="diserahkan" AND status!="ditolak"',
             [` | Ditolak oleh ${username}: ${alasan || ''}`, groupId]

@@ -42,7 +42,134 @@ const toYMD = (d) => {
   } catch { return s.slice(0, 10); }
 };
 
-const buildDoc = ({ judul, nomor, tanggal, unit, rows, diserahkan, diterima, mengetahui, jabatan, isLast }) => `
+// ============================================
+// TANDA TANGAN ELEKTRONIK (TTD dari aplikasi Talawang)
+// ============================================
+const kosong = (v) => v === null || v === undefined || String(v).trim() === '';
+
+const normKunci = (v) => String(v ?? '').replace(/\s+/g, '').toLowerCase();
+
+// Peta TTD dari backend: { "<kunci yang diminta>": "<url gambar>" }
+const buatIndexTtd = (ttd) => {
+  const map = new Map();
+  Object.entries(ttd || {}).forEach(([k, v]) => {
+    if (v) map.set(normKunci(k), String(v));
+  });
+  return map;
+};
+
+// Cari URL TTD untuk satu kolom penandatangan (coba kunci satu per satu)
+const ttdUntuk = (kolom, indexTtd) => {
+  if (!indexTtd || indexTtd.size === 0) return null;
+  for (const kunci of kolom.kunci || []) {
+    const url = indexTtd.get(normKunci(kunci));
+    if (url) return url;
+  }
+  return null;
+};
+
+// Preload gambar TTD; cb dipanggil dengan daftar URL yang GAGAL dimuat agar
+// TTD yang tidak tersedia tidak muncul sebagai ikon gambar rusak.
+const preloadImages = (urls, cb) => {
+  const unik = [...new Set((urls || []).filter(Boolean))];
+  if (unik.length === 0) return cb([]);
+
+  const gagal = [];
+  let sisa = unik.length;
+  let selesai = false;
+  const done = (url, ok) => {
+    if (selesai) return;
+    if (!ok) gagal.push(url);
+    sisa -= 1;
+    if (sisa <= 0) { selesai = true; cb(gagal); }
+  };
+
+  unik.forEach((url) => {
+    const img = new Image();
+    img.onload = () => done(url, true);
+    img.onerror = () => done(url, false);
+    img.src = url;
+  });
+
+  // Pengaman: jangan menunggu terlalu lama
+  setTimeout(() => { if (!selesai) { selesai = true; cb(gagal); } }, 6000);
+};
+
+// Daftar kolom tanda tangan untuk SPB & SBBK.
+// `kunci` = kandidat identitas yang dicoba berurutan (id -> username -> nama).
+export const penandatanganSPBSBBK = (group) => {
+  const g = group || {};
+  const picGudang = g.delivered_by || '';
+  const pemohon = g.requested_by || '';
+  const katim = g.katim_nama || g.approved_katim_by || '';
+  const kabag = g.approved_kabag_by || '';
+
+  return {
+    diserahkan: {
+      label: 'Diserahkan',
+      jabatan: 'Pengelola Gudang',
+      nama: picGudang,
+      kunci: [g.delivered_by],
+    },
+    diterima: {
+      label: 'Diterima',
+      jabatan: 'Pemohon',
+      nama: pemohon,
+      kunci: [g.requested_by],
+    },
+    katim: {
+      label: 'Mengetahui',
+      jabatan: 'Ketua Tim Kerja',
+      nama: katim,
+      kunci: [g.katim_id, g.approved_katim_by, g.katim_nama],
+    },
+    kabag: {
+      label: 'Mengetahui',
+      jabatan: 'Kabag Tata Usaha',
+      nama: kabag,
+      kunci: [g.approved_kabag_by],
+    },
+  };
+};
+
+/** Kunci identitas TTD yang perlu diminta ke backend untuk SPB & SBBK. */
+export const kunciPenandatanganSPBSBBK = (group) => {
+  const semua = penandatanganSPBSBBK(group);
+  return [
+    ...new Set(
+      Object.values(semua)
+        .flatMap((k) => k.kunci || [])
+        .filter((k) => !kosong(k))
+        .map((k) => String(k).trim())
+    ),
+  ];
+};
+
+// Tabel tanda tangan: satu baris berisi kolom-kolom penandatangan.
+// TTD gambar tampil kalau tersedia; kalau tidak, tetap ada ruang tanda tangan.
+const buildSignatureTable = (kolom, indexTtd) => `
+  <table class="ttd">
+    <tr>
+      ${kolom.map((k) => {
+        const url = ttdUntuk(k, indexTtd);
+        const nama = kosong(k.nama) ? '................................' : k.nama;
+        return `
+      <td>
+        <div class="lbl-ttd">${escapeHtml(k.label)}</div>
+        <div class="jab-ttd">${escapeHtml(k.jabatan)}</div>
+        ${
+          url
+            ? `<div class="ttdbox"><img class="ttd-img" src="${escapeHtml(url)}" alt="TTD ${escapeHtml(nama)}" onerror="var b=this.parentNode;b.className='space-ttd';b.innerHTML='';" /></div>`
+            : '<div class="space-ttd"></div>'
+        }
+        <div class="nama-ttd">${escapeHtml(nama)}</div>
+      </td>`;
+      }).join('')}
+    </tr>
+  </table>
+`;
+
+const buildDoc = ({ judul, nomor, tanggal, unit, rows, kolom, indexTtd, isLast }) => `
   <div class="sheet${isLast ? ' last' : ''}">
     <div class="doc-code">${KODE_DOKUMEN}</div>
     <div class="kop">
@@ -82,28 +209,7 @@ const buildDoc = ({ judul, nomor, tanggal, unit, rows, diserahkan, diterima, men
         `).join('')}
       </tbody>
     </table>
-    <table class="ttd">
-      <tr>
-        <td>
-          <div class="lbl-ttd">Diserahkan</div>
-          <div class="jab-ttd">Pengelola Gudang</div>
-          <div class="space-ttd"></div>
-          <div class="nama-ttd">${escapeHtml(diserahkan)}</div>
-        </td>
-        <td>
-          <div class="lbl-ttd">Diterima</div>
-          <div class="jab-ttd">Pemohon</div>
-          <div class="space-ttd"></div>
-          <div class="nama-ttd">${escapeHtml(diterima)}</div>
-        </td>
-        <td>
-          <div class="lbl-ttd">Mengetahui</div>
-          <div class="jab-ttd">${escapeHtml(jabatan)}</div>
-          <div class="space-ttd"></div>
-          <div class="nama-ttd">${escapeHtml(mengetahui)}</div>
-        </td>
-      </tr>
-    </table>
+    ${buildSignatureTable(kolom, indexTtd)}
   </div>
 `;
 
@@ -112,8 +218,11 @@ const buildDoc = ({ judul, nomor, tanggal, unit, rows, diserahkan, diterima, men
  * @param {object} opts
  * @param {object} opts.group - group permintaan/pengeluaran
  * @param {'atk'|'reagen'} opts.tipe - jenis modul
+ * @param {Record<string,string>} [opts.ttd] - peta kunci identitas -> URL gambar TTD
+ *   (dari utils/ttdPenandatangan.js: `ambilPetaTtd`). Opsional — tanpa TTD
+ *   dokumen tetap dicetak dengan ruang tanda tangan kosong.
  */
-export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
+export const cetakSPBSBBK = ({ group, tipe = 'atk', ttd = {} } = {}) => {
   if (!group) return;
 
   const kodeHex = (group.group_id || '00000000').replace(/-/g, '').slice(0, 6);
@@ -121,10 +230,7 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
   const tanggal = toYMD(group.delivered_at || group.tanggal_permintaan || new Date().toISOString().split('T')[0]);
   const tanggalCompact = tanggal.replace(/-/g, '');
 
-  const picGudang = group.delivered_by || '................................';
-  const user = group.requested_by || '................................';
-  const katim = group.katim_nama || group.approved_katim_by || '................................';
-  const kabag = group.approved_kabag_by || '................................';
+  const kolom = penandatanganSPBSBBK(group);
 
   // Selalu tampilkan 10 baris (isi + kosong)
   const items = (group.items || []).map((it, i) => ({
@@ -143,33 +249,31 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
     rows.push(items[i] || { no: i + 1, nama: '', satuan: '', jumlah: '', diminta: '', ket: '' });
   }
 
-  const spb = buildDoc({
-    judul: 'SURAT PERMINTAAN BARANG (SPB)',
-    nomor: `PBP-${tanggalCompact}-${seq}`,
-    tanggal,
-    unit: 'Tata Usaha',
-    rows,
-    diserahkan: picGudang,
-    diterima: user,
-    mengetahui: katim,
-    jabatan: 'Ketua Tim Kerja',
-    isLast: false,
-  });
+  // Dokumen dibangun per-render supaya indeks TTD yang valid bisa digunakan
+  const buatHtml = (indexTtd) => {
+    const spb = buildDoc({
+      judul: 'SURAT PERMINTAAN BARANG (SPB)',
+      nomor: `PBP-${tanggalCompact}-${seq}`,
+      tanggal,
+      unit: 'Tata Usaha',
+      rows,
+      kolom: [kolom.diserahkan, kolom.diterima, kolom.katim],
+      indexTtd,
+      isLast: false,
+    });
 
-  const sbbk = buildDoc({
-    judul: 'SURAT BUKTI BARANG KELUAR (SBBK)',
-    nomor: `SBK-${tanggalCompact}-${seq}`,
-    tanggal,
-    unit: 'Tata Usaha',
-    rows,
-    diserahkan: picGudang,
-    diterima: user,
-    mengetahui: kabag,
-    jabatan: 'Kabag Tata Usaha',
-    isLast: true,
-  });
+    const sbbk = buildDoc({
+      judul: 'SURAT BUKTI BARANG KELUAR (SBBK)',
+      nomor: `SBK-${tanggalCompact}-${seq}`,
+      tanggal,
+      unit: 'Tata Usaha',
+      rows,
+      kolom: [kolom.diserahkan, kolom.diterima, kolom.kabag],
+      indexTtd,
+      isLast: true,
+    });
 
-  const html = `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="utf-8" />
@@ -215,6 +319,8 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
   .lbl-ttd { font-weight: 700; }
   .jab-ttd { margin-top: 2px; }
   .space-ttd { height: 46px; }
+  .ttdbox { height: 46px; display: flex; align-items: flex-end; justify-content: center; }
+  .ttd-img { max-height: 44px; max-width: 92%; object-fit: contain; }
   .nama-ttd { font-weight: 700; text-decoration: underline; }
 </style>
 </head>
@@ -223,16 +329,37 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk' }) => {
   ${sbbk}
 </body>
 </html>`;
+  };
 
-  preloadLogo(() => {
-    const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) { alert('Pop-up diblokir. Izinkan pop-up untuk mencetak.'); return; }
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => {
-      w.focus();
-      w.print();
-      w.onafterprint = () => setTimeout(() => w.close(), 500);
-    }, 400);
+  // Cetak: TTD dicek dulu (kalau gagal dimuat, dilewati agar tidak ada gambar
+  // rusak), lalu logo dipreload sebelum jendela cetak dibuka.
+  const lanjut = (ttdValid) => {
+    const html = buatHtml(buatIndexTtd(ttdValid));
+    preloadLogo(() => {
+      const w = window.open('', '_blank', 'width=900,height=700');
+      if (!w) { alert('Pop-up diblokir. Izinkan pop-up untuk mencetak.'); return; }
+      w.document.write(html);
+      w.document.close();
+      setTimeout(() => {
+        w.focus();
+        w.print();
+        w.onafterprint = () => setTimeout(() => w.close(), 500);
+      }, 400);
+    });
+  };
+
+  const ttdAsli = ttd || {};
+  const ttdUrls = Object.values(ttdAsli).filter(Boolean);
+  if (ttdUrls.length === 0) {
+    lanjut(ttdAsli);
+    return;
+  }
+
+  preloadImages(ttdUrls, (gagal) => {
+    const gagalSet = new Set(gagal);
+    const ttdValid = Object.fromEntries(
+      Object.entries(ttdAsli).filter(([, url]) => url && !gagalSet.has(url))
+    );
+    lanjut(ttdValid);
   });
 };
