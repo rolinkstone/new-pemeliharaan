@@ -54,6 +54,10 @@ const statusLabels = {
   diserahkan_sebagian: 'Diserahkan Sebagian',
 };
 
+// Batas maksimal item barang berbeda dalam satu permintaan
+// (harus sama dengan validasi di backend/routes/persediaan.js)
+const MAX_PERMINTAAN_ITEMS = 10;
+
 // Status yang relevan untuk barang masuk (ATK)
 const BM_STATUS_OPTIONS = ['diajukan', 'disetujui', 'ditolak'];
 
@@ -403,8 +407,8 @@ const PersediaanContainer = ({ session }) => {
   };
 
   const addPermintaanItem = () => {
-    if (permintaanItems.length >= 5) {
-      showSnackbar('Maksimal 5 item', 'warning');
+    if (permintaanItems.length >= MAX_PERMINTAAN_ITEMS) {
+      showSnackbar(`Maksimal ${MAX_PERMINTAAN_ITEMS} item barang berbeda`, 'warning');
       return;
     }
     setPermintaanItems(prev => [...prev, { barang_id: '', jumlah: '', catatan: '' }]);
@@ -1490,12 +1494,12 @@ const PersediaanContainer = ({ session }) => {
         </DialogActions>
       </Dialog>
 
-      {/* Modal Permintaan — multi item (max 5) */}
+      {/* Modal Permintaan — multi item (max 10 barang berbeda) */}
       <Dialog open={permintaanModalOpen} onClose={() => setPermintaanModalOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 600 }}>
           Request Barang
           <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
-            {permintaanItems.length}/5 item — satu kali kirim
+            {permintaanItems.length}/{MAX_PERMINTAAN_ITEMS} item — satu kali kirim
           </Typography>
         </DialogTitle>
         <DialogContent>
@@ -1540,9 +1544,9 @@ const PersediaanContainer = ({ session }) => {
                   onChange={(e) => updatePermintaanItem(idx, 'catatan', e.target.value)} />
               </Box>
             ))}
-            {permintaanItems.length < 5 && (
+            {permintaanItems.length < MAX_PERMINTAAN_ITEMS && (
               <Button startIcon={<AddIcon />} onClick={addPermintaanItem} size="small" sx={{ alignSelf: 'flex-start' }}>
-                Tambah Item
+                Tambah Item ({permintaanItems.length}/{MAX_PERMINTAAN_ITEMS})
               </Button>
             )}
             <TextField label="Catatan Umum (opsional)" multiline rows={2} fullWidth value={permintaanCatatan}

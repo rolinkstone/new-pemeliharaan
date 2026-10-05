@@ -956,7 +956,8 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
     }
 });
 
-// POST create permintaan (PIC Persediaan) — multiple items in one group (max 5)
+// POST create permintaan (PIC Persediaan) — multiple items in one group (max 10)
+const MAX_PERMINTAAN_ITEMS = 10;
 router.post('/permintaan', keycloakAuth, async (req, res) => {
     if (!hasRole(req, ['pic_persediaan', 'admin', 'superadmin'])) {
         return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya pic_persediaan yang dapat request barang.' });
@@ -966,8 +967,8 @@ router.post('/permintaan', keycloakAuth, async (req, res) => {
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ success: false, message: 'Minimal 1 item barang harus dipilih' });
         }
-        if (items.length > 5) {
-            return res.status(400).json({ success: false, message: 'Maksimal 5 item barang per permintaan' });
+        if (items.length > MAX_PERMINTAAN_ITEMS) {
+            return res.status(400).json({ success: false, message: `Maksimal ${MAX_PERMINTAAN_ITEMS} item barang per permintaan` });
         }
         const username = getUsername(req);
         const { randomUUID: uuidv4 } = require('crypto');
