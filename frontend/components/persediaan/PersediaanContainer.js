@@ -4,7 +4,7 @@ import {
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   MenuItem, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, Chip, Tooltip, LinearProgress,
-  Fade, Autocomplete, Checkbox,
+  Fade, Autocomplete, Checkbox, InputAdornment, InputLabel, FormControl, Select,
 } from '@mui/material';
 import {
   Add as AddIcon, Refresh as RefreshIcon, Edit as EditIcon,
@@ -14,7 +14,7 @@ import {
   Upload as UploadIcon, Assignment as AssignmentIcon,
   RemoveCircleOutline as RemoveIcon,
   ExpandMore as ExpandMoreIcon, ChevronRight as ChevronRightIcon,
-  Print as PrintIcon,
+  Print as PrintIcon, Search as SearchIcon, Clear as ClearIcon,
 } from '@mui/icons-material';
 import * as api from './api/persediaanApi';
 import PolishedPageShell from '../common/PolishedPageShell';
@@ -54,6 +54,24 @@ const statusLabels = {
   diserahkan_sebagian: 'Diserahkan Sebagian',
 };
 
+// Status yang relevan untuk barang masuk (ATK)
+const BM_STATUS_OPTIONS = ['diajukan', 'disetujui', 'ditolak'];
+
+// Label barang untuk dropdown: "KODE · Nama (stok: n satuan)"
+const barangOptionLabel = (b) =>
+  `${b.kode_barang ? `${b.kode_barang} · ` : ''}${b.nama_barang}${b.satuan ? ` (stok: ${b.saldo || 0} ${b.satuan})` : ''}`;
+
+// Pencarian barang: cocokkan kode / nama / jenis / kategori (case-insensitive)
+const filterBarangOptions = (options, { inputValue }) => {
+  const q = inputValue.trim().toLowerCase();
+  if (!q) return options;
+  return options.filter((b) =>
+    ['kode_barang', 'nama_barang', 'jenis', 'kategori'].some(
+      (f) => (b[f] || '').toLowerCase().includes(q)
+    )
+  );
+};
+
 const PersediaanContainer = ({ session }) => {
   const [tab, setTab] = useState(0); // 0: Barang, 1: Barang Masuk, 2: Permintaan, 3: Opname
   const tabs = ['Barang', 'Barang Masuk', 'Permintaan', 'Stok Opname'];
@@ -68,6 +86,9 @@ const PersediaanContainer = ({ session }) => {
   const [filters, setFilters] = useState({ search: '', jenis: '', kategori: '' });
   const [pagination, setPagination] = useState({ currentPage: 1, perPage: 10, total: 0, totalPages: 0 });
   const [bmPagination, setBmPagination] = useState({ currentPage: 1, perPage: 10, total: 0, totalPages: 0 });
+  // Filter khusus tab Barang Masuk
+  const [bmFilters, setBmFilters] = useState({ search: '', status: '' });
+  const [bmSearchInput, setBmSearchInput] = useState('');
   const [mutasiDateRange, setMutasiDateRange] = useState({ mulai: '', akhir: '' });
 
   // Modal state
@@ -130,6 +151,8 @@ const PersediaanContainer = ({ session }) => {
       if (mutasiDateRange.akhir) mutasiParams.tanggal_akhir = mutasiDateRange.akhir;
 
       const bmParams = { page: bmPagination.currentPage, limit: bmPagination.perPage };
+      if (bmFilters.search) bmParams.search = bmFilters.search;
+      if (bmFilters.status) bmParams.status = bmFilters.status;
       const [barang, masuk, permintaan, opname, mutasi, movement] = await Promise.all([
         api.fetchBarang(session, params),
         api.fetchBarangMasuk(session, bmParams),
@@ -155,9 +178,18 @@ const PersediaanContainer = ({ session }) => {
     } finally {
       setLoading(false);
     }
-  }, [session, filters, pagination.currentPage, pagination.perPage, bmPagination.currentPage, bmPagination.perPage, mutasiDateRange.mulai, mutasiDateRange.akhir]);
+  }, [session, filters, pagination.currentPage, pagination.perPage, bmPagination.currentPage, bmPagination.perPage, bmFilters.search, bmFilters.status, mutasiDateRange.mulai, mutasiDateRange.akhir]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Debounce input pencarian barang masuk (400ms) → reset ke halaman 1
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setBmFilters(prev => (prev.search === bmSearchInput ? prev : { ...prev, search: bmSearchInput }));
+      setBmPagination(prev => (prev.currentPage === 1 ? prev : { ...prev, currentPage: 1 }));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [bmSearchInput]);
 
   // ========== MODAL HANDLERS ==========
   const openCreateModal = (mode) => {
@@ -540,6 +572,18 @@ const PersediaanContainer = ({ session }) => {
     setBmPagination(prev => ({ ...prev, currentPage: 1, perPage: parseInt(event.target.value, 10) }));
   };
 
+  // ========== FILTER BARANG MASUK ==========
+  const hasBmFilter = Boolean(bmFilters.search || bmFilters.status);
+  const handleBmStatusChange = (status) => {
+    setBmFilters(prev => ({ ...prev, status }));
+    setBmPagination(prev => ({ ...prev, currentPage: 1 }));
+  };
+  const handleBmReset = () => {
+    setBmSearchInput('');
+    setBmFilters({ search: '', status: '' });
+    setBmPagination(prev => ({ ...prev, currentPage: 1 }));
+  };
+
   // ========== IMPORT / EXPORT ==========
   const handleDownloadTemplate = () => {
     window.open(api.downloadTemplateUrl, '_blank');
@@ -768,6 +812,77 @@ const PersediaanContainer = ({ session }) => {
       {/* ==================== TAB 1: BARANG MASUK ==================== */}
       {tab === 1 && (
         <Fade in>
+          <Box>
+          {/* Search & Filter Barang Masuk */}
+          <Paper sx={{ p: 2, mb: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+            <Box display="flex" alignItems="center" gap={1.5} flexWrap="wrap">
+              <TextField
+                size="small"
+                placeholder="Cari nama / kode barang, nota, pengaju, catatan..."
+                value={bmSearchInput}
+                onChange={(e) => setBmSearchInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') setBmFilters(prev => ({ ...prev, search: bmSearchInput })); }}
+                sx={{ minWidth: 320, flex: { xs: '1 1 100%', sm: '0 1 auto' } }}
+                InputProps={{
+                  startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      {loading && bmFilters.search === bmSearchInput
+                        ? <CircularProgress size={16} />
+                        : bmSearchInput ? (
+                          <IconButton size="small" onClick={() => setBmSearchInput('')} title="Bersihkan">
+                            <ClearIcon fontSize="small" />
+                          </IconButton>
+                        ) : null}
+                    </InputAdornment>
+                  ),
+                }}
+              />
+
+              <FormControl size="small" sx={{ minWidth: 170 }}>
+                <InputLabel id="bm-status-label">Status</InputLabel>
+                <Select
+                  labelId="bm-status-label"
+                  label="Status"
+                  value={bmFilters.status}
+                  onChange={(e) => handleBmStatusChange(e.target.value)}
+                >
+                  <MenuItem value="">Semua Status</MenuItem>
+                  {BM_STATUS_OPTIONS.map((val) => (
+                    <MenuItem key={val} value={val}>{statusLabels[val] || val}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+
+              {hasBmFilter && (
+                <Button size="small" color="error" startIcon={<ClearIcon />} onClick={handleBmReset}>
+                  Reset
+                </Button>
+              )}
+
+              <Box sx={{ ml: { sm: 'auto' } }}>
+                <Typography variant="caption" color="text.secondary">
+                  {loading ? 'Memuat...' : `${bmPagination.total || 0} data ditemukan`}
+                </Typography>
+              </Box>
+            </Box>
+
+            {/* Chip filter aktif */}
+            {hasBmFilter && (
+              <Box display="flex" gap={0.5} flexWrap="wrap" mt={1.5}>
+                {bmFilters.search && (
+                  <Chip size="small" label={`Cari: "${bmFilters.search}"`}
+                    onDelete={() => { setBmSearchInput(''); setBmFilters(prev => ({ ...prev, search: '' })); }} />
+                )}
+                {bmFilters.status && (
+                  <Chip size="small" color={statusColors[bmFilters.status] || 'default'}
+                    label={`Status: ${statusLabels[bmFilters.status] || bmFilters.status}`}
+                    onDelete={() => handleBmStatusChange('')} />
+                )}
+              </Box>
+            )}
+          </Paper>
+
           <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
             <Table>
               <TableHead>
@@ -863,7 +978,11 @@ const PersediaanContainer = ({ session }) => {
                   });
                 })()}
                 {barangMasukList.length === 0 && !loading && (
-                  <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4, color: '#94a3b8' }}>Belum ada barang masuk</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4, color: '#94a3b8' }}>
+                    {hasBmFilter
+                      ? 'Tidak ada barang masuk yang cocok dengan pencarian/filter'
+                      : 'Belum ada barang masuk'}
+                  </TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
@@ -879,6 +998,7 @@ const PersediaanContainer = ({ session }) => {
               labelDisplayedRows={({ from, to, count }) => `${from}-${to} dari ${count}`}
             />
           </TableContainer>
+          </Box>
         </Fade>
       )}
 
@@ -1322,13 +1442,21 @@ const PersediaanContainer = ({ session }) => {
             <Typography variant="subtitle2" fontWeight={600}>4. Daftar Barang</Typography>
             {bmItems.map((item, idx) => (
               <Box key={idx} display="flex" gap={1} alignItems="center">
-                <TextField select label={`Barang ${idx + 1}`} size="small" sx={{ flex: 2 }}
-                  value={item.barang_id}
-                  onChange={(e) => handleBmItemChange(idx, 'barang_id', e.target.value)}>
-                  {allBarang.map((b) => (
-                    <MenuItem key={b.id} value={b.id}>{b.kode_barang ? `${b.kode_barang} · ` : ''}{b.nama_barang} (stok: {b.saldo || 0} {b.satuan})</MenuItem>
-                  ))}
-                </TextField>
+                <Autocomplete
+                  size="small"
+                  sx={{ flex: 2, minWidth: 240 }}
+                  options={allBarang}
+                  value={allBarang.find(b => String(b.id) === String(item.barang_id)) || null}
+                  onChange={(e, newVal) => handleBmItemChange(idx, 'barang_id', newVal ? newVal.id : '')}
+                  getOptionLabel={barangOptionLabel}
+                  filterOptions={filterBarangOptions}
+                  isOptionEqualToValue={(option, value) => String(option.id) === String(value?.id)}
+                  noOptionsText="Barang tidak ditemukan"
+                  renderInput={(params) => (
+                    <TextField {...params} label={`Barang ${idx + 1}`}
+                      placeholder="Cari nama / kode barang..." size="small" />
+                  )}
+                />
                 <TextField label="Jumlah" type="number" size="small" sx={{ flex: 0.5 }}
                   value={item.jumlah}
                   onChange={(e) => handleBmItemChange(idx, 'jumlah', e.target.value)} />

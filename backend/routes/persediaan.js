@@ -618,19 +618,38 @@ router.delete('/barang/:id', keycloakAuth, async (req, res) => {
 // GET all barang masuk
 router.get('/barang-masuk', keycloakAuth, async (req, res) => {
     try {
-        const { page = 1, limit = 10 } = req.query;
+        const { search, status, page = 1, limit = 10 } = req.query;
         const offset = (page - 1) * limit;
 
-        const [countResult] = await db.query('SELECT COUNT(*) as total FROM barang_masuk');
+        // Filter dinamis: pencarian teks (nama/kode barang, nota, pengaju, catatan) + status
+        let whereClause = ' WHERE 1=1';
+        const params = [];
+        if (search) {
+            whereClause += ' AND (bp.nama_barang LIKE ? OR bp.kode_barang LIKE ? OR bm.kuitansi_url LIKE ? OR bm.created_by LIKE ? OR bm.catatan LIKE ?)';
+            const s = `%${search}%`;
+            params.push(s, s, s, s, s);
+        }
+        if (status) {
+            whereClause += ' AND bm.status = ?';
+            params.push(status);
+        }
+
+        const [countResult] = await db.query(`
+            SELECT COUNT(*) as total
+            FROM barang_masuk bm
+            LEFT JOIN barang_persediaan bp ON bm.barang_id = bp.id
+            ${whereClause}
+        `, params);
         const total = countResult[0]?.total || 0;
 
         const [rows] = await db.query(`
             SELECT bm.*, bp.kode_barang, bp.nama_barang, bp.satuan
             FROM barang_masuk bm
             LEFT JOIN barang_persediaan bp ON bm.barang_id = bp.id
+            ${whereClause}
             ORDER BY bm.created_at DESC
             LIMIT ? OFFSET ?
-        `, [parseInt(limit), parseInt(offset)]);
+        `, [...params, parseInt(limit), parseInt(offset)]);
         res.json({
             success: true,
             data: rows,
