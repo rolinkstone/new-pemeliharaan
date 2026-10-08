@@ -36,14 +36,15 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-    const allowedTypes = /jpeg|jpg|png|gif|webp/;
+    // PDF ikut diizinkan: nota/kuitansi barang masuk sering diunggah dalam format PDF.
+    const allowedTypes = /jpeg|jpg|png|gif|webp|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
     
     if (mimetype && extname) {
         cb(null, true);
     } else {
-        cb(new Error('Hanya file gambar yang diperbolehkan (jpeg, jpg, png, gif, webp)'));
+        cb(new Error('Hanya file gambar (jpeg, jpg, png, gif, webp) atau PDF yang diperbolehkan'));
     }
 };
 

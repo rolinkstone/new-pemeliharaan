@@ -31,15 +31,16 @@ const upload = multer({
         fileSize: 10 * 1024 * 1024 // 10MB per file
     },
     fileFilter: (req, file, cb) => {
-        // Hanya file gambar. Daftar putih eksplisit - `mimetype.startsWith('image/')`
-        // juga meloloskan image/svg+xml, dan SVG bisa memuat <script> (stored XSS
-        // bila file itu dibuka langsung dari origin API).
-        const allowedExt = /\.(jpe?g|png|gif|webp)$/i;
-        const allowedMime = /^image\/(jpeg|jpg|png|gif|webp)$/i;
+        // Daftar putih eksplisit - `mimetype.startsWith('image/')` juga meloloskan
+        // image/svg+xml, dan SVG bisa memuat <script> (stored XSS
+        // bila file itu dibuka langsung dari origin API). PDF diizinkan untuk
+        // nota/kuitansi barang masuk.
+        const allowedExt = /\.(jpe?g|png|gif|webp|pdf)$/i;
+        const allowedMime = /^(image\/(jpeg|jpg|png|gif|webp)|application\/pdf)$/i;
         if (allowedExt.test(file.originalname) && allowedMime.test(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Hanya file gambar (jpeg, jpg, png, gif, webp) yang diperbolehkan'));
+            cb(new Error('Hanya file gambar (jpeg, jpg, png, gif, webp) atau PDF yang diperbolehkan'));
         }
     }
 });
