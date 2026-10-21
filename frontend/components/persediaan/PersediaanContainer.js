@@ -1618,16 +1618,22 @@ const PersediaanContainer = ({ session }) => {
         <DialogTitle sx={{ fontWeight: 600 }}>Stok Opname</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <TextField select label="Pilih Barang" fullWidth required value={opnameForm.barang_id}
-              onChange={(e) => {
-                const bid = e.target.value;
+            <Autocomplete
+              options={allBarang}
+              value={allBarang.find(b => String(b.id) === String(opnameForm.barang_id)) || null}
+              onChange={(e, newVal) => {
+                const bid = newVal ? newVal.id : '';
                 setOpnameForm(prev => ({ ...prev, barang_id: bid, stok_nyata: '' }));
                 fetchOpnameTransaksi(bid);
-              }}>
-              {allBarang.map((b) => (
-                <MenuItem key={b.id} value={b.id}>{b.kode_barang ? `${b.kode_barang} · ` : ''}{b.nama_barang} (stok sistem: {b.saldo || 0} {b.satuan})</MenuItem>
-              ))}
-            </TextField>
+              }}
+              getOptionLabel={barangOptionLabel}
+              filterOptions={filterBarangOptions}
+              isOptionEqualToValue={(option, value) => String(option.id) === String(value?.id)}
+              noOptionsText="Barang tidak ditemukan"
+              renderInput={(params) => (
+                <TextField {...params} label="Pilih Barang" placeholder="Cari nama / kode barang..." required />
+              )}
+            />
             <TextField label="Stok Nyata (hasil hitung fisik)" type="number" fullWidth required value={opnameForm.stok_nyata}
               onChange={(e) => setOpnameForm(prev => ({ ...prev, stok_nyata: e.target.value }))} />
 
