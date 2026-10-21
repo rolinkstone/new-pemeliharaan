@@ -302,6 +302,23 @@ router.get('/opname/export-mutasi', keycloakAuth, async (req, res) => {
             keluarMap[r.barang_id][r.bulan] = Number(r.total);
         }
 
+        // Penyesuaian stok opname (masuk/keluar) — abaikan bila tabel migrasi belum dibuat
+        try {
+            const [rows] = await db.query(
+                `SELECT barang_id, tipe, MONTH(tanggal) as bulan, SUM(jumlah) as total
+                 FROM stok_opname_penyesuaian WHERE tanggal >= ? AND tanggal <= ?
+                 GROUP BY barang_id, tipe, MONTH(tanggal)`,
+                [thnStart, thnEnd]
+            );
+            for (const r of rows) {
+                const map = r.tipe === 'masuk' ? masukMap : keluarMap;
+                if (!map[r.barang_id]) map[r.barang_id] = {};
+                map[r.barang_id][r.bulan] = (map[r.barang_id][r.bulan] || 0) + Number(r.total);
+            }
+        } catch (e) {
+            if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        }
+
         // --- Build merged header (2 rows) ---
         // Row 0: bulan names (merged across 3 sub-columns) + 4 static columns
         // Row 1: sub-column headers (Pembelian, Pemakaian, Saldo)
@@ -1293,6 +1310,23 @@ router.get('/opname/mutasi', keycloakAuth, async (req, res) => {
         const keluarMap = {};
         keluarRows.forEach(r => { keluarMap[r.barang_id] = r.total_keluar; });
 
+        // Penyesuaian dari stok opname (barang masuk/keluar yang tidak tercatat).
+        // Tabel opsional: diabaikan bila migrasi data/migration_stok_opname_penyesuaian.sql belum dijalankan.
+        try {
+            let q = "SELECT barang_id, tipe, SUM(jumlah) as total FROM stok_opname_penyesuaian WHERE 1=1";
+            const p = [];
+            if (tanggal_mulai) { q += ' AND tanggal >= ?'; p.push(tanggal_mulai); }
+            if (tanggal_akhir) { q += ' AND tanggal <= ?'; p.push(tanggal_akhir); }
+            q += ' GROUP BY barang_id, tipe';
+            const [rows] = await db.query(q, p);
+            rows.forEach(r => {
+                const map = r.tipe === 'masuk' ? masukMap : keluarMap;
+                map[r.barang_id] = (Number(map[r.barang_id]) || 0) + Number(r.total);
+            });
+        } catch (e) {
+            if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        }
+
         // Mutasi masuk SETELAH range (untuk kalkulasi stok_awal)
         let masukSetelahMap = {};
         if (tanggal_akhir) {
@@ -1311,6 +1345,23 @@ router.get('/opname/mutasi', keycloakAuth, async (req, res) => {
             q += ' GROUP BY barang_id';
             const [rows] = await db.query(q, p);
             rows.forEach(r => { keluarSetelahMap[r.barang_id] = r.total; });
+        }
+
+        // Penyesuaian opname SETELAH range (dibalik juga agar stok awal periode benar)
+        if (tanggal_akhir) {
+            try {
+                const [rows] = await db.query(
+                    `SELECT barang_id, tipe, SUM(jumlah) as total FROM stok_opname_penyesuaian
+                     WHERE tanggal > ? GROUP BY barang_id, tipe`,
+                    [tanggal_akhir]
+                );
+                rows.forEach(r => {
+                    const map = r.tipe === 'masuk' ? masukSetelahMap : keluarSetelahMap;
+                    map[r.barang_id] = (Number(map[r.barang_id]) || 0) + Number(r.total);
+                });
+            } catch (e) {
+                if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+            }
         }
 
         // Gabungkan (pake Number() biar gak concatenation string)
@@ -1377,6 +1428,20 @@ router.get('/opname/mutasi/:barang_id/detail', keycloakAuth, async (req, res) =>
             result = [...result, ...rows.map(r => ({ ...r, tipe: 'keluar' }))];
         }
 
+        // Penyesuaian dari stok opname (bila ada)
+        try {
+            let q = 'SELECT id, jumlah, tipe, tanggal, catatan, created_by FROM stok_opname_penyesuaian WHERE barang_id = ?';
+            const p = [barang_id];
+            if (jenis) q += ' AND tipe = ?';
+            if (jenis) p.push(jenis);
+            if (tanggal_mulai) { q += ' AND tanggal >= ?'; p.push(tanggal_mulai); }
+            if (tanggal_akhir) { q += ' AND tanggal <= ?'; p.push(tanggal_akhir); }
+            const [rows] = await db.query(q, p);
+            result = [...result, ...rows.map(r => ({ ...r, id: `adj-${r.id}` }))];
+        } catch (e) {
+            if (e.code !== 'ER_NO_SUCH_TABLE') throw e;
+        }
+
         // Sortir by tanggal (desc)
         result.sort((a, b) => {
             const da = new Date(a.tanggal_pembelian || a.tanggal || 0).getTime();
@@ -1393,8 +1458,11 @@ router.get('/opname/mutasi/:barang_id/detail', keycloakAuth, async (req, res) =>
 
 // POST create stok opname
 // Opsional: body.koreksi = [{ permintaan_id, jumlah_baru }] — mengoreksi jumlah disetujui pada
-// transaksi SPB/SBBK (permintaan_barang) yang sudah terbit/diserahkan, agar hasil SPB & SBBK
-// ikut berubah. Total koreksi (jumlah_lama - jumlah_baru) harus tepat sama dengan selisih.
+// transaksi SPB/SBBK (permintaan_barang) yang sudah terbit/diserahkan. Koreksi boleh sebagian:
+// selisih yang tidak dikoreksi tetap disesuaikan langsung lewat stok nyata.
+// Opsional: body.penyesuaian = 'masuk' | 'keluar' — mencatat selisih sebagai transaksi penyesuaian
+// (tabel stok_opname_penyesuaian) agar laporan mutasi menampilkan stok awal yang benar tanpa
+// mengubah SPB/SBBK. Tidak boleh digabung dengan koreksi.
 router.post('/opname', keycloakAuth, async (req, res) => {
     if (!hasRole(req, ['pic_gudang', 'admin', 'superadmin', 'kabag_tu'])) {
         return res.status(403).json({ success: false, message: 'Akses ditolak' });
@@ -1402,7 +1470,7 @@ router.post('/opname', keycloakAuth, async (req, res) => {
     const conn = await db.pool.getConnection();
     try {
         await conn.beginTransaction();
-        const { barang_id, stok_nyata, tanggal, catatan, koreksi } = req.body;
+        const { barang_id, stok_nyata, tanggal, catatan, koreksi, penyesuaian } = req.body;
         if (!barang_id || stok_nyata === undefined || !tanggal) {
             await conn.rollback(); conn.release();
             return res.status(400).json({ success: false, message: 'Barang, stok nyata, dan tanggal wajib diisi' });
@@ -1424,6 +1492,36 @@ router.post('/opname', keycloakAuth, async (req, res) => {
 
         let catatanFinal = (catatan || '').trim();
         const koreksiRows = [];
+
+        // Penyesuaian: catat selisih sebagai transaksi masuk/keluar (terpisah dari SPB/SBBK)
+        const penyesuaianTipe = ['masuk', 'keluar'].includes(penyesuaian) ? penyesuaian : null;
+        if (penyesuaianTipe) {
+            if (koreksi && Array.isArray(koreksi) && koreksi.length > 0) {
+                await conn.rollback(); conn.release();
+                return res.status(400).json({ success: false, message: 'Pilih salah satu: koreksi SPB/SBBK atau penyesuaian stok' });
+            }
+            if (selisih === 0) {
+                await conn.rollback(); conn.release();
+                return res.status(400).json({ success: false, message: 'Tidak ada selisih yang perlu dicatat sebagai penyesuaian' });
+            }
+            if (penyesuaianTipe === 'keluar' && selisih > 0) {
+                await conn.rollback(); conn.release();
+                return res.status(400).json({ success: false, message: 'Penyesuaian barang keluar hanya untuk selisih negatif (stok nyata < stok sistem)' });
+            }
+            if (penyesuaianTipe === 'masuk' && selisih < 0) {
+                await conn.rollback(); conn.release();
+                return res.status(400).json({ success: false, message: 'Penyesuaian barang masuk hanya untuk selisih positif (stok nyata > stok sistem)' });
+            }
+            const [tbl] = await conn.query(
+                "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'stok_opname_penyesuaian'"
+            );
+            if (!tbl[0].n) {
+                await conn.rollback(); conn.release();
+                return res.status(400).json({ success: false, message: 'Tabel stok_opname_penyesuaian belum ada. Jalankan data/migration_stok_opname_penyesuaian.sql' });
+            }
+            catatanFinal = (catatanFinal ? catatanFinal + ' | ' : '') +
+                `Penyesuaian ${penyesuaianTipe === 'keluar' ? 'barang keluar' : 'barang masuk'} ${Math.abs(selisih)} (tidak mengubah SPB/SBBK)`;
+        }
 
         // Terapkan koreksi SPB/SBBK (opsional)
         if (koreksi && Array.isArray(koreksi) && koreksi.length > 0) {
@@ -1452,13 +1550,7 @@ router.post('/opname', keycloakAuth, async (req, res) => {
                 koreksiRows.push({ id: permintaanId, jumlahLama, jumlahBaru });
                 parts.push(`#${permintaanId}: ${jumlahLama}→${jumlahBaru}`);
             }
-            if (totalKoreksi !== selisih) {
-                await conn.rollback(); conn.release();
-                return res.status(400).json({
-                    success: false,
-                    message: `Total koreksi SPB/SBBK (${totalKoreksi >= 0 ? '+' : ''}${totalKoreksi}) tidak sama dengan selisih opname (${selisih >= 0 ? '+' : ''}${selisih})`
-                });
-            }
+            // Koreksi boleh sebagian / tidak sama sekali; sisa selisih disesuaikan lewat stok nyata
             for (const kr of koreksiRows) {
                 await conn.query(
                     'UPDATE permintaan_barang SET jumlah=?, catatan=CONCAT(IFNULL(catatan,""), ?) WHERE id=?',
@@ -1466,13 +1558,23 @@ router.post('/opname', keycloakAuth, async (req, res) => {
                 );
             }
             catatanFinal = (catatanFinal ? catatanFinal + ' | ' : '') + `Koreksi SPB/SBBK: ${parts.join(', ')}`;
+            if (totalKoreksi !== selisih) {
+                catatanFinal += ` | Sisa selisih ${selisih - totalKoreksi >= 0 ? '+' : ''}${selisih - totalKoreksi} disesuaikan langsung ke stok nyata`;
+            }
         }
 
         // Simpan opname
-        await conn.query(
+        const [soResult] = await conn.query(
             'INSERT INTO stok_opname (barang_id, stok_sistem, stok_nyata, selisih, tanggal, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [barang_id, stok_sistem, stokNyata, selisih, tanggal, catatanFinal, username]
         );
+
+        if (penyesuaianTipe) {
+            await conn.query(
+                'INSERT INTO stok_opname_penyesuaian (stok_opname_id, barang_id, tipe, jumlah, tanggal, catatan, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [soResult.insertId, barang_id, penyesuaianTipe, Math.abs(selisih), tanggal, `Penyesuaian stok opname (selisih ${selisih >= 0 ? '+' : ''}${selisih})`, username]
+            );
+        }
 
         // Update saldo berdasarkan stok nyata
         await conn.query('UPDATE barang_persediaan SET saldo=? WHERE id=?', [stokNyata, barang_id]);
@@ -1480,7 +1582,9 @@ router.post('/opname', keycloakAuth, async (req, res) => {
         await conn.commit();
         const msg = koreksiRows.length > 0
             ? `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}. ${koreksiRows.length} transaksi SPB/SBBK dikoreksi.`
-            : `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}`;
+            : penyesuaianTipe
+                ? `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}. Dicatat sebagai penyesuaian barang ${penyesuaianTipe} ${Math.abs(selisih)}.`
+                : `Stok opname dicatat. Selisih: ${selisih >= 0 ? '+' : ''}${selisih}`;
         res.json({ success: true, message: msg });
     } catch (error) {
         await conn.rollback();

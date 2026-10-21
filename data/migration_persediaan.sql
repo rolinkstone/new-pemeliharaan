@@ -70,7 +70,24 @@ CREATE TABLE IF NOT EXISTS stok_opname (
     FOREIGN KEY (barang_id) REFERENCES barang_persediaan(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- 5. NOTIFICATIONS TABLE
+-- 5. PENYESUAIAN STOK OPNAME (barang masuk/keluar yang tidak tercatat)
+-- Disimpan terpisah agar tidak muncul sebagai SPB/SBBK, tetapi ikut dihitung di laporan mutasi.
+CREATE TABLE IF NOT EXISTS stok_opname_penyesuaian (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    stok_opname_id INT DEFAULT NULL,
+    barang_id INT NOT NULL,
+    tipe ENUM('masuk', 'keluar') NOT NULL,
+    jumlah INT NOT NULL,
+    tanggal DATE NOT NULL,
+    catatan TEXT DEFAULT NULL,
+    created_by VARCHAR(100) DEFAULT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (barang_id) REFERENCES barang_persediaan(id) ON DELETE CASCADE,
+    FOREIGN KEY (stok_opname_id) REFERENCES stok_opname(id) ON DELETE CASCADE,
+    INDEX idx_barang_tanggal (barang_id, tanggal)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 6. NOTIFICATIONS TABLE
 CREATE TABLE IF NOT EXISTS notifications (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id VARCHAR(100) DEFAULT '',

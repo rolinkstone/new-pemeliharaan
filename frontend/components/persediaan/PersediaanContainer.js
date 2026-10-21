@@ -4,7 +4,7 @@ import {
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   MenuItem, Paper, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, Chip, Tooltip, LinearProgress,
-  Fade, Autocomplete, Checkbox, InputAdornment, InputLabel, FormControl, Select,
+  Fade, Autocomplete, Checkbox, InputAdornment, InputLabel, FormControl, Select, FormControlLabel,
 } from '@mui/material';
 import {
   Add as AddIcon, Refresh as RefreshIcon, Edit as EditIcon,
@@ -95,6 +95,9 @@ const PersediaanContainer = ({ session }) => {
   const [bmFilters, setBmFilters] = useState({ search: '', status: '' });
   const [bmSearchInput, setBmSearchInput] = useState('');
   const [mutasiDateRange, setMutasiDateRange] = useState({ mulai: '', akhir: '' });
+  // Pagination tab Permintaan (client-side, per grup permintaan)
+  const [permintaanPage, setPermintaanPage] = useState(0);
+  const [permintaanRowsPerPage, setPermintaanRowsPerPage] = useState(10);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -198,6 +201,12 @@ const PersediaanContainer = ({ session }) => {
   }, [session, filters, pagination.currentPage, pagination.perPage, bmPagination.currentPage, bmPagination.perPage, bmFilters.search, bmFilters.status, mutasiDateRange.mulai, mutasiDateRange.akhir]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Jaga halaman permintaan tetap valid setelah data/rows-per-page berubah
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(permintaanList.length / permintaanRowsPerPage) - 1);
+    setPermintaanPage(prev => (prev > maxPage ? maxPage : prev));
+  }, [permintaanList.length, permintaanRowsPerPage]);
 
   // Debounce input pencarian barang masuk (400ms) → reset ke halaman 1
   useEffect(() => {
@@ -470,13 +479,17 @@ const PersediaanContainer = ({ session }) => {
   const [opnameTransaksi, setOpnameTransaksi] = useState([]); // transaksi SPB/SBBK (keluar) utk barang terpilih
   const [opnameTransaksiLoading, setOpnameTransaksiLoading] = useState(false);
   const [opnameKoreksi, setOpnameKoreksi] = useState({}); // { [permintaan_id]: { jumlah_lama, jumlah_baru, dipilih } }
+  const [opnamePenyesuaian, setOpnamePenyesuaian] = useState(false); // catat selisih sbg transaksi masuk/keluar penyesuaian
 
-  // Muat daftar transaksi SPB/SBBK (keluar) yang sudah terbit untuk barang terpilih
-  const fetchOpnameTransaksi = useCallback(async (barangId) => {
+  // Muat daftar transaksi SPB/SBBK (keluar) s.d. tanggal opname untuk barang terpilih
+  const fetchOpnameTransaksi = useCallback(async (barangId, tanggal) => {
     if (!barangId) { setOpnameTransaksi([]); setOpnameKoreksi({}); return; }
     setOpnameTransaksiLoading(true);
     try {
-      const res = await api.fetchMutasiDetail(session, barangId, { jenis: 'keluar' });
+      const res = await api.fetchMutasiDetail(session, barangId, {
+        jenis: 'keluar',
+        ...(tanggal ? { tanggal_akhir: tanggal } : {}),
+      });
       if (res.success) {
         const eligible = res.data || [];
         setOpnameTransaksi(eligible);
@@ -494,6 +507,11 @@ const PersediaanContainer = ({ session }) => {
     }
   }, [session]);
 
+  // Muat ulang transaksi kandidat koreksi setiap barang / tanggal opname berubah
+  useEffect(() => {
+    fetchOpnameTransaksi(opnameForm.barang_id, opnameForm.tanggal);
+  }, [opnameForm.barang_id, opnameForm.tanggal, fetchOpnameTransaksi]);
+
   // Nilai turunan opname (stok sistem, selisih, total koreksi SPB/SBBK)
   const opnameBarang = allBarang.find(b => String(b.id) === String(opnameForm.barang_id)) || null;
   const stokSistemOpname = opnameBarang ? Number(opnameBarang.saldo) || 0 : 0;
@@ -506,13 +524,13 @@ const PersediaanContainer = ({ session }) => {
     const baru = k.jumlah_baru === '' ? k.jumlah_lama : Number(k.jumlah_baru);
     return sum + (Number(k.jumlah_lama) - baru);
   }, 0);
-  const koreksiCovered = selisihOpname !== null && totalKoreksi === selisihOpname;
   const sisaSelisih = selisihOpname === null ? 0 : selisihOpname - totalKoreksi;
 
   const resetOpnameForm = () => {
     setOpnameForm({ barang_id: '', stok_nyata: '', tanggal: today || new Date().toISOString().split('T')[0], catatan: '' });
     setOpnameTransaksi([]);
     setOpnameKoreksi({});
+    setOpnamePenyesuaian(false);
   };
 
   // Isi otomatis: alokasikan sisa selisih ke transaksi SPB/SBBK (dari terbaru) sampai tercakup
@@ -544,15 +562,14 @@ const PersediaanContainer = ({ session }) => {
         showSnackbar('Stok nyata wajib diisi', 'error');
         return;
       }
-      // Jika ada selisih & ada transaksi SPB/SBBK, total koreksi harus pas dengan selisih
-      if (selisihOpname !== 0 && opnameTransaksi.length > 0 && !koreksiCovered) {
-        showSnackbar(`Total koreksi SPB/SBBK belum sesuai selisih. Sisa ${sisaSelisih >= 0 ? '+' : ''}${sisaSelisih}`, 'error');
-        return;
-      }
-      const koreksiPayload = selisihOpname !== 0 ? opnameKoreksiList
+      // Koreksi SPB/SBBK opsional: selisih yang tidak dikoreksi tetap disesuaikan ke stok nyata
+      const penyesuaian = opnamePenyesuaian && selisihOpname !== 0
+        ? (selisihOpname < 0 ? 'keluar' : 'masuk')
+        : null;
+      const koreksiPayload = !penyesuaian && selisihOpname !== 0 ? opnameKoreksiList
         .filter(k => k.dipilih && k.jumlah_baru !== '' && Number(k.jumlah_baru) !== Number(k.jumlah_lama))
         .map(k => ({ permintaan_id: Number(k.id), jumlah_baru: Number(k.jumlah_baru) })) : [];
-      const body = { ...opnameForm, stok_nyata: stokNyataVal, koreksi: koreksiPayload };
+      const body = { ...opnameForm, stok_nyata: stokNyataVal, koreksi: koreksiPayload, penyesuaian };
       const res = await api.createOpname(session, body);
       if (res.success) { showSnackbar(res.message); fetchAll(); setOpnameModalOpen(false); resetOpnameForm(); }
       else showSnackbar(res.message, 'error');
@@ -1081,7 +1098,9 @@ const PersediaanContainer = ({ session }) => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {permintaanList.map((group) => {
+                {permintaanList
+                  .slice(permintaanPage * permintaanRowsPerPage, permintaanPage * permintaanRowsPerPage + permintaanRowsPerPage)
+                  .map((group) => {
                   const isExpanded = expandedPermintaan[group.group_id];
                   const allDraft = group.items.every(i => i.status === 'draft' || !i.status);
                   return (
@@ -1222,6 +1241,17 @@ const PersediaanContainer = ({ session }) => {
                 )}
               </TableBody>
             </Table>
+            <TablePagination
+              component="div"
+              count={permintaanList.length}
+              page={permintaanPage}
+              onPageChange={(e, p) => setPermintaanPage(p)}
+              rowsPerPage={permintaanRowsPerPage}
+              onRowsPerPageChange={(e) => { setPermintaanRowsPerPage(parseInt(e.target.value, 10)); setPermintaanPage(0); }}
+              rowsPerPageOptions={[5, 10, 25, 50]}
+              labelRowsPerPage="Baris/hal"
+              labelDisplayedRows={({ from, to, count }) => `${from}-${to} dari ${count}`}
+            />
           </TableContainer>
           </Box>
         </Fade>
@@ -1624,7 +1654,7 @@ const PersediaanContainer = ({ session }) => {
               onChange={(e, newVal) => {
                 const bid = newVal ? newVal.id : '';
                 setOpnameForm(prev => ({ ...prev, barang_id: bid, stok_nyata: '' }));
-                fetchOpnameTransaksi(bid);
+                setOpnamePenyesuaian(false);
               }}
               getOptionLabel={barangOptionLabel}
               filterOptions={filterBarangOptions}
@@ -1650,14 +1680,36 @@ const PersediaanContainer = ({ session }) => {
               </Box>
             )}
 
-            {/* Koreksi SPB/SBBK yang sudah terbit */}
+            {/* Catat selisih sebagai transaksi penyesuaian (tidak mengubah SPB/SBBK) */}
             {selisihOpname !== null && selisihOpname !== 0 && (
+              <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2 }}>
+                <FormControlLabel
+                  sx={{ alignItems: 'flex-start', m: 0 }}
+                  control={<Checkbox size="small" checked={opnamePenyesuaian}
+                    onChange={(e) => setOpnamePenyesuaian(e.target.checked)}
+                    sx={{ pt: 0, pb: 0 }} />}
+                  label={
+                    <Box>
+                      <Typography variant="subtitle2" fontWeight={600}>
+                        Catat selisih {Math.abs(selisihOpname)} sebagai barang {selisihOpname < 0 ? 'keluar' : 'masuk'} (penyesuaian)
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Dicatat sebagai transaksi penyesuaian pada tanggal opname agar laporan mutasi menampilkan stok awal yang benar. Tidak mengubah SPB/SBBK.
+                      </Typography>
+                    </Box>
+                  }
+                />
+              </Box>
+            )}
+
+            {/* Koreksi SPB/SBBK yang sudah terbit */}
+            {selisihOpname !== null && selisihOpname !== 0 && !opnamePenyesuaian && (
               <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 2, bgcolor: '#fafafa' }}>
                 <Box display="flex" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} mb={1}>
                   <Box>
                     <Typography variant="subtitle2" fontWeight={600}>Koreksi SPB/SBBK yang sudah terbit</Typography>
                     <Typography variant="caption" color="text.secondary">
-                      Pilih transaksi keluar (SPB/SBBK) yang harus dikurangi/ditambah jumlahnya. Total koreksi harus sama dengan selisih.
+                      Opsional. Pilih transaksi keluar (SPB/SBBK) s.d. tanggal opname yang jumlahnya perlu dikoreksi. Bila tidak dipilih, selisih disesuaikan langsung ke stok nyata.
                     </Typography>
                   </Box>
                   {opnameTransaksi.length > 0 && (
@@ -1671,7 +1723,7 @@ const PersediaanContainer = ({ session }) => {
                   <Box display="flex" justifyContent="center" py={3}><CircularProgress size={28} /></Box>
                 ) : opnameTransaksi.length === 0 ? (
                   <Alert severity="info">
-                    Tidak ada transaksi SPB/SBBK (keluar) untuk barang ini. Saldo akan disesuaikan langsung ke stok nyata.
+                    Tidak ada transaksi SPB/SBBK (keluar) untuk barang ini s.d. tanggal opname. Saldo akan disesuaikan langsung ke stok nyata.
                   </Alert>
                 ) : (
                   <>
@@ -1737,13 +1789,13 @@ const PersediaanContainer = ({ session }) => {
                     <Box mt={1.5} display="flex" alignItems="center" gap={1} flexWrap="wrap">
                       <Typography variant="body2" fontWeight={600} color="text.secondary">Total koreksi:</Typography>
                       <Chip label={`${totalKoreksi >= 0 ? '+' : ''}${totalKoreksi}`} size="small"
-                        color={totalKoreksi === selisihOpname ? 'success' : 'error'}
+                        color={totalKoreksi === selisihOpname ? 'success' : 'default'}
                         sx={{ fontWeight: 700 }} />
                       <Typography variant="body2" fontWeight={600} color="text.secondary">Butuh:</Typography>
                       <Chip label={`${selisihOpname >= 0 ? '+' : ''}${selisihOpname}`} size="small" color="default" variant="outlined" sx={{ fontWeight: 700 }} />
                       {sisaSelisih !== 0 ? (
-                        <Typography variant="caption" color="error" sx={{ fontWeight: 600 }}>
-                          Sisa belum terkoreksi: {sisaSelisih >= 0 ? '+' : ''}{sisaSelisih}
+                        <Typography variant="caption" color="text.secondary">
+                          Sisa {sisaSelisih >= 0 ? '+' : ''}{sisaSelisih} akan disesuaikan langsung ke saldo (tanpa koreksi SPB/SBBK).
                         </Typography>
                       ) : (
                         <Typography variant="caption" color="success.main" sx={{ fontWeight: 600 }}>✓ Selisih tercakup semua.</Typography>
