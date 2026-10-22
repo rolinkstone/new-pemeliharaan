@@ -932,6 +932,8 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
             if (!groups[gid]) {
                 groups[gid] = {
                     group_id: gid,
+                    nomor_dokumen: r.nomor_dokumen || null,
+                    fungsi: r.fungsi || 'Tata Usaha',
                     tanggal_permintaan: r.tanggal_permintaan,
                     requested_by: r.requested_by,
                     catatan: r.catatan,
@@ -992,12 +994,17 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
 
 // POST create permintaan (PIC Persediaan) — multiple items in one group (max 10)
 const MAX_PERMINTAAN_ITEMS = 10;
+const FUNGSI_PERMINTAAN = [
+    'Tata Usaha', 'Penindakan', 'Pemeriksaan', 'Infokom',
+    'Lab Pangan', 'Lab Mikro', 'Lab Terano',
+];
 router.post('/permintaan', keycloakAuth, async (req, res) => {
     if (!hasRole(req, ['pic_persediaan', 'admin', 'superadmin'])) {
         return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya pic_persediaan yang dapat request barang.' });
     }
     try {
         const { items, catatan, tanggal } = req.body;
+        const fungsi = FUNGSI_PERMINTAAN.includes(req.body.fungsi) ? req.body.fungsi : 'Tata Usaha';
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({ success: false, message: 'Minimal 1 item barang harus dipilih' });
         }
@@ -1028,11 +1035,19 @@ router.post('/permintaan', keycloakAuth, async (req, res) => {
         }
 
         const results = [];
+        // Nomor dokumen SPB/SBBK: MM + urut 3 digit, reset tiap bulan (mis. 10001)
+        const [blnRows] = await db.query("SELECT DATE_FORMAT(?, '%m') AS bln", [tgl]);
+        const bulan = blnRows[0].bln;
+        const [mxRows] = await db.query(
+            'SELECT COALESCE(MAX(CAST(SUBSTRING(nomor_dokumen, 3) AS UNSIGNED)), 0) AS maxseq FROM permintaan_barang WHERE LEFT(nomor_dokumen, 2) = ?',
+            [bulan]
+        );
+        const nomorDokumen = `${bulan}${String(Number(mxRows[0].maxseq) + 1).padStart(3, '0')}`;
         for (const item of items) {
             if (!item.barang_id || !item.jumlah) continue;
             const [result] = await db.query(
-                'INSERT INTO permintaan_barang (group_id, tanggal_permintaan, barang_id, jumlah, jumlah_diminta, catatan, status, requested_by) VALUES (?, ?, ?, ?, ?, ?, "draft", ?)',
-                [groupId, tgl, item.barang_id, item.jumlah, item.jumlah, item.catatan || catatan || '', username]
+                'INSERT INTO permintaan_barang (group_id, nomor_dokumen, fungsi, tanggal_permintaan, barang_id, jumlah, jumlah_diminta, catatan, status, requested_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "draft", ?)',
+                [groupId, nomorDokumen, fungsi, tgl, item.barang_id, item.jumlah, item.jumlah, item.catatan || catatan || '', username]
             );
             results.push(result.insertId);
         }

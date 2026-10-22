@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS barang_masuk (
 CREATE TABLE IF NOT EXISTS permintaan_barang (
     id INT AUTO_INCREMENT PRIMARY KEY,
     group_id VARCHAR(36) DEFAULT NULL,
+    nomor_dokumen VARCHAR(10) DEFAULT NULL,
+    fungsi VARCHAR(50) DEFAULT 'Tata Usaha',
     tanggal_permintaan DATE DEFAULT NULL,
     barang_id INT NOT NULL,
     jumlah INT NOT NULL,

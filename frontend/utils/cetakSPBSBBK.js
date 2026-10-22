@@ -226,24 +226,35 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk', ttd = {} } = {}) => {
   if (!group) return;
 
   const kodeHex = (group.group_id || '00000000').replace(/-/g, '').slice(0, 6);
-  const seq = String((parseInt(kodeHex, 16) || 0) % 999).padStart(3, '0');
   const tanggal = toYMD(group.delivered_at || group.tanggal_permintaan || new Date().toISOString().split('T')[0]);
-  const tanggalCompact = tanggal.replace(/-/g, '');
+  // Nomor dokumen: MM + urut 3 digit (mis. 10001). Disimpan di backend agar
+  // konsisten saat dicetak ulang; fallback deterministik bila data lama belum punya.
+  const bulan = tanggal.slice(5, 7);
+  const seqFallback = String(((parseInt(kodeHex, 16) || 0) % 999) + 1).padStart(3, '0');
+  const nomor = group.nomor_dokumen || `${bulan}${seqFallback}`;
 
   const kolom = penandatanganSPBSBBK(group);
 
   // Selalu tampilkan 10 baris (isi + kosong)
-  const items = (group.items || []).map((it, i) => ({
-    no: i + 1,
-    kode: it.kode_barang || '',
-    nama: it.nama_barang || '',
-    satuan: tipe === 'reagen' ? (it.satuan || 'Botol') : (it.satuan || ''),
-    jumlah: tipe === 'reagen' ? (it.jumlah_botol ?? it.jumlah ?? '') : (it.jumlah ?? ''),
-    diminta: tipe === 'reagen' ? (it.jumlah_diminta ?? it.jumlah_botol ?? '') : (it.jumlah_diminta ?? it.jumlah ?? ''),
-    ket: tipe === 'reagen'
+  const items = (group.items || []).map((it, i) => {
+    // Item yang ditolak tetap tampil di dokumen, tetapi tidak boleh terbaca
+    // sebagai "disetujui": jumlah disetujui dikosongkan dan keterangan ditandai.
+    const ditolak = it.status === 'ditolak';
+    const jumlah = tipe === 'reagen' ? (it.jumlah_botol ?? it.jumlah ?? '') : (it.jumlah ?? '');
+    const diminta = tipe === 'reagen' ? (it.jumlah_diminta ?? it.jumlah_botol ?? '') : (it.jumlah_diminta ?? it.jumlah ?? '');
+    const ket = tipe === 'reagen'
       ? [getLabLabel(it.lab_tujuan), it.berat_volume, it.no_batch ? `Batch:${it.no_batch}` : ''].filter(Boolean).join(' ')
-      : (it.kategori || ''),
-  }));
+      : (it.kategori || '');
+    return {
+      no: i + 1,
+      kode: it.kode_barang || '',
+      nama: it.nama_barang || '',
+      satuan: tipe === 'reagen' ? (it.satuan || 'Botol') : (it.satuan || ''),
+      jumlah: ditolak ? 0 : jumlah,
+      diminta,
+      ket: ditolak ? (ket ? `Ditolak (${ket})` : 'Ditolak') : ket,
+    };
+  });
   const rows = [];
   for (let i = 0; i < 10; i++) {
     rows.push(items[i] || { no: i + 1, nama: '', satuan: '', jumlah: '', diminta: '', ket: '' });
@@ -253,9 +264,9 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk', ttd = {} } = {}) => {
   const buatHtml = (indexTtd) => {
     const spb = buildDoc({
       judul: 'SURAT PERMINTAAN BARANG (SPB)',
-      nomor: `PBP-${tanggalCompact}-${seq}`,
+      nomor,
       tanggal,
-      unit: 'Tata Usaha',
+      unit: group.fungsi || 'Tata Usaha',
       rows,
       kolom: [kolom.diserahkan, kolom.diterima, kolom.katim],
       indexTtd,
@@ -264,9 +275,9 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk', ttd = {} } = {}) => {
 
     const sbbk = buildDoc({
       judul: 'SURAT BUKTI BARANG KELUAR (SBBK)',
-      nomor: `SBK-${tanggalCompact}-${seq}`,
+      nomor,
       tanggal,
-      unit: 'Tata Usaha',
+      unit: group.fungsi || 'Tata Usaha',
       rows,
       kolom: [kolom.diserahkan, kolom.diterima, kolom.kabag],
       indexTtd,

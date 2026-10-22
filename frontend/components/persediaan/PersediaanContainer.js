@@ -62,6 +62,38 @@ const MAX_PERMINTAAN_ITEMS = 10;
 // Status yang relevan untuk barang masuk (ATK)
 const BM_STATUS_OPTIONS = ['diajukan', 'disetujui', 'ditolak'];
 
+// Status grup permintaan yang bisa difilter
+const PERMINTAAN_STATUS_OPTIONS = [
+  'draft', 'diajukan', 'menunggu_katim', 'disetujui_katim',
+  'diserahkan', 'diserahkan_sebagian', 'disetujui_kabag', 'disetujui', 'ditolak',
+];
+
+// Pilihan fungsi/unit pemohon pada modal Request Barang
+const FUNGSI_OPTIONS = [
+  'Tata Usaha', 'Penindakan', 'Pemeriksaan', 'Infokom',
+  'Lab Pangan', 'Lab Mikro', 'Lab Terano',
+];
+// Pengajuan baru tidak memilih fungsi secara otomatis — user wajib memilih.
+const FUNGSI_DEFAULT = '';
+
+// Label bulan untuk filter/penomoran dokumen
+const NAMA_BULAN = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+const formatBulanFilter = (ym) => {
+  if (!ym) return '';
+  const [y, m] = String(ym).split('-');
+  const nama = NAMA_BULAN[Number(m) - 1];
+  return nama ? `${nama} ${y}` : ym;
+};
+// Bulan (YYYY-MM) dari tanggal permintaan — pakai waktu lokal agar tidak
+// bergeser satu bulan saat backend mengirim DATE sebagai ISO UTC.
+const bulanDariTanggal = (v) => {
+  if (!v) return '';
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return String(v).slice(0, 7);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
 // Label barang untuk dropdown: "KODE · Nama (stok: n satuan)"
 const barangOptionLabel = (b) =>
   `${b.kode_barang ? `${b.kode_barang} · ` : ''}${b.nama_barang}${b.satuan ? ` (stok: ${b.saldo || 0} ${b.satuan})` : ''}`;
@@ -98,6 +130,8 @@ const PersediaanContainer = ({ session }) => {
   // Pagination tab Permintaan (client-side, per grup permintaan)
   const [permintaanPage, setPermintaanPage] = useState(0);
   const [permintaanRowsPerPage, setPermintaanRowsPerPage] = useState(10);
+  // Filter khusus tab Permintaan (client-side)
+  const [permintaanFilters, setPermintaanFilters] = useState({ search: '', status: '', bulan: '' });
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -202,11 +236,38 @@ const PersediaanContainer = ({ session }) => {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // ========== FILTER PERMINTAAN (client-side, per grup) ==========
+  const hasPermintaanFilter = Boolean(permintaanFilters.search.trim() || permintaanFilters.status || permintaanFilters.bulan);
+  const filteredPermintaanList = (() => {
+    const q = permintaanFilters.search.trim().toLowerCase();
+    return permintaanList.filter((g) => {
+      if (permintaanFilters.status && g.status !== permintaanFilters.status) return false;
+      if (permintaanFilters.bulan && bulanDariTanggal(g.tanggal_permintaan) !== permintaanFilters.bulan) return false;
+      if (!q) return true;
+      const haystack = [
+        g.requested_by, g.catatan, g.fungsi, g.katim_nama, g.approved_katim_by,
+        g.delivered_by, g.approved_kabag_by, g.nomor_dokumen,
+        g.tanggal_permintaan ? String(g.tanggal_permintaan).slice(0, 10) : '',
+        ...(g.items || []).flatMap((i) => [i?.nama_barang, i?.kode_barang, i?.catatan_item]),
+      ];
+      return haystack.some((v) => String(v || '').toLowerCase().includes(q));
+    });
+  })();
+
+  const handlePermintaanFilterChange = (patch) => {
+    setPermintaanFilters((prev) => ({ ...prev, ...patch }));
+    setPermintaanPage(0);
+  };
+  const handlePermintaanReset = () => {
+    setPermintaanFilters({ search: '', status: '', bulan: '' });
+    setPermintaanPage(0);
+  };
+
   // Jaga halaman permintaan tetap valid setelah data/rows-per-page berubah
   useEffect(() => {
-    const maxPage = Math.max(0, Math.ceil(permintaanList.length / permintaanRowsPerPage) - 1);
+    const maxPage = Math.max(0, Math.ceil(filteredPermintaanList.length / permintaanRowsPerPage) - 1);
     setPermintaanPage(prev => (prev > maxPage ? maxPage : prev));
-  }, [permintaanList.length, permintaanRowsPerPage]);
+  }, [filteredPermintaanList.length, permintaanRowsPerPage]);
 
   // Debounce input pencarian barang masuk (400ms) → reset ke halaman 1
   useEffect(() => {
@@ -407,6 +468,7 @@ const PersediaanContainer = ({ session }) => {
   // ========== PERMINTAAN ==========
   const [permintaanModalOpen, setPermintaanModalOpen] = useState(false);
   const [permintaanItems, setPermintaanItems] = useState([{ barang_id: '', jumlah: '', catatan: '' }]);
+  const [permintaanFungsi, setPermintaanFungsi] = useState(FUNGSI_DEFAULT);
   const [permintaanCatatan, setPermintaanCatatan] = useState('');
   const [permintaanTanggal, setPermintaanTanggal] = useState(typeof window !== 'undefined' ? new Date().toISOString().split('T')[0] : '');
 
@@ -417,12 +479,17 @@ const PersediaanContainer = ({ session }) => {
         showSnackbar('Pilih minimal 1 barang', 'warning');
         return;
       }
-      const res = await api.createPermintaan(session, { items: validItems, catatan: permintaanCatatan, tanggal: permintaanTanggal });
+      if (!permintaanFungsi) {
+        showSnackbar('Pilih fungsi terlebih dahulu', 'warning');
+        return;
+      }
+      const res = await api.createPermintaan(session, { items: validItems, fungsi: permintaanFungsi, catatan: permintaanCatatan, tanggal: permintaanTanggal });
       if (res.success) {
         showSnackbar(res.message);
         fetchAll();
         setPermintaanModalOpen(false);
         setPermintaanItems([{ barang_id: '', jumlah: '', catatan: '' }]);
+        setPermintaanFungsi(FUNGSI_DEFAULT);
         setPermintaanCatatan('');
       } else showSnackbar(res.message, 'error');
     } catch (e) { showSnackbar(e?.response?.data?.message || e.message, 'error'); }
@@ -656,13 +723,24 @@ const PersediaanContainer = ({ session }) => {
   // TTD bersifat pelengkap: kalau gagal diambil, dokumen tetap dicetak
   // dengan ruang tanda tangan kosong.
   const handlePrintSpbSbbk = async (group) => {
+    // Ambil ulang data grup dari server agar isi dokumen (termasuk fungsi/
+    // Unit Seksi-Sub Bagian dan nomor dokumen) selalu sesuai database.
+    let cetak = group;
     try {
-      const keys = kunciPenandatanganSPBSBBK(group);
+      const list = await api.fetchPermintaan(session);
+      const found = list?.success
+        ? (list.data || []).find(g => String(g.group_id) === String(group.group_id))
+        : null;
+      if (found) cetak = found;
+    } catch { /* pakai data dari tabel bila gagal */ }
+
+    try {
+      const keys = kunciPenandatanganSPBSBBK(cetak);
       const ttd = await ambilPetaTtd(session, keys);
-      cetakSPBSBBK({ group, tipe: 'atk', ttd });
+      cetakSPBSBBK({ group: cetak, tipe: 'atk', ttd });
     } catch (e) {
       console.warn('⚠️ Cetak SPB/SBBK tanpa TTD:', e.message);
-      cetakSPBSBBK({ group, tipe: 'atk' });
+      cetakSPBSBBK({ group: cetak, tipe: 'atk' });
     }
   };
 
@@ -1084,6 +1162,86 @@ const PersediaanContainer = ({ session }) => {
               ));
             })()}
 
+            {/* Search & Filter Status Permintaan */}
+            <Paper sx={{ p: 2, mb: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}>
+              <Box display="flex" alignItems="center" gap={1.5} flexWrap="wrap">
+                <TextField
+                  size="small"
+                  placeholder="Cari PIC, catatan, nama / kode barang..."
+                  value={permintaanFilters.search}
+                  onChange={(e) => handlePermintaanFilterChange({ search: e.target.value })}
+                  sx={{ minWidth: 320, flex: { xs: '1 1 100%', sm: '0 1 auto' } }}
+                  InputProps={{
+                    startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
+                    endAdornment: permintaanFilters.search ? (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handlePermintaanFilterChange({ search: '' })} title="Bersihkan">
+                          <ClearIcon fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ) : null,
+                  }}
+                />
+
+                <FormControl size="small" sx={{ minWidth: 190 }}>
+                  <InputLabel id="permintaan-status-label">Status</InputLabel>
+                  <Select
+                    labelId="permintaan-status-label"
+                    label="Status"
+                    value={permintaanFilters.status}
+                    onChange={(e) => handlePermintaanFilterChange({ status: e.target.value })}
+                  >
+                    <MenuItem value="">Semua Status</MenuItem>
+                    {PERMINTAAN_STATUS_OPTIONS.map((val) => (
+                      <MenuItem key={val} value={val}>{statusLabels[val] || val}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <TextField
+                  type="month"
+                  size="small"
+                  label="Bulan"
+                  value={permintaanFilters.bulan}
+                  onChange={(e) => handlePermintaanFilterChange({ bulan: e.target.value })}
+                  InputLabelProps={{ shrink: true }}
+                  sx={{ maxWidth: 190 }}
+                />
+
+                {hasPermintaanFilter && (
+                  <Button size="small" color="error" startIcon={<ClearIcon />} onClick={handlePermintaanReset}>
+                    Reset
+                  </Button>
+                )}
+
+                <Box sx={{ ml: { sm: 'auto' } }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {loading ? 'Memuat...' : `${filteredPermintaanList.length} data ditemukan`}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* Chip filter aktif */}
+              {hasPermintaanFilter && (
+                <Box display="flex" gap={0.5} flexWrap="wrap" mt={1.5}>
+                  {permintaanFilters.search.trim() && (
+                    <Chip size="small" label={`Cari: "${permintaanFilters.search.trim()}"`}
+                      onDelete={() => handlePermintaanFilterChange({ search: '' })} />
+                  )}
+                  {permintaanFilters.status && (
+                    <Chip size="small" color={statusColors[permintaanFilters.status] || 'default'}
+                      label={`Status: ${statusLabels[permintaanFilters.status] || permintaanFilters.status}`}
+                      onDelete={() => handlePermintaanFilterChange({ status: '' })} />
+                  )}
+                  {permintaanFilters.bulan && (
+                    <Chip size="small" color="info"
+                      label={`Bulan: ${formatBulanFilter(permintaanFilters.bulan)}`}
+                      onDelete={() => handlePermintaanFilterChange({ bulan: '' })} />
+                  )}
+                </Box>
+              )}
+            </Paper>
+
           <TableContainer component={Paper} sx={{ borderRadius: 2, boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
             <Table>
               <TableHead>
@@ -1098,7 +1256,7 @@ const PersediaanContainer = ({ session }) => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {permintaanList
+                {filteredPermintaanList
                   .slice(permintaanPage * permintaanRowsPerPage, permintaanPage * permintaanRowsPerPage + permintaanRowsPerPage)
                   .map((group) => {
                   const isExpanded = expandedPermintaan[group.group_id];
@@ -1115,9 +1273,17 @@ const PersediaanContainer = ({ session }) => {
                           <Typography variant="body2" fontWeight={500}>
                             {formatDateForDisplay(group.tanggal_permintaan)}
                           </Typography>
+                          {group.nomor_dokumen && (
+                            <Typography variant="caption" color="text.secondary">
+                              No. {group.nomor_dokumen}
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2" fontWeight={500}>{group.requested_by || '-'}</Typography>
+                          <Typography variant="caption" color="text.secondary">
+                            Fungsi: {group.fungsi || '-'}
+                          </Typography>
                         </TableCell>
                         <TableCell>
                           <Typography variant="body2">
@@ -1236,14 +1402,18 @@ const PersediaanContainer = ({ session }) => {
                     </React.Fragment>
                   );
                 })}
-                {permintaanList.length === 0 && !loading && (
-                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 4, color: '#94a3b8' }}>Belum ada permintaan</TableCell></TableRow>
+                {filteredPermintaanList.length === 0 && !loading && (
+                  <TableRow><TableCell colSpan={7} align="center" sx={{ py: 4, color: '#94a3b8' }}>
+                    {hasPermintaanFilter
+                      ? 'Tidak ada permintaan yang cocok dengan pencarian/filter'
+                      : 'Belum ada permintaan'}
+                  </TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
             <TablePagination
               component="div"
-              count={permintaanList.length}
+              count={filteredPermintaanList.length}
               page={permintaanPage}
               onPageChange={(e, p) => setPermintaanPage(p)}
               rowsPerPage={permintaanRowsPerPage}
@@ -1591,6 +1761,24 @@ const PersediaanContainer = ({ session }) => {
               onChange={(e) => setPermintaanTanggal(e.target.value)}
               InputLabelProps={{ shrink: true }} />
 
+            {/* Fungsi / unit pemohon */}
+            <FormControl fullWidth size="small" required>
+              <InputLabel id="permintaan-fungsi-label">Fungsi</InputLabel>
+              <Select
+                labelId="permintaan-fungsi-label"
+                label="Fungsi"
+                displayEmpty
+                value={permintaanFungsi}
+                onChange={(e) => setPermintaanFungsi(e.target.value)}
+                renderValue={(v) => (v || <span style={{ color: '#94a3b8' }}>Pilih fungsi...</span>)}
+              >
+                <MenuItem value="" disabled>Pilih fungsi...</MenuItem>
+                {FUNGSI_OPTIONS.map((f) => (
+                  <MenuItem key={f} value={f}>{f}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
             {/* Items */}
             {permintaanItems.map((item, idx) => (
               <Box key={idx} sx={{ p: 2, border: '1px solid #e2e8f0', borderRadius: 2, bgcolor: '#f8fafc' }}>
@@ -1635,9 +1823,9 @@ const PersediaanContainer = ({ session }) => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => { setPermintaanModalOpen(false); setPermintaanItems([{ barang_id: '', jumlah: '', catatan: '' }]); setPermintaanCatatan(''); setPermintaanTanggal(new Date().toISOString().split('T')[0]); }}>Batal</Button>
+          <Button onClick={() => { setPermintaanModalOpen(false); setPermintaanItems([{ barang_id: '', jumlah: '', catatan: '' }]); setPermintaanFungsi(FUNGSI_DEFAULT); setPermintaanCatatan(''); setPermintaanTanggal(new Date().toISOString().split('T')[0]); }}>Batal</Button>
           <Button variant="contained" onClick={handleSubmitPermintaan}
-            disabled={permintaanItems.every(i => !i.barang_id || !i.jumlah)}>
+            disabled={!permintaanFungsi || permintaanItems.every(i => !i.barang_id || !i.jumlah)}>
             Ajukan ({permintaanItems.filter(i => i.barang_id && i.jumlah).length} item)
           </Button>
         </DialogActions>
