@@ -1,11 +1,19 @@
 -- ============================================================
--- Migration: Nomor dokumen SPB/SBBK per bulan (format MM + urut 3 digit)
--- Contoh: 09001 = September, nomor urut 1; 10001 = Oktober, nomor urut 1.
--- Nomor disimpan per grup permintaan agar tetap sama saat dicetak ulang.
+-- Migration: Nomor dokumen SPB/SBBK (format MM + urut 3 digit)
+-- Contoh: 09001 = penyerahan September ke-1; 10001 = penyerahan Oktober ke-1.
+--
+-- Aturan nomor:
+--  - Nomor hanya terbentuk setelah barang DISERAHKAN (delivered_at terisi).
+--    Permintaan yang masih draft/menunggu persetujuan tidak punya nomor.
+--  - Urutan mengikuti tanggal serah (bukan tanggal permintaan).
+--  - Prefix bulan diambil dari bulan tanggal serah; urutan reset tiap bulan.
+--  - Nomor disimpan per grup permintaan agar tetap sama saat dicetak ulang.
+--
 -- Jalankan: mysql -h 127.0.0.1 -u root pemeliharaan_aset_bpom < data/migration_permintaan_nomor.sql
 -- (idempotent — aman dijalankan ulang)
 -- ============================================================
 
+-- 1. Tambah kolom bila belum ada (mis. setelah kolom dihapus manual)
 SET @col_exists := (
   SELECT COUNT(*) FROM information_schema.COLUMNS
   WHERE TABLE_SCHEMA = DATABASE()
@@ -17,22 +25,31 @@ SET @sql := IF(@col_exists = 0,
   'SELECT ''permintaan_barang.nomor_dokumen sudah ada''');
 PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
--- Backfill data lama: urutkan per grup berdasarkan tanggal permintaan, dimulai dari 001
-SET @numbered := (SELECT COUNT(*) FROM permintaan_barang WHERE nomor_dokumen IS NOT NULL);
-SET @sql := IF(@numbered = 0,
-  'UPDATE permintaan_barang p
-   JOIN (
-     SELECT g.group_id, g.bln,
-            ROW_NUMBER() OVER (PARTITION BY g.bln ORDER BY g.tgl, g.created_first) AS seq
-     FROM (
-       SELECT group_id,
-              DATE_FORMAT(COALESCE(MIN(tanggal_permintaan), MIN(created_at)), ''%m'') AS bln,
-              COALESCE(MIN(tanggal_permintaan), MIN(created_at)) AS tgl,
-              MIN(created_at) AS created_first
-       FROM permintaan_barang
-       GROUP BY group_id
-     ) g
-   ) x ON x.group_id = p.group_id
-   SET p.nomor_dokumen = CONCAT(x.bln, LPAD(x.seq, 3, ''0''))',
-  'SELECT ''nomor_dokumen sudah terisi''');
-PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+-- 2. Grup yang belum pernah diserahkan tidak boleh menyimpan nomor
+UPDATE permintaan_barang p
+LEFT JOIN (
+  SELECT group_id
+  FROM permintaan_barang
+  WHERE delivered_at IS NOT NULL
+  GROUP BY group_id
+) d ON d.group_id = p.group_id
+SET p.nomor_dokumen = NULL
+WHERE d.group_id IS NULL
+  AND p.nomor_dokumen IS NOT NULL;
+
+-- 3. Isi nomor untuk grup yang sudah diserahkan, urut tanggal serah per bulan
+UPDATE permintaan_barang p
+JOIN (
+  SELECT g.group_id, g.bln,
+         LPAD(ROW_NUMBER() OVER (PARTITION BY g.bln ORDER BY g.tgl_serah, g.created_first), 3, '0') AS seq
+  FROM (
+    SELECT group_id,
+           DATE_FORMAT(MIN(delivered_at), '%m') AS bln,
+           MIN(delivered_at) AS tgl_serah,
+           MIN(created_at) AS created_first
+    FROM permintaan_barang
+    WHERE delivered_at IS NOT NULL
+    GROUP BY group_id
+  ) g
+) x ON x.group_id = p.group_id
+SET p.nomor_dokumen = CONCAT(x.bln, x.seq);

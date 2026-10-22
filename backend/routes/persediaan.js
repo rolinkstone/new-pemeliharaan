@@ -1040,19 +1040,13 @@ router.post('/permintaan', keycloakAuth, async (req, res) => {
         }
 
         const results = [];
-        // Nomor dokumen SPB/SBBK: MM + urut 3 digit, reset tiap bulan (mis. 10001)
-        const [blnRows] = await db.query("SELECT DATE_FORMAT(?, '%m') AS bln", [tgl]);
-        const bulan = blnRows[0].bln;
-        const [mxRows] = await db.query(
-            'SELECT COALESCE(MAX(CAST(SUBSTRING(nomor_dokumen, 3) AS UNSIGNED)), 0) AS maxseq FROM permintaan_barang WHERE LEFT(nomor_dokumen, 2) = ?',
-            [bulan]
-        );
-        const nomorDokumen = `${bulan}${String(Number(mxRows[0].maxseq) + 1).padStart(3, '0')}`;
+        // Nomor dokumen SPB/SBBK baru dialokasikan saat barang diserahkan (lihat
+        // alokasiNomorDokumen), karena urutannya mengikuti tanggal serah.
         for (const item of items) {
             if (!item.barang_id || !item.jumlah) continue;
             const [result] = await db.query(
-                'INSERT INTO permintaan_barang (group_id, nomor_dokumen, fungsi, tanggal_permintaan, barang_id, jumlah, jumlah_diminta, catatan, status, requested_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, "draft", ?)',
-                [groupId, nomorDokumen, fungsi, tgl, item.barang_id, item.jumlah, item.jumlah, item.catatan || catatan || '', username]
+                'INSERT INTO permintaan_barang (group_id, fungsi, tanggal_permintaan, barang_id, jumlah, jumlah_diminta, catatan, status, requested_by) VALUES (?, ?, ?, ?, ?, ?, ?, "draft", ?)',
+                [groupId, fungsi, tgl, item.barang_id, item.jumlah, item.jumlah, item.catatan || catatan || '', username]
             );
             results.push(result.insertId);
         }
@@ -1148,6 +1142,26 @@ router.put('/permintaan/:groupId/approve-kabag', keycloakAuth, async (req, res) 
     }
 });
 
+// Nomor dokumen SPB/SBBK: MM + urut 3 digit, reset tiap bulan (mis. 10001).
+// Urutan mengikuti tanggal barang diserahkan (bukan tanggal permintaan), sehingga
+// nomor dialokasikan saat penyerahan pertama sebuah grup. Nomor milik grup yang
+// belum pernah diserahkan diabaikan agar tidak menggeser urutan.
+const alokasiNomorDokumen = async (conn, groupId, acuanTanggal) => {
+    const [blnRows] = await conn.query("SELECT DATE_FORMAT(?, '%m') AS bln", [acuanTanggal]);
+    const bulan = blnRows[0].bln;
+    const [mxRows] = await conn.query(
+        `SELECT COALESCE(MAX(CAST(SUBSTRING(nomor_dokumen, 3) AS UNSIGNED)), 0) AS maxseq
+         FROM permintaan_barang
+         WHERE LEFT(nomor_dokumen, 2) = ?
+           AND delivered_at IS NOT NULL
+           AND (group_id IS NULL OR group_id <> ?)`,
+        [bulan, groupId]
+    );
+    const nomor = `${bulan}${String(Number(mxRows[0].maxseq) + 1).padStart(3, '0')}`;
+    await conn.query('UPDATE permintaan_barang SET nomor_dokumen=? WHERE group_id=?', [nomor, groupId]);
+    return nomor;
+};
+
 // POST proses-items (PIC Gudang) — serahkan per item, bisa koreksi jumlah & tolak per item
 router.post('/permintaan/:groupId/proses-items', keycloakAuth, async (req, res) => {
     if (!hasRole(req, ['pic_gudang', 'admin', 'superadmin'])) {
@@ -1166,6 +1180,14 @@ router.post('/permintaan/:groupId/proses-items', keycloakAuth, async (req, res) 
         }
 
         let serahCount = 0, tolakCount = 0;
+
+        // Apakah grup ini sudah pernah diserahkan sebelumnya? Bila belum, nomor
+        // dokumen dialokasikan berdasarkan penyerahan kali ini.
+        const [serahSebelumnya] = await conn.query(
+            'SELECT COUNT(*) AS cnt FROM permintaan_barang WHERE group_id=? AND delivered_at IS NOT NULL',
+            [groupId]
+        );
+        const sudahAdaSerahan = Number(serahSebelumnya[0].cnt) > 0;
 
         for (const item of items) {
             // Ambil data permintaan & stok
@@ -1206,6 +1228,18 @@ router.post('/permintaan/:groupId/proses-items', keycloakAuth, async (req, res) 
                 );
 
                 serahCount++;
+            }
+        }
+
+        // Nomor dokumen mengikuti tanggal serah: alokasikan pada penyerahan pertama
+        // (atau bila data lama belum punya nomor).
+        if (serahCount > 0) {
+            const [grupRows] = await conn.query(
+                'SELECT MIN(delivered_at) AS tgl_serah, MAX(nomor_dokumen) AS nomor FROM permintaan_barang WHERE group_id=?',
+                [groupId]
+            );
+            if (!sudahAdaSerahan || !grupRows[0].nomor) {
+                await alokasiNomorDokumen(conn, groupId, grupRows[0].tgl_serah);
             }
         }
 
