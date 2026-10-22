@@ -572,29 +572,32 @@ router.get('/reagen/pengeluaran', keycloakAuth, async (req, res) => {
         `, params);
 
         const groups = {};
+        // Metadata grup diambil dari nilai non-kosong baris mana pun: baris yang
+        // ditolak tidak menyimpan delivered_by / delivered_at / approved_kabag_by,
+        // sehingga TTD bisa hilang bila baris ditolak menjadi baris pertama.
+        const FIELDS_GRUP = [
+            'requested_by', 'katim_id', 'katim_nama', 'approved_katim_by', 'approved_katim_at',
+            'approved_kabag_by', 'approved_kabag_at', 'approved_by', 'approved_at',
+            'delivered_by', 'delivered_at', 'created_at',
+        ];
         for (const r of rows) {
             const gid = r.group_id || `sg-${r.id}`;
             if (!groups[gid]) {
-                groups[gid] = {
-                    group_id: gid,
-                    requested_by: r.requested_by,
-                    catatan: r.catatan,
-                    status: r.status,
-                    katim_id: r.katim_id,
-                    katim_nama: r.katim_nama,
-                    approved_katim_by: r.approved_katim_by,
-                    approved_katim_at: r.approved_katim_at,
-                    approved_kabag_by: r.approved_kabag_by,
-                    approved_kabag_at: r.approved_kabag_at,
-                    approved_by: r.approved_by,
-                    approved_at: r.approved_at,
-                    delivered_by: r.delivered_by,
-                    delivered_at: r.delivered_at,
-                    created_at: r.created_at,
-                    items: []
-                };
+                groups[gid] = { group_id: gid, status: r.status, catatan: null, items: [] };
             }
-            groups[gid].items.push({
+            const g = groups[gid];
+            for (const f of FIELDS_GRUP) {
+                const v = r[f];
+                if ((g[f] === null || g[f] === undefined || g[f] === '') && v !== null && v !== undefined && v !== '') {
+                    g[f] = v;
+                }
+            }
+            // Catatan grup: utamakan baris yang tidak ditolak.
+            if (r.catatan) {
+                if (r.status !== 'ditolak') g.catatan = r.catatan;
+                else if (!g.catatan) g.catatan = r.catatan;
+            }
+            g.items.push({
                 id: r.id,
                 reagen_id: r.reagen_id,
                 batch_id: r.batch_id,

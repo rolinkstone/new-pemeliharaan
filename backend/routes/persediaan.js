@@ -925,32 +925,36 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
             ORDER BY p.created_at DESC
         `, params);
 
-        // Group by group_id
+        // Group by group_id.
+        // Metadata grup diambil dari nilai non-kosong baris mana pun: baris yang
+        // ditolak tidak menyimpan delivered_by / delivered_at / approved_kabag_by,
+        // sehingga TTD bisa hilang bila baris ditolak menjadi baris pertama.
+        const FIELDS_GRUP = [
+            'nomor_dokumen', 'fungsi', 'tanggal_permintaan', 'requested_by',
+            'katim_id', 'katim_nama', 'approved_katim_by', 'approved_katim_at',
+            'approved_kabag_by', 'approved_kabag_at', 'delivered_by', 'delivered_at',
+            'created_at',
+        ];
         const groups = {};
         for (const r of rows) {
             const gid = r.group_id || `sg-${r.id}`;
             if (!groups[gid]) {
-                groups[gid] = {
-                    group_id: gid,
-                    nomor_dokumen: r.nomor_dokumen || null,
-                    fungsi: r.fungsi || 'Tata Usaha',
-                    tanggal_permintaan: r.tanggal_permintaan,
-                    requested_by: r.requested_by,
-                    catatan: r.catatan,
-                    status: r.status,
-                    created_at: r.created_at,
-                    katim_id: r.katim_id,
-                    katim_nama: r.katim_nama,
-                    approved_katim_by: r.approved_katim_by,
-                    approved_katim_at: r.approved_katim_at,
-                    approved_kabag_by: r.approved_kabag_by,
-                    approved_kabag_at: r.approved_kabag_at,
-                    delivered_by: r.delivered_by,
-                    delivered_at: r.delivered_at,
-                    items: []
-                };
+                groups[gid] = { group_id: gid, status: r.status, catatan: null, items: [] };
             }
-            groups[gid].items.push({
+            const g = groups[gid];
+            for (const f of FIELDS_GRUP) {
+                const v = r[f];
+                if ((g[f] === null || g[f] === undefined || g[f] === '') && v !== null && v !== undefined && v !== '') {
+                    g[f] = v;
+                }
+            }
+            // Catatan grup: utamakan baris yang tidak ditolak, agar alasan
+            // penolakan per item tidak tampil sebagai catatan grup.
+            if (r.catatan) {
+                if (r.status !== 'ditolak') g.catatan = r.catatan;
+                else if (!g.catatan) g.catatan = r.catatan;
+            }
+            g.items.push({
                 id: r.id,
                 barang_id: r.barang_id,
                 kode_barang: r.kode_barang,
@@ -966,6 +970,7 @@ router.get('/permintaan', keycloakAuth, async (req, res) => {
         // Derive group status from all items + summary counts
         for (const gid of Object.keys(groups)) {
             const group = groups[gid];
+            group.fungsi = group.fungsi || 'Tata Usaha';
             const itemStatuses = group.items.map(i => i.status);
             const uniqueStatuses = [...new Set(itemStatuses)];
             group.diserahkan_count = itemStatuses.filter(s => s === 'diserahkan').length;
