@@ -26,7 +26,9 @@ router.post('/penandatangan', keycloakAuth, async (req, res) => {
       return res.json({ success: true, data: [], message: 'Tidak ada kunci yang dikirim' });
     }
 
-    const hasil = await cariTtd(keys);
+    const hasil = await cariTtd(keys, {
+      refresh: req.body?.refresh === true || req.query?.refresh === '1',
+    });
     res.json({
       success: true,
       data: hasil,

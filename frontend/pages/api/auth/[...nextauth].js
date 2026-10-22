@@ -1,6 +1,7 @@
 // pages/api/auth/[...nextauth].js
 import NextAuth from "next-auth";
 import KeycloakProvider from "next-auth/providers/keycloak";
+import { authCookies } from "../../../utils/authCookies";
 
 // ========== ROLE HELPERS ==========
 // Role yang dikenali aplikasi. Tambahkan role baru di sini agar ikut masuk ke session.
@@ -221,6 +222,10 @@ export const authOptions = {
     strategy: 'jwt',
     maxAge: 4 * 60 * 60,
   },
+
+  // Nama cookie khusus Tabela agar tidak bertabrakan dengan sesi aplikasi
+  // Talawang (NextAuth) pada host yang sama.
+  cookies: authCookies,
 
   debug: process.env.NODE_ENV === 'development',
   secret: process.env.NEXTAUTH_SECRET,

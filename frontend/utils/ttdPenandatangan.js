@@ -51,7 +51,7 @@ export const ambilPetaTtd = async (session, keys = []) => {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ keys: daftar }),
+      body: JSON.stringify({ keys: daftar, refresh: true }),
     });
 
     if (!res.ok) return peta;

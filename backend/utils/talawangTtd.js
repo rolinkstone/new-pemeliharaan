@@ -163,8 +163,8 @@ async function muatPetaIdentitas() {
   return map;
 }
 
-async function petaIdentitas() {
-  if (cacheIdentitas.map && Date.now() - cacheIdentitas.at < CACHE_IDENTITAS_TTL_MS) {
+async function petaIdentitas(force = false) {
+  if (!force && cacheIdentitas.map && Date.now() - cacheIdentitas.at < CACHE_IDENTITAS_TTL_MS) {
     return cacheIdentitas.map;
   }
   try {
@@ -202,9 +202,12 @@ const cocokLewatIdentitas = (kunci, petaTtd, petaId) => {
 /**
  * Cari TTD berdasarkan daftar kunci (boleh campur: user_id / NIP / username / nama).
  * @param {string[]} keys
+ * @param {{ refresh?: boolean }} [opsi] - refresh: paksa baca ulang data
+ *   `user_profiles` (dipakai saat cetak agar TTD yang baru diunggah langsung terbaca).
  * @returns {Promise<Array<{kunci:string, ketemu:boolean, nama?:string, jabatan?:string, nip?:string, ttd_url?:string}>>}
  */
-async function cariTtd(keys = []) {
+async function cariTtd(keys = [], opsi = {}) {
+  const forceRefresh = Boolean(opsi.refresh);
   const daftar = (Array.isArray(keys) ? keys : [keys])
     .map((k) => String(k ?? '').trim())
     .filter(Boolean)
@@ -212,7 +215,7 @@ async function cariTtd(keys = []) {
 
   if (daftar.length === 0) return [];
 
-  if (!cache.map || Date.now() - cache.at > CACHE_TTL_MS) {
+  if (forceRefresh || !cache.map || Date.now() - cache.at > CACHE_TTL_MS) {
     try {
       const map = await muatPetaTtd();
       cache = { at: Date.now(), map, error: null };
@@ -236,7 +239,7 @@ async function cariTtd(keys = []) {
   // Keycloak, lalu dicocokkan lagi ke peta TTD Talawang.
   const belumKetemu = hasil.map((h, i) => (h ? -1 : i)).filter((i) => i >= 0);
   if (belumKetemu.length > 0) {
-    const petaId = await petaIdentitas();
+    const petaId = await petaIdentitas(forceRefresh);
     if (petaId) {
       belumKetemu.forEach((i) => {
         const rec = cocokLewatIdentitas(daftar[i], cache.map, petaId);

@@ -1,6 +1,7 @@
 // middleware.js
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { SESSION_COOKIE_NAME } from "./utils/authCookies";
 
 export default withAuth(
   function middleware(req) {
@@ -25,6 +26,13 @@ export default withAuth(
     return NextResponse.next();
   },
   {
+    // Baca sesi dari cookie khusus Tabela (bukan nama default NextAuth)
+    cookies: {
+      sessionToken: { name: SESSION_COOKIE_NAME },
+    },
+    pages: {
+      signIn: '/login',
+    },
     callbacks: {
       authorized: ({ token, req }) => {
         const path = req.nextUrl.pathname;
