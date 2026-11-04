@@ -1,11 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
 const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { getUsernameFromToken, hasRole } = require('../utils/routeHelpers');
 const { mergeFilesToPdf, safeFileName } = require('../utils/pdfMerge');
+const { findUpload } = require('../utils/uploadsDir');
 const { normalizeStr, looksLikeNote, readRowsWithAliases } = require('../utils/xlsxImport');
 const { buildXlsxSheet, sendWorkbook, todayFileStamp } = require('../utils/xlsxExport');
 let XLSX = null;
@@ -777,12 +776,13 @@ router.get('/barang-masuk/merge', keycloakAuth, async (req, res) => {
         if (urls.length === 0) {
             return res.status(400).json({ success: false, message: 'Parameter nota/foto wajib diisi' });
         }
-        const uploadsDir = path.join(__dirname, '../uploads');
-        const files = urls
-            .map(u => path.join(uploadsDir, safeFileName(u)))
-            .filter(fp => fs.existsSync(fp));
+        const names = urls.map(u => safeFileName(u)).filter(Boolean);
+        const files = names.map(n => findUpload(n)).filter(Boolean);
         if (files.length === 0) {
-            return res.status(404).json({ success: false, message: 'File lampiran tidak ditemukan' });
+            return res.status(404).json({
+                success: false,
+                message: `File lampiran tidak ditemukan di server: ${names.join(', ') || '-'}`
+            });
         }
         const pdf = await mergeFilesToPdf(files);
         const today = new Date().toISOString().slice(0, 10);
@@ -792,6 +792,82 @@ router.get('/barang-masuk/merge', keycloakAuth, async (req, res) => {
     } catch (error) {
         console.error('Error merge barang masuk:', error);
         res.status(500).json({ success: false, message: 'Gagal menggabungkan lampiran', error: error.message });
+    }
+});
+
+// Normalisasi URL lampiran barang masuk.
+// Hasil: '' (kosong = hapus lampiran), string URL kanonik, atau null (tidak valid).
+// File yang dirujuk WAJIB sudah ada di folder upload, supaya re-upload tidak
+// menyimpan URL yang berujung "File not found" saat dibuka pengguna.
+const normalizeLampiranUrl = (value) => {
+    const raw = String(value ?? '').trim();
+    if (!raw) return '';
+    const match = raw.match(/\/uploads\/([^/?#]+)(?:[?#].*)?$/);
+    if (!match) return null;
+    const nama = safeFileName(match[1]);
+    if (!nama || !findUpload(nama)) return null;
+    if (raw.startsWith('/uploads/')) return `/uploads/${nama}`;
+    try {
+        const url = new URL(raw);
+        if (!/^https?:$/.test(url.protocol)) return null;
+        return `${url.origin}/uploads/${nama}`;
+    } catch {
+        return null;
+    }
+};
+
+// PUT upload ulang lampiran (nota/kuitansi & foto barang) pada barang masuk.
+// Satu nota dipakai bersama semua barang dalam grup, jadi perubahan diterapkan
+// ke seluruh baris dengan kuitansi_url yang sama agar tampilan grup konsisten.
+router.put('/barang-masuk/:id/lampiran', keycloakAuth, async (req, res) => {
+    if (!hasRole(req, ['pic_gudang', 'admin', 'superadmin'])) {
+        return res.status(403).json({ success: false, message: 'Akses ditolak. Hanya pic_gudang yang dapat mengubah lampiran barang masuk.' });
+    }
+    const id = parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id <= 0) {
+        return res.status(400).json({ success: false, message: 'ID barang masuk tidak valid' });
+    }
+    const { kuitansi_url, foto_url } = req.body || {};
+    if (kuitansi_url === undefined && foto_url === undefined) {
+        return res.status(400).json({ success: false, message: 'Tidak ada lampiran yang diubah' });
+    }
+
+    const nota = kuitansi_url === undefined ? undefined : normalizeLampiranUrl(kuitansi_url);
+    const foto = foto_url === undefined ? undefined : normalizeLampiranUrl(foto_url);
+    if (nota === null) {
+        return res.status(400).json({ success: false, message: 'File nota/kuitansi tidak ditemukan di server. Upload ulang file terlebih dahulu.' });
+    }
+    if (foto === null) {
+        return res.status(400).json({ success: false, message: 'File foto barang tidak ditemukan di server. Upload ulang file terlebih dahulu.' });
+    }
+    if (nota === '') {
+        return res.status(400).json({ success: false, message: 'Nota/kuitansi tidak boleh dikosongkan' });
+    }
+
+    try {
+        const [rows] = await db.query('SELECT id, kuitansi_url FROM barang_masuk WHERE id = ?', [id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Barang masuk tidak ditemukan' });
+        }
+        const current = rows[0];
+        const sets = [];
+        const values = [];
+        if (nota !== undefined) { sets.push('kuitansi_url = ?'); values.push(nota); }
+        if (foto !== undefined) { sets.push('foto_url = ?'); values.push(foto); }
+
+        // Baris lama tanpa nota tidak punya grup -> ubah baris itu saja.
+        const [result] = current.kuitansi_url
+            ? await db.query(`UPDATE barang_masuk SET ${sets.join(', ')} WHERE kuitansi_url = ?`, [...values, current.kuitansi_url])
+            : await db.query(`UPDATE barang_masuk SET ${sets.join(', ')} WHERE id = ?`, [...values, id]);
+
+        res.json({
+            success: true,
+            message: 'Lampiran barang masuk berhasil diperbarui',
+            data: { updated: result.affectedRows }
+        });
+    } catch (error) {
+        console.error('Error update lampiran barang masuk:', error);
+        res.status(500).json({ success: false, message: 'Gagal memperbarui lampiran', error: error.message });
     }
 });
 

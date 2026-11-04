@@ -6,12 +6,10 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
+const { ensureUploadsDir, findUpload } = require('../utils/uploadsDir');
 
 // Pastikan folder uploads ada
-const uploadDir = path.join(__dirname, '../uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
+const uploadDir = ensureUploadsDir();
 
 // Konfigurasi multer untuk upload file
 const storage = multer.diskStorage({
@@ -124,10 +122,10 @@ router.post('/foto/single', keycloakAuth, upload.single('foto'), (req, res) => {
 router.delete('/foto/:filename', keycloakAuth, (req, res) => {
     try {
         const { filename } = req.params;
-        const filePath = path.join(uploadDir, filename);
+        const filePath = findUpload(filename);
         
-        // Cek apakah file ada
-        if (!fs.existsSync(filePath)) {
+        // Cek apakah file ada (folder aktif maupun folder lama)
+        if (!filePath) {
             return res.status(404).json({
                 success: false,
                 message: 'File tidak ditemukan'

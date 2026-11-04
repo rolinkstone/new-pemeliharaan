@@ -18,15 +18,12 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5002;
-const UPLOADS_DIR = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
+const { UPLOADS_DIR, ensureUploadsDir, findUpload } = require('./utils/uploadsDir');
 
 // ========== KONFIGURASI UPLOAD (TIDAK DIUBAH) ==========
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        if (!fs.existsSync(UPLOADS_DIR)) {
-            fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-        }
-        cb(null, UPLOADS_DIR);
+        cb(null, ensureUploadsDir());
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
@@ -55,9 +52,7 @@ const upload = multer({
 });
 
 // ========== MIDDLEWARE DASAR ==========
-if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+ensureUploadsDir();
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
@@ -279,8 +274,8 @@ app.get('/uploads/:filename', (req, res) => {
         return res.status(400).json({ success: false, message: 'Nama file tidak valid' });
     }
 
-    const filePath = path.join(UPLOADS_DIR, namaFile);
-    if (!fs.existsSync(filePath)) {
+    const filePath = findUpload(namaFile);
+    if (!filePath) {
         return res.status(404).json({ success: false, message: 'File not found' });
     }
 
@@ -294,8 +289,8 @@ app.get('/uploads/:filename', (req, res) => {
 });
 
 app.get('/api/check-file/:filename', (req, res) => {
-    const filePath = path.join(UPLOADS_DIR, req.params.filename);
-    res.json({ success: true, exists: fs.existsSync(filePath), filename: req.params.filename });
+    const filePath = findUpload(req.params.filename);
+    res.json({ success: true, exists: Boolean(filePath), filename: req.params.filename });
 });
 
 // ========== DATABASE ==========

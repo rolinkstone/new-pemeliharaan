@@ -91,6 +91,12 @@ export const tolakBarangMasuk = async (session, id, alasan) => {
   return data;
 };
 
+// Upload ulang lampiran (nota/kuitansi & foto barang) pada satu grup barang masuk
+export const updateBarangMasukLampiran = async (session, id, body) => {
+  const { data } = await axios.put(`${API_URL}/barang-masuk/${id}/lampiran`, body, { headers: getHeaders(session) });
+  return data;
+};
+
 // ========== PERMINTAAN BARANG ==========
 export const fetchPermintaan = async (session) => {
   const { data } = await axios.get(`${API_URL}/permintaan`, { headers: getHeaders(session) });

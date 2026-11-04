@@ -1,11 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const fs = require('fs');
 const db = require('../db');
 const { keycloakAuth } = require('../middleware/keycloakAuth');
 const { getUsernameFromToken, hasRole } = require('../utils/routeHelpers');
 const { mergeFilesToPdf, safeFileName } = require('../utils/pdfMerge');
+const { findUpload } = require('../utils/uploadsDir');
 let XLSX = null;
 try { XLSX = require('xlsx-js-style'); } catch (e) {
     try { XLSX = require('xlsx'); } catch (e2) { console.log('⚠️ xlsx not installed, import disabled'); }
@@ -464,12 +463,13 @@ router.get('/reagen/masuk/merge', keycloakAuth, async (req, res) => {
         if (urls.length === 0) {
             return res.status(400).json({ success: false, message: 'Parameter nota/foto wajib diisi' });
         }
-        const uploadsDir = path.join(__dirname, '../uploads');
-        const files = urls
-            .map(u => path.join(uploadsDir, safeFileName(u)))
-            .filter(fp => fs.existsSync(fp));
+        const names = urls.map(u => safeFileName(u)).filter(Boolean);
+        const files = names.map(n => findUpload(n)).filter(Boolean);
         if (files.length === 0) {
-            return res.status(404).json({ success: false, message: 'File lampiran tidak ditemukan' });
+            return res.status(404).json({
+                success: false,
+                message: `File lampiran tidak ditemukan di server: ${names.join(', ') || '-'}`
+            });
         }
         const pdf = await mergeFilesToPdf(files);
         const today = new Date().toISOString().slice(0, 10);
