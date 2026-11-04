@@ -746,22 +746,6 @@ describe('🧾 Barang Masuk — foto_url & merge lampiran (PDF)', function () {
     const r2 = await request(app).get('/api/reagen/reagen/masuk/merge?nota=/uploads/not-exist-a.jpg&foto=/uploads/not-exist-b.jpg');
     assert.strictEqual(r2.status, 404, `Reagen merge file hilang harus 404, dapat ${r2.status}`);
   });
-
-  it('PUT lampiran barang masuk: validasi input (tanpa mengubah data)', async function () {
-    const url = '/api/persediaan/barang-masuk/1/lampiran';
-
-    const idSalah = await request(app).put('/api/persediaan/barang-masuk/abc/lampiran').send({ foto_url: '/uploads/x.jpg' });
-    assert.strictEqual(idSalah.status, 400, `ID tidak valid harus 400, dapat ${idSalah.status}`);
-
-    const kosong = await request(app).put(url).send({});
-    assert.strictEqual(kosong.status, 400, `tanpa field lampiran harus 400, dapat ${kosong.status}`);
-
-    const fileHilang = await request(app).put(url).send({ kuitansi_url: '/uploads/tidak-ada-file-ini.pdf' });
-    assert.strictEqual(fileHilang.status, 400, `file tidak ada di server harus 400, dapat ${fileHilang.status}`);
-
-    const bukanUpload = await request(app).put(url).send({ foto_url: 'https://contoh.test/gambar.jpg' });
-    assert.strictEqual(bukanUpload.status, 400, `URL bukan folder uploads harus 400, dapat ${bukanUpload.status}`);
-  });
 });
 
 // ============================================================

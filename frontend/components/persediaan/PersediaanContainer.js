@@ -352,13 +352,6 @@ const PersediaanContainer = ({ session }) => {
   const [bmCatatan, setBmCatatan] = useState('');
   const [bmTanggalPembelian, setBmTanggalPembelian] = useState('');
 
-  // Dialog upload ulang lampiran (berlaku untuk satu grup nota)
-  const [bmLampiranDialog, setBmLampiranDialog] = useState({ open: false, group: null });
-  const [bmLampiranNota, setBmLampiranNota] = useState('');
-  const [bmLampiranFoto, setBmLampiranFoto] = useState('');
-  const [bmLampiranUploading, setBmLampiranUploading] = useState({ nota: false, foto: false });
-  const [bmLampiranSaving, setBmLampiranSaving] = useState(false);
-
   const handleBmAddItem = () => {
     setBmItems(prev => [...prev, { barang_id: '', jumlah: '', catatan: '' }]);
   };
@@ -408,67 +401,6 @@ const PersediaanContainer = ({ session }) => {
       showSnackbar(e?.response?.data?.message || e.message, 'error');
     } finally {
       setBmFotoUploading(false);
-    }
-  };
-
-  const openBmLampiranDialog = (group) => {
-    setBmLampiranDialog({ open: true, group });
-    setBmLampiranNota(group?.kuitansi_url || '');
-    setBmLampiranFoto(group?.foto_url || '');
-  };
-
-  const closeBmLampiranDialog = () => {
-    if (bmLampiranUploading.nota || bmLampiranUploading.foto || bmLampiranSaving) return;
-    setBmLampiranDialog({ open: false, group: null });
-    setBmLampiranNota('');
-    setBmLampiranFoto('');
-  };
-
-  const handleBmLampiranUpload = async (jenis, file) => {
-    if (!file) return;
-    setBmLampiranUploading(prev => ({ ...prev, [jenis]: true }));
-    try {
-      const res = await api.uploadFile(session, file);
-      if (res?.success && res.data?.[0]?.url) {
-        const url = `${api.BACKEND_HOST}${res.data[0].url}`;
-        if (jenis === 'nota') setBmLampiranNota(url); else setBmLampiranFoto(url);
-        showSnackbar(jenis === 'nota' ? 'Nota/kuitansi baru berhasil diupload' : 'Foto barang baru berhasil diupload');
-      } else {
-        showSnackbar('Gagal upload file', 'error');
-      }
-    } catch (e) {
-      showSnackbar(e?.response?.data?.message || e.message, 'error');
-    } finally {
-      setBmLampiranUploading(prev => ({ ...prev, [jenis]: false }));
-    }
-  };
-
-  const handleSimpanBmLampiran = async () => {
-    const group = bmLampiranDialog.group;
-    const id = group?.items?.[0]?.id;
-    if (!id) { showSnackbar('Data barang masuk tidak valid', 'error'); return; }
-
-    const body = {};
-    if (bmLampiranNota && bmLampiranNota !== (group.kuitansi_url || '')) body.kuitansi_url = bmLampiranNota;
-    if (bmLampiranFoto !== (group.foto_url || '')) body.foto_url = bmLampiranFoto;
-    if (Object.keys(body).length === 0) { showSnackbar('Pilih file baru terlebih dahulu', 'warning'); return; }
-
-    setBmLampiranSaving(true);
-    try {
-      const res = await api.updateBarangMasukLampiran(session, id, body);
-      if (res?.success) {
-        showSnackbar(res.message || 'Lampiran berhasil diperbarui');
-        setBmLampiranDialog({ open: false, group: null });
-        setBmLampiranNota('');
-        setBmLampiranFoto('');
-        fetchAll();
-      } else {
-        showSnackbar(res?.message || 'Gagal memperbarui lampiran', 'error');
-      }
-    } catch (e) {
-      showSnackbar(e?.response?.data?.message || e.message, 'error');
-    } finally {
-      setBmLampiranSaving(false);
     }
   };
 
@@ -1147,17 +1079,6 @@ const PersediaanContainer = ({ session }) => {
                                   Download (PDF)
                                 </Button>
                               )}
-                              {isPicGudang && (
-                                <Button
-                                  size="small"
-                                  variant="outlined"
-                                  startIcon={<UploadIcon />}
-                                  onClick={() => openBmLampiranDialog(group)}
-                                  sx={{ textTransform: 'none', fontSize: '0.72rem', py: 0.5, px: 1 }}
-                                >
-                                  Upload Ulang Lampiran
-                                </Button>
-                              )}
                               <Typography variant="caption" color="text.secondary">
                                 {group.items.length} barang · {group.created_by}
                               </Typography>
@@ -1820,76 +1741,6 @@ const PersediaanContainer = ({ session }) => {
             disabled={!bmKuitansiUrl || bmItems.every(i => !i.barang_id || !i.jumlah)}
             startIcon={<CheckCircleIcon />}>
             Simpan & Tambah Stok
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Modal Upload Ulang Lampiran Barang Masuk */}
-      <Dialog open={bmLampiranDialog.open} onClose={closeBmLampiranDialog} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 600 }}>
-          <Box display="flex" alignItems="center" gap={1}>
-            <UploadIcon color="primary" />
-            Upload Ulang Lampiran
-          </Box>
-          <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
-            {bmLampiranDialog.group?.items?.length || 0} barang · {bmLampiranDialog.group?.created_by || '-'} — lampiran berlaku untuk satu nota
-          </Typography>
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            {/* Nota / kuitansi */}
-            <Box sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px dashed', borderColor: '#cbd5e1' }}>
-              <Typography variant="subtitle2" gutterBottom fontWeight={600}>Nota / Kuitansi</Typography>
-              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
-                <Button variant="contained" component="label" disabled={bmLampiranUploading.nota || bmLampiranSaving}>
-                  {bmLampiranUploading.nota ? 'Mengupload...' : 'Pilih File Baru'}
-                  <input type="file" hidden accept="image/*,.pdf" onChange={(e) => { if (e.target.files[0]) handleBmLampiranUpload('nota', e.target.files[0]); e.target.value = ''; }} />
-                </Button>
-                {bmLampiranUploading.nota && <CircularProgress size={20} />}
-                {bmLampiranNota ? (
-                  <a href={bmLampiranNota} target="_blank" rel="noreferrer">
-                    <Button size="small" startIcon={<DownloadIcon />}>Lihat</Button>
-                  </a>
-                ) : (
-                  <Typography variant="caption" color="text.disabled">Belum ada nota</Typography>
-                )}
-              </Box>
-            </Box>
-
-            {/* Foto barang */}
-            <Box sx={{ p: 2, bgcolor: '#fff7ed', borderRadius: 2, border: '1px dashed', borderColor: '#fdba74' }}>
-              <Typography variant="subtitle2" gutterBottom fontWeight={600}>Foto Barang</Typography>
-              <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
-                <Button variant="contained" color="warning" component="label" disabled={bmLampiranUploading.foto || bmLampiranSaving}>
-                  {bmLampiranUploading.foto ? 'Mengupload...' : 'Pilih Foto Baru'}
-                  <input type="file" hidden accept="image/*" onChange={(e) => { if (e.target.files[0]) handleBmLampiranUpload('foto', e.target.files[0]); e.target.value = ''; }} />
-                </Button>
-                {bmLampiranUploading.foto && <CircularProgress size={20} />}
-                {bmLampiranFoto ? (
-                  <>
-                    <a href={bmLampiranFoto} target="_blank" rel="noreferrer">
-                      <Button size="small" startIcon={<DownloadIcon />}>Lihat</Button>
-                    </a>
-                    <IconButton size="small" aria-label="Kosongkan foto" onClick={() => setBmLampiranFoto('')} sx={{ color: '#ef4444' }}>
-                      <CancelIcon fontSize="small" />
-                    </IconButton>
-                  </>
-                ) : (
-                  <Typography variant="caption" color="text.disabled">Belum ada foto</Typography>
-                )}
-              </Box>
-            </Box>
-
-            <Alert severity="info" sx={{ py: 0.5 }}>
-              Perubahan berlaku untuk semua barang pada nota ini. File lama tidak dihapus otomatis.
-            </Alert>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={closeBmLampiranDialog} disabled={bmLampiranSaving}>Batal</Button>
-          <Button variant="contained" onClick={handleSimpanBmLampiran} startIcon={<CheckCircleIcon />}
-            disabled={bmLampiranSaving || bmLampiranUploading.nota || bmLampiranUploading.foto || !bmLampiranNota}>
-            Simpan Lampiran
           </Button>
         </DialogActions>
       </Dialog>
