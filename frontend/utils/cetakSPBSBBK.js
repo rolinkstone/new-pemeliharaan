@@ -5,6 +5,8 @@
 
 const KODE_DOKUMEN = 'POM-14.02/CEM.02/SOP.01/IK.16A.01/F.03';
 const INSTANSI = 'BADAN PENGAWAS OBAT DAN MAKANAN';
+// Nama unit kerja, dicetak di bawah nama instansi pada kop SPB & SBBK.
+const UNIT_KERJA = 'BALAI BESAR PENGAWAS OBAT DAN MAKANAN DI PALANGKA RAYA';
 
 // Logo BADAN POM — file statis frontend (frontend/public/images/BADAN_POM.png)
 const LOGO_URL =
@@ -177,6 +179,7 @@ const buildDoc = ({ judul, nomor, tanggal, unit, rows, kolom, indexTtd, isLast }
       <div class="instansi">
         <div class="badan">BADAN POM</div>
         <div class="nama-lengkap">${INSTANSI}</div>
+        <div class="unit-kerja">${UNIT_KERJA}</div>
       </div>
       <div class="title">${escapeHtml(judul)}</div>
     </div>
@@ -307,6 +310,7 @@ export const cetakSPBSBBK = ({ group, tipe = 'atk', ttd = {} } = {}) => {
   .instansi { margin-top: 4px; }
   .badan { font-size: 19px; font-weight: 800; letter-spacing: 2px; }
   .nama-lengkap { font-size: 12px; font-weight: 600; margin-top: 1px; }
+  .unit-kerja { font-size: 12px; font-weight: 700; margin-top: 1px; }
   .title { font-size: 17px; font-weight: 800; text-decoration: underline; margin-top: 8px; }
 
   .meta { margin-top: 12px; font-size: 13px; }
